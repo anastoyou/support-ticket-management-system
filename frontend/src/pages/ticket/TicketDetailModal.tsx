@@ -5,11 +5,12 @@ import { motion, AnimatePresence } from 'framer-motion';
 
 import {
     X, Loader2, Camera, CheckCircle2, Clock,
-    Building2, Wrench, AlertCircle, User, Edit2, Settings, Plus, DollarSign, Trash2, FileText,
+    Building2, Wrench, AlertCircle, AlertTriangle, User, Edit2, Settings, Plus, DollarSign, Trash2, FileText,
     UserPlus, Image, XCircle, Menu, Download, History as HistoryIcon, MessageCircle, Video, Upload, Phone, PhoneCall, UserCheck, ChevronDown, Headphones, Smartphone, Monitor, RotateCcw, RotateCw, RefreshCw, Save, Search, Receipt, Printer
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { TicketChatPanel } from './TicketChatPanel';
+import { ComplaintModal } from './ComplaintModal';
 import { printTicketDetailsReport, buildTicketPrintPreviewHtmlSync, DEFAULT_PRINT_SECTIONS, type TicketPrintSectionsConfig } from './ticketPrintReport';
 import Can, { permissionDebugEnabled } from '@/hooks/Can';
 import { usePermission } from '@/hooks/usePermission';
@@ -745,6 +746,23 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
     const [isMobileChatOpen, setIsMobileChatOpen] = useState(false);
     const [chatMessageCount, setChatMessageCount] = useState<number>(0);
     const [hasUnseenChatMessages, setHasUnseenChatMessages] = useState<boolean>(false);
+    const [isComplaintModalOpen, setIsComplaintModalOpen] = useState(false);
+    const [complaintCount, setComplaintCount] = useState<number>(0);
+
+    useEffect(() => {
+        if (!token || !ticketDetails?.ticket_id) return;
+        fetch(`${API_URL}/maintenance/complaint/?ticket_id=${ticketDetails.ticket_id}`, {
+            headers: { Authorization: `Token ${token}` }
+        })
+            .then(res => res.ok ? res.json() : null)
+            .then(data => {
+                if (data) {
+                    const results = Array.isArray(data) ? data : (data.results || []);
+                    setComplaintCount(results.length);
+                }
+            })
+            .catch(err => console.error('Failed to load complaint count:', err));
+    }, [ticketDetails?.ticket_id, token]);
 
     useEffect(() => {
         if (!token || !ticketDetails?.ticket_id) return;
@@ -791,6 +809,7 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
     const [isCallLocationModalOpen, setIsCallLocationModalOpen] = useState(false);
 
     const { hasPermission } = usePermission();
+
     const canChangePriority = useMemo(() => {
         if (readOnly) return false;
         if (user?.is_superuser) return true;
@@ -2084,6 +2103,31 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
 
 
                     <div className="flex items-center gap-2 shrink-0 ml-2">
+                        <Can permission={[
+                            'maintenance.can_create_complaint',
+                            'maintenance.can_view_manager_complaint',
+                            'maintenance.can_view_worker_complaint',
+                            'maintenance.all_complaint_view',
+                            'maintenance.can_view_all_complaint'
+                        ]}>
+                            <button
+                                onClick={() => setIsComplaintModalOpen(true)}
+                                className={`flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded border border-outline-variant hover:bg-surface-container-high text-xs font-semibold transition-all cursor-pointer active:scale-95 touch-manipulation relative ${
+                                    complaintCount > 0 ? 'text-red-600 dark:text-red-400 bg-red-500/10 border-red-500/30 font-bold' : 'text-on-surface dark:text-dark-on-surface hover:text-red-500'
+                                }`}
+                                title="Register or View Complaints on Ticket"
+                                type="button"
+                            >
+                                <AlertTriangle className="w-4 h-4 text-red-500 shrink-0" />
+                                <span className="hidden sm:inline">Complaints</span>
+                                {complaintCount > 0 && (
+                                    <span className="px-1.5 py-0.2 bg-red-600 text-white rounded-full text-[10px] font-extrabold leading-none">
+                                        {complaintCount}
+                                    </span>
+                                )}
+                            </button>
+                        </Can>
+
                         <button
                             onClick={() => setIsPrintOptionsModalOpen(true)}
                             disabled={isPrinting || modalLoading}
@@ -5852,6 +5896,20 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
                     queueFilesForReview([capturedFile], liveCameraCategory);
                 }}
             />
+
+            {isComplaintModalOpen && (
+                <ComplaintModal
+                    isOpen={isComplaintModalOpen}
+                    onClose={() => setIsComplaintModalOpen(false)}
+                    ticket={ticketDetails}
+                    currentUser={user}
+                    token={token}
+                    onComplaintCreated={() => {
+                        setComplaintCount(prev => prev + 1);
+                        if (onRefreshList) onRefreshList();
+                    }}
+                />
+            )}
         </div>
     );
 };

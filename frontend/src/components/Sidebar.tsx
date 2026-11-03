@@ -4,7 +4,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useSelector } from 'react-redux';
 import {
   Home, Ticket, Store, Wrench, Users, FileBarChart2,
-  ChevronDown, X, User, Shield, Building2, Receipt
+  ChevronDown, X, User, Shield, Building2, Receipt, AlertTriangle
 } from 'lucide-react';
 import type { RootState } from '../store';
 import { usePermission } from '../hooks/usePermission';
@@ -86,6 +86,14 @@ export const menuItems: MenuItem[] = [
     subItems: [
       { title: 'All Reports', path: '/reports/all', permission: 'reports.can_generate_report' },
       // { title: 'Audit Logs', path: '/reports/history', permission: 'reports.can_generate_report' },
+    ],
+  },
+  {
+    title: 'Complaints',
+    icon: <AlertTriangle className="w-4 h-4" />,
+    subItems: [
+      { title: 'Manager Complaints', path: '/complaints/manager', permission: 'maintenance.can_view_manager_complaint' },
+      { title: 'Worker Complaints', path: '/complaints/worker', permission: 'maintenance.can_view_worker_complaint' },
     ],
   }
 ];
@@ -197,7 +205,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
   // Check if a path or any subitem path matches the current location
   const isPathActive = (path?: string, subItems?: SubItem[]) => {
     if (subItems && subItems.length > 0) {
-      return subItems.some((subItem) => location.pathname === subItem.path);
+      return subItems.some((subItem) => location.pathname === subItem.path || (subItem.path.startsWith('/complaints') && location.pathname.startsWith('/complaints')));
     }
     return Boolean(path && location.pathname === path);
   };

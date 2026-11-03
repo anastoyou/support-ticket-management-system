@@ -675,6 +675,76 @@ class TicketChatMessage(models.Model):
         return f"Msg {self.message_id} on Ticket {self.ticket.work_order_no} by {self.sender.username}"
 
 
+class ComplaintIssueType(models.Model):
+    ROLE_TYPE_CHOICES = [
+        ('all', 'All Roles'),
+        ('manager_against_worker', 'Manager against Worker'),
+        ('worker_against_manager', 'Worker against Manager'),
+    ]
+
+    issue_type_id = models.AutoField(primary_key=True)
+    name = models.CharField(max_length=200)
+    role_type = models.CharField(max_length=50, choices=ROLE_TYPE_CHOICES, default='all')
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['name']
+        constraints = [
+            models.UniqueConstraint(fields=['name', 'role_type'], name='unique_complaint_issue_role')
+        ]
+
+    def __str__(self):
+        return f"{self.name} ({self.role_type})"
+
+
+class Complaint(models.Model):
+    COMPLAINT_TYPES = [
+        ('manager_against_worker', 'Manager complaint against Worker'),
+        ('worker_against_manager', 'Worker complaint against Manager'),
+    ]
+
+    STATUS_CHOICES = [
+        ('pending', 'Pending'),
+        ('under_review', 'Under Review'),
+        ('resolved', 'Resolved'),
+        ('dismissed', 'Dismissed'),
+    ]
+
+    complaint_id = models.AutoField(primary_key=True)
+    complaint_type = models.CharField(max_length=50, choices=COMPLAINT_TYPES)
+    ticket = models.ForeignKey(
+        Ticket, on_delete=models.CASCADE, related_name='complaints')
+    related_tickets = models.ManyToManyField(
+        Ticket, blank=True, related_name='related_complaints')
+    complainant = models.ForeignKey(
+        'accounts.CustomUser', on_delete=models.CASCADE, related_name='filed_complaints')
+    against_user = models.ForeignKey(
+        'accounts.CustomUser', on_delete=models.CASCADE, related_name='complaints_received')
+    issue_type = models.ForeignKey(
+        ComplaintIssueType, on_delete=models.SET_NULL, null=True, blank=True, related_name='complaints')
+    custom_issue = models.CharField(max_length=255, null=True, blank=True)
+    description = models.TextField()
+    status = models.CharField(max_length=30, choices=STATUS_CHOICES, default='pending')
+    resolution_notes = models.TextField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-created_at']
+        permissions = [
+            ("can_view_manager_complaint", "Can view manager complaints against workers"),
+            ("can_view_worker_complaint", "Can view worker complaints against managers"),
+            ("can_view_all_complaint", "Can view all complaints across profiles"),
+            ("all_complaint_view", "Can view all complaints across profiles"),
+            ("can_create_complaint", "Can create complaint"),
+        ]
+
+    def __str__(self):
+        issue_name = self.issue_type.name if self.issue_type else (self.custom_issue or "Complaint")
+        return f"Complaint #{self.complaint_id} ({self.get_complaint_type_display()}): {issue_name} against {self.against_user}"
+
+
 @receiver(models.signals.pre_save, sender=Ticket)
 def store_old_status(sender, instance, **kwargs):
     if kwargs.get('raw', False):

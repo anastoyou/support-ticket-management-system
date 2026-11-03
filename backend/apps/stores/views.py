@@ -86,9 +86,15 @@ class ManagerViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         from apps.accounts.models import CustomUser
-        return CustomUser.objects.filter(
+        from django.db.models import Q
+        qs = CustomUser.objects.filter(
             role__role_name__icontains='Store Manager'
         ).select_related('role', 'managed_store').order_by('full_name')
+
+        store = self.request.query_params.get('store')
+        if store:
+            qs = qs.filter(Q(managed_store__store_id=store) | Q(accessible_stores__store_id=store)).distinct()
+        return qs
 
 
 class StoreDepartmentThrottleViewSet(viewsets.ModelViewSet):

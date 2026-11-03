@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import Priority, Status, WorkNature, NatureWorker, Ticket, Allocation, WorkLog, TicketHistory, TicketChatMessage
+from .models import Priority, Status, WorkNature, NatureWorker, Ticket, Allocation, WorkLog, TicketHistory, TicketChatMessage, ComplaintIssueType, Complaint
 from apps.finance.models import EmployeeRate
 from decimal import Decimal
 from apps.stores.serializers import StoreSerializer, DepartmentSerializer, SubDepartmentSerializer
@@ -75,6 +75,7 @@ class TicketSerializer(serializers.ModelSerializer):
     allocations = serializers.SerializerMethodField()
     age_days = serializers.SerializerMethodField()
     ticket_age_days = serializers.SerializerMethodField()
+    complaints_count = serializers.IntegerField(source="complaints.count", read_only=True)
 
     store = StoreSerializer(read_only=True)
     department = DepartmentSerializer(read_only=True)
@@ -392,3 +393,85 @@ class TicketChatMessageSerializer(serializers.ModelSerializer):
                 } if instance.sender.role else None
             }
         return rep
+
+
+
+class ComplaintIssueTypeSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = ComplaintIssueType
+        fields = ['issue_type_id', 'name', 'role_type', 'is_active', 'created_at']
+
+
+class ComplaintMediaSerializer(serializers.ModelSerializer):
+    file_url = serializers.SerializerMethodField()
+
+    class Meta:
+        from apps.common.models import Media
+        model = Media
+        fields = ['media_id', 'file_name', 'file_url', 'rotation', 'uploaded_date']
+
+    def get_file_url(self, obj):
+        if not obj.file_url:
+            return ""
+        url = obj.file_url.url
+        if obj.uploaded_date:
+            ts = int(obj.uploaded_date.timestamp())
+            return f"{url}?v={ts}"
+        return url
+
+
+class ComplaintTicketSimpleSerializer(serializers.ModelSerializer):
+    store_name = serializers.CharField(source='store.store_name', read_only=True)
+    department_name = serializers.CharField(source='department.department_name', read_only=True)
+    status_name = serializers.CharField(source='status.status_name', read_only=True)
+
+    class Meta:
+        model = Ticket
+        fields = ['ticket_id', 'work_order_no', 'title', 'store_name', 'department_name', 'status_name']
+
+
+class ComplaintSerializer(serializers.ModelSerializer):
+    ticket = ComplaintTicketSimpleSerializer(read_only=True)
+    ticket_id = serializers.PrimaryKeyRelatedField(
+        queryset=Ticket.objects.all(), source='ticket', write_only=True)
+    related_tickets = ComplaintTicketSimpleSerializer(many=True, read_only=True)
+    related_ticket_ids = serializers.PrimaryKeyRelatedField(
+        queryset=Ticket.objects.all(), many=True, source='related_tickets', required=False, write_only=True)
+    complainant = TicketUserSerializer(read_only=True)
+    against_user = TicketUserSerializer(read_only=True)
+    against_user_id = serializers.PrimaryKeyRelatedField(
+        queryset=CustomUser.objects.all(), source='against_user', write_only=True)
+    issue_type = ComplaintIssueTypeSerializer(read_only=True)
+    issue_type_id = serializers.PrimaryKeyRelatedField(
+        queryset=ComplaintIssueType.objects.all(), source='issue_type', required=False, allow_null=True, write_only=True)
+    media_files = ComplaintMediaSerializer(many=True, read_only=True)
+    issue_display = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Complaint
+        fields = [
+            'complaint_id',
+            'complaint_type',
+            'ticket',
+            'ticket_id',
+            'related_tickets',
+            'related_ticket_ids',
+            'complainant',
+            'against_user',
+            'against_user_id',
+            'issue_type',
+            'issue_type_id',
+            'custom_issue',
+            'issue_display',
+            'description',
+            'status',
+            'resolution_notes',
+            'media_files',
+            'created_at',
+            'updated_at',
+        ]
+
+    def get_issue_display(self, obj):
+        if obj.issue_type:
+            return obj.issue_type.name
+        return obj.custom_issue or 'Complaint'

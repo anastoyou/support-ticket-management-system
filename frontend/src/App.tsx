@@ -26,6 +26,7 @@ import { MaintenanceView } from './pages/MaintenanceView';
 import { WorkforceView } from './pages/WorkforceView';
 import { ReportsView } from './pages/ReportsView';
 import { FinanceView } from './pages/FinanceView';
+import { ComplaintsView } from './pages/ComplaintsView';
 import Test from './Test';
 import PageTitle from './PageTitle';
 import { TicketsView } from './pages/ticket/TicketsView';
@@ -196,6 +197,22 @@ const App: React.FC = () => {
             <ProtectedRoute>
               <DashboardLayout>
                 <FinanceView />
+              </DashboardLayout>
+            </ProtectedRoute>
+          } />
+
+          <Route path="/complaints/:subpage" element={
+            <ProtectedRoute>
+              <DashboardLayout>
+                <ComplaintsView />
+              </DashboardLayout>
+            </ProtectedRoute>
+          } />
+
+          <Route path="/complaints" element={
+            <ProtectedRoute>
+              <DashboardLayout>
+                <ComplaintsView />
               </DashboardLayout>
             </ProtectedRoute>
           } />

@@ -24,16 +24,24 @@ class MediaCategory(models.Model):
 
 def get_media_upload_path(instance, filename):
     category_slug = instance.category.category_name.lower().replace(
-        ' ', '_') if instance.category else 'general'
+        ' ', '_') if instance.category else ('complaint' if getattr(instance, 'complaint', None) else 'general')
 
     # Resolve the ticket directly
     ticket = instance.ticket
+    if not ticket and getattr(instance, 'complaint', None) and instance.complaint.ticket:
+        ticket = instance.complaint.ticket
+
+    import os
+    name, ext = os.path.splitext(filename)
+    if len(name) > 60:
+        name = name[:60]
+    safe_filename = f"{name}{ext}"
 
     if ticket:
         store_slug = ticket.store.store_name.lower().replace(
             ' ', '_') if ticket.store else 'unknown_store'
-        return f"stores/{store_slug}/tickets/ticket_{ticket.ticket_id}/{category_slug}/{filename}"
-    return f"general/{category_slug}/{filename}"
+        return f"stores/{store_slug}/tickets/ticket_{ticket.ticket_id}/{category_slug}/{safe_filename}"
+    return f"general/{category_slug}/{safe_filename}"
 
 
 class Media(models.Model):
@@ -46,8 +54,10 @@ class Media(models.Model):
         MediaCategory, on_delete=models.SET_NULL, null=True, blank=True, related_name='media_files')
     expense = models.ForeignKey(
         'finance.Expense', on_delete=models.SET_NULL, null=True, blank=True, related_name='receipts')
-    file_name = models.CharField(max_length=255)
-    file_url = models.FileField(upload_to=get_media_upload_path)
+    complaint = models.ForeignKey(
+        'maintenance.Complaint', on_delete=models.CASCADE, null=True, blank=True, related_name='media_files')
+    file_name = models.CharField(max_length=500)
+    file_url = models.FileField(upload_to=get_media_upload_path, max_length=500)
     rotation = models.IntegerField(default=0)
     uploaded_date = models.DateTimeField(auto_now_add=True)
 

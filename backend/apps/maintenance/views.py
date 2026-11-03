@@ -4,13 +4,14 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 from django.utils import timezone
 from rest_framework.pagination import PageNumberPagination
-from .models import Priority, Status, WorkNature, NatureWorker, Ticket, Allocation, WorkLog, TicketHistory, TicketChatMessage
+from .models import Priority, Status, WorkNature, NatureWorker, Ticket, Allocation, WorkLog, TicketHistory, TicketChatMessage, ComplaintIssueType, Complaint
 from .serializers import (
     PrioritySerializer, StatusSerializer, WorkNatureSerializer,
     NatureWorkerSerializer, TicketSerializer, AllocationSerializer,
     WorkLogSerializer, TicketHistorySerializer, TicketChatMessageSerializer,
     AllocationWriteSerializer, WorkLogWriteSerializer, TicketWriteSerializer,
-    WorkNatureWriteSerializer, NatureWorkerWriteSerializer
+    WorkNatureWriteSerializer, NatureWorkerWriteSerializer,
+    ComplaintIssueTypeSerializer, ComplaintSerializer
 )
 
 
@@ -433,6 +434,26 @@ class TicketViewSet(viewsets.ModelViewSet):
 
         return queryset
 
+    def create(self, request, *args, **kwargs):
+        user = request.user
+        if not user or user.is_anonymous:
+            return Response(
+                {"detail": "Authentication required to register complaints."},
+                status=status.HTTP_401_UNAUTHORIZED
+            )
+        role_name = (user.role.role_name.lower() if hasattr(user, 'role') and user.role else '')
+        has_create_perm = (
+            user.is_superuser or
+            user.has_perm('maintenance.can_create_complaint') or
+            role_name in ('administrator', 'admin')
+        )
+        if not has_create_perm:
+            return Response(
+                {"detail": "You do not have permission to register complaints."},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        return super().create(request, *args, **kwargs)
+
     def perform_create(self, serializer):
         user = self.request.user
         role_name = (user.role.role_name.lower() if hasattr(user, 'role') and user.role else '') if user else ''
@@ -658,3 +679,152 @@ class TicketChatMessageViewSet(viewsets.ModelViewSet):
             return TicketChatMessage.objects.none()
 
         return queryset.order_by('-created_date')
+
+
+
+class ComplaintIssueTypeViewSet(viewsets.ReadOnlyModelViewSet):
+    queryset = ComplaintIssueType.objects.filter(is_active=True).order_by('name')
+    serializer_class = ComplaintIssueTypeSerializer
+    pagination_class = None
+
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        role_type = self.request.query_params.get('role_type')
+        if role_type:
+            queryset = queryset.filter(Q(role_type=role_type) | Q(role_type='all'))
+        return queryset
+
+
+class ComplaintViewSet(viewsets.ModelViewSet):
+    queryset = Complaint.objects.all()
+    serializer_class = ComplaintSerializer
+
+    def get_queryset(self):
+        user = self.request.user
+        if not user or user.is_anonymous:
+            return Complaint.objects.none()
+
+        role_name = (user.role.role_name.lower() if hasattr(user, 'role') and user.role else '')
+        user_groups_lower = [g.lower().strip() for g in user.groups.values_list('name', flat=True)]
+        is_admin = user.is_superuser or role_name in ('administrator', 'admin')
+        is_office_admin = 'office' in role_name or any('office' in g for g in user_groups_lower)
+        is_management = role_name in ('management', 'management team') or 'management' in user_groups_lower
+
+        queryset = Complaint.objects.select_related(
+            'ticket', 'ticket__store', 'ticket__department', 'ticket__status', 'ticket__nature',
+            'complainant', 'complainant__role',
+            'against_user', 'against_user__role',
+            'issue_type'
+        ).prefetch_related('related_tickets', 'media_files')
+
+        # Check all-complaint-view permissions
+        has_all_view = (
+            user.is_superuser or
+            user.has_perm('maintenance.can_view_all_complaint') or
+            user.has_perm('maintenance.all_complaint_view') or
+            role_name in ('administrator', 'admin') or
+            is_management or
+            is_office_admin
+        )
+
+        can_view_mgr = user.has_perm('maintenance.can_view_manager_complaint') or has_all_view
+        can_view_wkr = user.has_perm('maintenance.can_view_worker_complaint') or has_all_view
+
+        if has_all_view:
+            # Users with all_complaint_view can see complaints across all profiles
+            if can_view_mgr and not can_view_wkr:
+                queryset = queryset.filter(complaint_type='manager_against_worker')
+            elif can_view_wkr and not can_view_mgr:
+                queryset = queryset.filter(complaint_type='worker_against_manager')
+        else:
+            # Workers and managers only see complaints created in their own accounts
+            queryset = queryset.filter(complainant=user)
+
+        # Query filters
+        ticket_id = self.request.query_params.get('ticket_id')
+        if ticket_id:
+            queryset = queryset.filter(Q(ticket_id=ticket_id) | Q(related_tickets__ticket_id=ticket_id)).distinct()
+
+        complaint_type = self.request.query_params.get('complaint_type')
+        if complaint_type:
+            queryset = queryset.filter(complaint_type=complaint_type)
+
+        status_val = self.request.query_params.get('status')
+        if status_val:
+            queryset = queryset.filter(status=status_val)
+
+        search = self.request.query_params.get('search')
+        if search:
+            queryset = queryset.filter(
+                Q(ticket__work_order_no__icontains=search) |
+                Q(ticket__title__icontains=search) |
+                Q(complainant__full_name__icontains=search) |
+                Q(complainant__username__icontains=search) |
+                Q(against_user__full_name__icontains=search) |
+                Q(against_user__username__icontains=search) |
+                Q(issue_type__name__icontains=search) |
+                Q(custom_issue__icontains=search) |
+                Q(description__icontains=search)
+            ).distinct()
+
+        return queryset.order_by('-created_at')
+
+    def perform_create(self, serializer):
+        complaint = serializer.save(complainant=self.request.user)
+        # Handle media upload attached directly in multipart request
+        files = self.request.FILES.getlist('files') or self.request.FILES.getlist('media')
+        if files:
+            from apps.common.models import Media
+            for f in files:
+                Media.objects.create(
+                    complaint=complaint,
+                    ticket=complaint.ticket,
+                    uploaded_by=self.request.user,
+                    file_name=f.name[:250],
+                    file_url=f
+                )
+
+    @action(detail=True, methods=['post'])
+    def update_status(self, request, pk=None):
+        complaint = self.get_object()
+        new_status = request.data.get('status')
+        resolution_notes = request.data.get('resolution_notes')
+
+        if new_status:
+            complaint.status = new_status
+        if resolution_notes is not None:
+            complaint.resolution_notes = resolution_notes
+        complaint.save()
+        return Response(ComplaintSerializer(complaint).data)
+
+    @action(detail=True, methods=['post'])
+    def add_media(self, request, pk=None):
+        complaint = self.get_object()
+        files = request.FILES.getlist('files') or request.FILES.getlist('media')
+        if not files:
+            return Response({'error': 'No files uploaded'}, status=400)
+
+        from apps.common.models import Media
+        created_media = []
+        for f in files:
+            m = Media.objects.create(
+                complaint=complaint,
+                ticket=complaint.ticket,
+                uploaded_by=request.user,
+                file_name=f.name[:250],
+                file_url=f
+            )
+            created_media.append(m)
+
+        return Response(ComplaintSerializer(complaint).data)
+
+    @action(detail=True, methods=['delete'], url_path='delete_media/(?P<media_id>[^/.]+)')
+    def delete_media(self, request, pk=None, media_id=None):
+        complaint = self.get_object()
+        from apps.common.models import Media
+        try:
+            m = Media.objects.get(media_id=media_id, complaint=complaint)
+            m.delete()
+            return Response({'status': 'deleted'})
+        except Media.DoesNotExist:
+            return Response({'error': 'Media not found'}, status=404)

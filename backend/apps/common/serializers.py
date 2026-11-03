@@ -40,6 +40,11 @@ class MediaWriteSerializer(serializers.ModelSerializer):
         # Support both create and update
         ticket = data.get("ticket") or getattr(self.instance, "ticket", None)
         category = data.get("category") or getattr(self.instance, "category", None)
+        complaint = data.get("complaint") or getattr(self.instance, "complaint", None)
+
+        if not ticket and complaint and getattr(complaint, "ticket", None):
+            data["ticket"] = complaint.ticket
+            ticket = complaint.ticket
 
         if ticket and category and category.department_id != ticket.department_id:
             matching_cat = MediaCategory.objects.filter(
