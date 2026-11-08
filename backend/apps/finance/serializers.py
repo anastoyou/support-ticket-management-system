@@ -203,7 +203,9 @@ def serialize_ticket_summary(ticket):
         'ticket_id': ticket.ticket_id,
         'work_order_no': ticket.work_order_no,
         'title': ticket.title,
+        'store_id': store.store_id if store else None,
         'store_name': store.store_name if store else None,
+        'store_type': store.type if store else None,
         'sub_department_id': sub_id,
         'sub_department_name': sub_name,
         'department_name': dept_name,
@@ -452,7 +454,9 @@ def serialize_claim_expense_summary(exp):
         'worker_detail': serialize_user_summary(exp.worker),
         'responsible_store': {
             'store_id': store.store_id,
-            'store_name': store.store_name
+            'store_name': store.store_name,
+            'type': store.type,
+            'store_type': store.type,
         } if store else None,
         'expense_type': exp_type.expense_type_id if exp_type else None,
         'expense_type_detail': {
@@ -853,6 +857,7 @@ class ApprovalInstanceSerializer(serializers.ModelSerializer):
                     'expense_type_name': exp.expense_type.expense_name if exp.expense_type else '',
                     'remarks': exp.remarks or '',
                     'store_name': exp.responsible_store.store_name if exp.responsible_store else (exp.ticket.store.store_name if exp.ticket and exp.ticket.store else None),
+                    'store_type': exp.responsible_store.type if exp.responsible_store else (exp.ticket.store.type if exp.ticket and exp.ticket.store else None),
                     'ticket': t_info,
                     'receipts': [serialize_receipt_summary(r) for r in exp.receipts.all()] if hasattr(exp, 'receipts') else []
                 })
@@ -899,6 +904,7 @@ class ApprovalInstanceSerializer(serializers.ModelSerializer):
                         'added_by': exp.added_by.full_name or exp.added_by.username if exp.added_by else None,
                         'added_by_detail': serialize_user_summary(exp.added_by),
                         'store_name': exp.responsible_store.store_name if exp.responsible_store else (exp.ticket.store.store_name if exp.ticket and exp.ticket.store else None),
+                    'store_type': exp.responsible_store.type if exp.responsible_store else (exp.ticket.store.type if exp.ticket and exp.ticket.store else None),
                         'ticket': t_info,
                         'ticket_details': t_info,
                         'receipts': [serialize_receipt_summary(r) for r in exp.receipts.all()] if hasattr(exp, 'receipts') else []
@@ -944,6 +950,7 @@ class ApprovalInstanceSerializer(serializers.ModelSerializer):
                     'added_by': exp.added_by.full_name or exp.added_by.username if exp.added_by else None,
                     'added_by_detail': serialize_user_summary(exp.added_by),
                     'store_name': exp.responsible_store.store_name if exp.responsible_store else (exp.ticket.store.store_name if exp.ticket and exp.ticket.store else None),
+                    'store_type': exp.responsible_store.type if exp.responsible_store else (exp.ticket.store.type if exp.ticket and exp.ticket.store else None),
                     'ticket': t_info,
                     'ticket_details': t_info,
                     'receipts': [serialize_receipt_summary(r) for r in exp.receipts.all()] if hasattr(exp, 'receipts') else []

@@ -22,7 +22,9 @@ export interface ExpenseItem {
     ticket_id: number;
     work_order_no: string;
     title: string;
+    store_id?: string;
     store_name?: string;
+    store_type?: string;
     sub_department_id?: number;
     sub_department_name?: string;
     department_name?: string;
@@ -36,7 +38,8 @@ export interface ExpenseItem {
   expense_type_detail?: { expense_name: string; approve_required?: boolean };
   receipts?: MediaFileItem[];
   receipt?: MediaFileItem;
-  responsible_store?: { store_id: string; store_name: string };
+  responsible_store?: { store_id: string; store_name: string; type?: string; store_type?: string };
+  store_type?: string;
   approved?: boolean;
   status_display?: string;
   claim?: any;

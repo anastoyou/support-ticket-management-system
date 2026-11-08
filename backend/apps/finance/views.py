@@ -840,6 +840,421 @@ class ExpenseViewSet(viewsets.ModelViewSet):
             'errors': errors
         }, status=status.HTTP_200_OK)
 
+    @action(detail=False, methods=['get'], url_path='location-report')
+    def location_report(self, request):
+        from decimal import Decimal
+        from datetime import datetime
+        from django.db.models import Sum, Count, F, Q, Value
+        from django.db.models.functions import Coalesce
+
+        params = request.query_params
+        is_comparison = bool(params.get('period1_from') and params.get('period2_from'))
+
+        status_filter = params.get('status')
+        store_filter = params.get('store')
+
+        all_active_batches = list(LedgerBatch.objects.all().prefetch_related('sub_departments'))
+        subdept_to_batch = {}
+        batch_id_to_name = {}
+        for b in all_active_batches:
+            batch_id_to_name[b.batch_id] = b.batch_name
+            for sd in b.sub_departments.all():
+                subdept_to_batch[sd.sub_department_id] = b.batch_name
+
+        available_batches = [{'batch_id': b.batch_id, 'batch_name': b.batch_name} for b in all_active_batches]
+
+        def _fetch_period_data(from_date, to_date):
+            if not from_date or not to_date:
+                return None
+            qs = Expense.objects.filter(
+                expense_date__gte=from_date,
+                expense_date__lte=to_date
+            )
+            if status_filter and status_filter.lower() != 'all':
+                if status_filter.lower() in ('approved', 'true', '1'):
+                    qs = qs.filter(Q(approved=True) | Q(expense_type__approve_required=False))
+                elif status_filter.lower() == 'paid':
+                    qs = qs.filter(Q(is_paid=True) | Q(claim__status='Paid'))
+
+            if store_filter and store_filter.lower() != 'all':
+                qs = qs.filter(
+                    Q(responsible_store_id=store_filter) |
+                    Q(ticket__store_id=store_filter) |
+                    Q(responsible_store__store_name__icontains=store_filter) |
+                    Q(ticket__store__store_name__icontains=store_filter)
+                )
+
+            store_type_filter = params.get('store_type')
+            if store_type_filter and store_type_filter != 'all':
+                qs = qs.filter(
+                    Q(responsible_store__type=store_type_filter) |
+                    Q(ticket__store__type=store_type_filter)
+                )
+
+            batch_filter = params.get('batch') or params.get('ledger_batch')
+            if batch_filter and batch_filter.lower() != 'all':
+                batch_obj = None
+                if str(batch_filter).isdigit():
+                    batch_obj = next((b for b in all_active_batches if b.batch_id == int(batch_filter)), None)
+                if not batch_obj:
+                    batch_obj = next((b for b in all_active_batches if b.batch_name.lower() == str(batch_filter).lower()), None)
+
+                if batch_obj:
+                    matching_subdepts = list(batch_obj.sub_departments.values_list('sub_department_id', flat=True))
+                    qs = qs.filter(
+                        Q(ticket__nature__sub_department_id__in=matching_subdepts) |
+                        Q(ticket__nature__sub_department__isnull=True, ledgers__ledger_batch=batch_obj)
+                    ).distinct()
+                else:
+                    qs = qs.none()
+
+            qs = qs.annotate(
+                location_name=Coalesce('responsible_store__store_name', 'ticket__store__store_name', Value('General / Other')),
+                loc_id=Coalesce('responsible_store__store_id', 'ticket__store__store_id', Value('general')),
+                store_type=Coalesce('responsible_store__type', 'ticket__store__type', Value('OTHER')),
+                category_name=Coalesce('expense_type__parent__expense_name', 'expense_type__expense_name', Value('General')),
+                subdept_id=F('ticket__nature__sub_department_id')
+            )
+
+            loc_map = {}
+            batch_map = {}
+            all_categories = set()
+            category_totals = {}
+            grand_total = Decimal('0.000')
+
+            for exp in qs.values('loc_id', 'location_name', 'store_type', 'category_name', 'amount', 'subdept_id'):
+                lid = str(exp['loc_id'])
+                lname = exp['location_name']
+                st = exp['store_type'] or 'OTHER'
+                cat = exp['category_name']
+                amt = exp['amount'] or Decimal('0.000')
+                sub_id = exp.get('subdept_id')
+                b_name = subdept_to_batch.get(sub_id, 'General Maintenance')
+
+                all_categories.add(cat)
+                category_totals[cat] = category_totals.get(cat, Decimal('0.000')) + amt
+                grand_total += amt
+
+                if lid not in loc_map:
+                    loc_map[lid] = {
+                        'store_id': lid,
+                        'location_name': lname,
+                        'store_type': st,
+                        'categories': {},
+                        'total_amount': Decimal('0.000'),
+                        'expense_count': 0
+                    }
+
+                loc_map[lid]['categories'][cat] = loc_map[lid]['categories'].get(cat, Decimal('0.000')) + amt
+                loc_map[lid]['total_amount'] += amt
+                loc_map[lid]['expense_count'] += 1
+
+                if b_name not in batch_map:
+                    batch_map[b_name] = {
+                        'batch_name': b_name,
+                        'total_amount': Decimal('0.000'),
+                        'expense_count': 0,
+                        'categories': {},
+                        'locations_map': {}
+                    }
+                b_entry = batch_map[b_name]
+                b_entry['total_amount'] += amt
+                b_entry['expense_count'] += 1
+                b_entry['categories'][cat] = b_entry['categories'].get(cat, Decimal('0.000')) + amt
+
+                if lid not in b_entry['locations_map']:
+                    b_entry['locations_map'][lid] = {
+                        'store_id': lid,
+                        'location_name': lname,
+                        'store_type': st,
+                        'categories': {},
+                        'total_amount': Decimal('0.000'),
+                        'expense_count': 0
+                    }
+                b_entry['locations_map'][lid]['categories'][cat] = b_entry['locations_map'][lid]['categories'].get(cat, Decimal('0.000')) + amt
+                b_entry['locations_map'][lid]['total_amount'] += amt
+                b_entry['locations_map'][lid]['expense_count'] += 1
+
+            sorted_categories = sorted(list(all_categories))
+            locations_list = sorted(list(loc_map.values()), key=lambda x: x['location_name'])
+
+            for loc in locations_list:
+                loc['total_amount'] = float(round(loc['total_amount'], 3))
+                for c in sorted_categories:
+                    loc['categories'][c] = float(round(loc['categories'].get(c, Decimal('0.000')), 3))
+
+            formatted_cat_totals = {c: float(round(category_totals.get(c, Decimal('0.000')), 3)) for c in sorted_categories}
+
+            STORE_TYPE_LABELS = {
+                'SUPER_MARKET': 'Super Market',
+                'HYPER_MARKET': 'Hyper Market',
+                'WAREHOUSE': 'Warehouse',
+                'FRESH': 'Fresh',
+                'COSTO': 'Costo',
+                'CAMP': 'Camp',
+                'KITCHEN': 'Kitchen',
+                'ROASTERY': 'Roastery',
+                'FINE DINE': 'Fine Dine',
+                'OTHER': 'Other / General'
+            }
+            type_map = {}
+            for loc in locations_list:
+                st = loc.get('store_type') or 'OTHER'
+                if st not in type_map:
+                    type_map[st] = {
+                        'store_type': st,
+                        'store_type_label': STORE_TYPE_LABELS.get(st, st.replace('_', ' ').title()),
+                        'locations_count': 0,
+                        'total_amount': 0.0,
+                        'categories': {c: 0.0 for c in sorted_categories}
+                    }
+                type_map[st]['locations_count'] += 1
+                type_map[st]['total_amount'] = float(round(type_map[st]['total_amount'] + loc['total_amount'], 3))
+                for c in sorted_categories:
+                    type_map[st]['categories'][c] = float(round(type_map[st]['categories'][c] + loc['categories'].get(c, 0.0), 3))
+
+            store_types_summary = sorted(list(type_map.values()), key=lambda x: -x['total_amount'])
+
+            # Compile Ledger Batches summary and locations
+            batches_list = []
+            for b_name, b_entry in sorted(batch_map.items(), key=lambda item: -item[1]['total_amount']):
+                b_locs = sorted(list(b_entry['locations_map'].values()), key=lambda x: x['location_name'])
+                for bloc in b_locs:
+                    bloc['total_amount'] = float(round(bloc['total_amount'], 3))
+                    for c in sorted_categories:
+                        bloc['categories'][c] = float(round(bloc['categories'].get(c, Decimal('0.000')), 3))
+
+                b_cat_totals = {c: float(round(b_entry['categories'].get(c, Decimal('0.000')), 3)) for c in sorted_categories}
+                batches_list.append({
+                    'batch_name': b_name,
+                    'total_amount': float(round(b_entry['total_amount'], 3)),
+                    'expense_count': b_entry['expense_count'],
+                    'locations_count': len(b_locs),
+                    'categories': b_cat_totals,
+                    'locations': b_locs
+                })
+
+            try:
+                dt1 = datetime.strptime(from_date, "%Y-%m-%d")
+                dt2 = datetime.strptime(to_date, "%Y-%m-%d")
+                if dt1.month == dt2.month and dt1.year == dt2.year:
+                    month_label = dt1.strftime("%B %Y")
+                else:
+                    month_label = f"{dt1.strftime('%b %Y')} - {dt2.strftime('%b %Y')}"
+            except Exception:
+                month_label = f"{from_date} to {to_date}"
+
+            return {
+                'from_date': from_date,
+                'to_date': to_date,
+                'month_label': month_label,
+                'locations': locations_list,
+                'store_types_summary': store_types_summary,
+                'ledger_batches_summary': batches_list,
+                'categories': sorted_categories,
+                'category_totals': formatted_cat_totals,
+                'grand_total': float(round(grand_total, 3)),
+                'total_locations_count': len(locations_list),
+                'total_expenses_count': qs.count()
+            }
+
+        if is_comparison:
+            p1_from = params.get('period1_from')
+            p1_to = params.get('period1_to')
+            p2_from = params.get('period2_from')
+            p2_to = params.get('period2_to')
+
+            p1 = _fetch_period_data(p1_from, p1_to)
+            p2 = _fetch_period_data(p2_from, p2_to)
+
+            if not p1 or not p2:
+                return Response({'detail': 'Invalid period date parameters provided.'}, status=status.HTTP_400_BAD_REQUEST)
+
+            all_loc_ids = set([l['store_id'] for l in p1['locations']] + [l['store_id'] for l in p2['locations']])
+            p1_dict = {l['store_id']: l for l in p1['locations']}
+            p2_dict = {l['store_id']: l for l in p2['locations']}
+
+            all_cats = sorted(list(set(p1['categories'] + p2['categories'])))
+
+            comparison_rows = []
+            for lid in sorted(all_loc_ids, key=lambda x: (p2_dict.get(x) or p1_dict.get(x) or {}).get('location_name', '')):
+                loc_name = (p1_dict.get(lid) or p2_dict.get(lid) or {}).get('location_name', 'Unknown Location')
+                l1 = p1_dict.get(lid) or {'location_name': loc_name, 'total_amount': 0.0, 'categories': {}}
+                l2 = p2_dict.get(lid) or {'location_name': loc_name, 'total_amount': 0.0, 'categories': {}}
+
+                amt1 = l1['total_amount']
+                amt2 = l2['total_amount']
+                variance = round(amt2 - amt1, 3)
+                pct = round(((amt2 - amt1) / amt1 * 100), 2) if amt1 > 0 else (100.0 if amt2 > 0 else 0.0)
+
+                cat_breakdown = []
+                for c in all_cats:
+                    c1 = l1['categories'].get(c, 0.0)
+                    c2 = l2['categories'].get(c, 0.0)
+                    c_var = round(c2 - c1, 3)
+                    c_pct = round(((c2 - c1) / c1 * 100), 2) if c1 > 0 else (100.0 if c2 > 0 else 0.0)
+                    cat_breakdown.append({
+                        'category_name': c,
+                        'period1_amount': c1,
+                        'period2_amount': c2,
+                        'variance': c_var,
+                        'percent_change': c_pct
+                    })
+
+                st = l1.get('store_type') or l2.get('store_type') or 'OTHER'
+                comparison_rows.append({
+                    'store_id': lid,
+                    'location_name': l1['location_name'],
+                    'store_type': st,
+                    'period1_amount': amt1,
+                    'period2_amount': amt2,
+                    'variance': variance,
+                    'percent_change': pct,
+                    'categories': cat_breakdown
+                })
+
+            p1_grand = p1['grand_total']
+            p2_grand = p2['grand_total']
+            grand_var = round(p2_grand - p1_grand, 3)
+            grand_pct = round(((p2_grand - p1_grand) / p1_grand * 100), 2) if p1_grand > 0 else 0.0
+
+            # Summary of Store Types Comparison
+            p1_types = {t['store_type']: t for t in p1.get('store_types_summary', [])}
+            p2_types = {t['store_type']: t for t in p2.get('store_types_summary', [])}
+            all_types = sorted(list(set(list(p1_types.keys()) + list(p2_types.keys()))))
+            comp_store_types = []
+            for t in all_types:
+                t1 = p1_types.get(t, {})
+                t2 = p2_types.get(t, {})
+                a1 = t1.get('total_amount', 0.0)
+                a2 = t2.get('total_amount', 0.0)
+                v = round(a2 - a1, 3)
+                p = round(((a2 - a1) / a1 * 100), 2) if a1 > 0 else (100.0 if a2 > 0 else 0.0)
+                lbl = t1.get('store_type_label') or t2.get('store_type_label') or t.replace('_', ' ').title()
+                comp_store_types.append({
+                    'store_type': t,
+                    'store_type_label': lbl,
+                    'period1_amount': a1,
+                    'period2_amount': a2,
+                    'variance': v,
+                    'percent_change': p,
+                    'period1_locations_count': t1.get('locations_count', 0),
+                    'period2_locations_count': t2.get('locations_count', 0)
+                })
+
+            # Summary of Ledger Batches Comparison
+            p1_batches = {b['batch_name']: b for b in p1.get('ledger_batches_summary', [])}
+            p2_batches = {b['batch_name']: b for b in p2.get('ledger_batches_summary', [])}
+            all_batches = sorted(list(set(list(p1_batches.keys()) + list(p2_batches.keys()))))
+            comp_batches = []
+            for bname in all_batches:
+                b1 = p1_batches.get(bname, {})
+                b2 = p2_batches.get(bname, {})
+                ba1 = b1.get('total_amount', 0.0)
+                ba2 = b2.get('total_amount', 0.0)
+                bv = round(ba2 - ba1, 3)
+                bp = round(((ba2 - ba1) / ba1 * 100), 2) if ba1 > 0 else (100.0 if ba2 > 0 else 0.0)
+
+                # Locations under this batch
+                p1_blocs = {l['store_id']: l for l in b1.get('locations', [])}
+                p2_blocs = {l['store_id']: l for l in b2.get('locations', [])}
+                b_loc_ids = set(list(p1_blocs.keys()) + list(p2_blocs.keys()))
+                comp_blocs = []
+                for lid in sorted(b_loc_ids, key=lambda x: (p2_blocs.get(x) or p1_blocs.get(x) or {}).get('location_name', '')):
+                    loc_name = (p1_blocs.get(lid) or p2_blocs.get(lid) or {}).get('location_name', 'Unknown')
+                    bl1 = p1_blocs.get(lid) or {'location_name': loc_name, 'total_amount': 0.0, 'categories': {}}
+                    bl2 = p2_blocs.get(lid) or {'location_name': loc_name, 'total_amount': 0.0, 'categories': {}}
+                    bla1 = bl1['total_amount']
+                    bla2 = bl2['total_amount']
+                    bl_v = round(bla2 - bla1, 3)
+                    bl_p = round(((bla2 - bla1) / bla1 * 100), 2) if bla1 > 0 else (100.0 if bla2 > 0 else 0.0)
+
+                    cat_breakdown = []
+                    for c in all_cats:
+                        c1 = bl1['categories'].get(c, 0.0)
+                        c2 = bl2['categories'].get(c, 0.0)
+                        c_var = round(c2 - c1, 3)
+                        c_pct = round(((c2 - c1) / c1 * 100), 2) if c1 > 0 else (100.0 if c2 > 0 else 0.0)
+                        cat_breakdown.append({
+                            'category_name': c,
+                            'period1_amount': c1,
+                            'period2_amount': c2,
+                            'variance': c_var,
+                            'percent_change': c_pct
+                        })
+
+                    st = bl1.get('store_type') or bl2.get('store_type') or 'OTHER'
+                    comp_blocs.append({
+                        'store_id': lid,
+                        'location_name': loc_name,
+                        'store_type': st,
+                        'period1_amount': bla1,
+                        'period2_amount': bla2,
+                        'variance': bl_v,
+                        'percent_change': bl_p,
+                        'categories': cat_breakdown
+                    })
+
+                comp_batches.append({
+                    'batch_name': bname,
+                    'period1_amount': ba1,
+                    'period2_amount': ba2,
+                    'variance': bv,
+                    'percent_change': bp,
+                    'period1_locations_count': b1.get('locations_count', 0),
+                    'period2_locations_count': b2.get('locations_count', 0),
+                    'locations': comp_blocs
+                })
+
+            return Response({
+                'is_comparison': True,
+                'available_batches': available_batches,
+                'period1': {
+                    'from_date': p1['from_date'],
+                    'to_date': p1['to_date'],
+                    'month_label': p1['month_label'],
+                    'grand_total': p1_grand
+                },
+                'period2': {
+                    'from_date': p2['from_date'],
+                    'to_date': p2['to_date'],
+                    'month_label': p2['month_label'],
+                    'grand_total': p2_grand
+                },
+                'summary': {
+                    'period1_grand_total': p1_grand,
+                    'period2_grand_total': p2_grand,
+                    'variance': grand_var,
+                    'percent_change': grand_pct
+                },
+                'store_types_summary': comp_store_types,
+                'ledger_batches_summary': comp_batches,
+                'categories': all_cats,
+                'category_totals': {
+                    'period1': p1['category_totals'],
+                    'period2': p2['category_totals']
+                },
+                'locations': comparison_rows
+            }, status=status.HTTP_200_OK)
+
+        # Single period report
+        from_date = params.get('from_date') or params.get('date_from')
+        to_date = params.get('to_date') or params.get('date_to')
+
+        if not from_date or not to_date:
+            import calendar
+            today = datetime.now().date()
+            from_date = today.replace(day=1).isoformat()
+            _, last_day = calendar.monthrange(today.year, today.month)
+            to_date = today.replace(day=last_day).isoformat()
+
+        data = _fetch_period_data(from_date, to_date)
+        return Response({
+            'is_comparison': False,
+            'available_batches': available_batches,
+            **data
+        }, status=status.HTTP_200_OK)
+
     def perform_destroy(self, instance):
         user = self.request.user
         role_name = (user.role.role_name.lower() if hasattr(

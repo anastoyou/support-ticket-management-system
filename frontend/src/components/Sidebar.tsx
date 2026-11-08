@@ -88,14 +88,14 @@ export const menuItems: MenuItem[] = [
       // { title: 'Audit Logs', path: '/reports/history', permission: 'reports.can_generate_report' },
     ],
   },
-  {
-    title: 'Complaints',
-    icon: <AlertTriangle className="w-4 h-4" />,
-    subItems: [
-      { title: 'Manager Complaints', path: '/complaints/manager', permission: 'maintenance.can_view_manager_complaint' },
-      { title: 'Worker Complaints', path: '/complaints/worker', permission: 'maintenance.can_view_worker_complaint' },
-    ],
-  }
+  // {
+  //   title: 'Complaints',
+  //   icon: <AlertTriangle className="w-4 h-4" />,
+  //   subItems: [
+  //     { title: 'Manager Complaints', path: '/complaints/manager', permission: 'maintenance.can_view_manager_complaint' },
+  //     { title: 'Worker Complaints', path: '/complaints/worker', permission: 'maintenance.can_view_worker_complaint' },
+  //   ],
+  // }
 ];
 
 export const getFlatMenuItems = (items: MenuItem[] = menuItems): FlatMenuItem[] => {

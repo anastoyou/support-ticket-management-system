@@ -2,7 +2,7 @@ import React, { useState, useMemo, useEffect, useRef } from 'react';
 import {
   X, Printer, Download, Copy, Check, FileText,
   Boxes, Building2, User, UserCheck, Layers, CheckCircle2,
-  DollarSign, Receipt, Search, ShieldCheck, Loader2, Pencil
+  DollarSign, Receipt, Search, ShieldCheck, Loader2, Pencil, Store
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import html2canvas from 'html2canvas';
@@ -60,6 +60,8 @@ interface TicketExpenseRow {
   ticketNo?: string;
   expenseIds?: (string | number)[];
   location: string;
+  storeType?: string;
+  storeTypeLabel?: string;
   subDepartment: string;
   issueTitle: string;
   remarks?: string;
@@ -71,6 +73,18 @@ interface TicketExpenseRow {
   ticketObj?: any;
   labourAmount: number;
 }
+
+const STORE_TYPE_LABELS: Record<string, string> = {
+  SUPER_MARKET: 'Super Market',
+  HYPER_MARKET: 'Hyper Market',
+  WAREHOUSE: 'Warehouse',
+  FRESH: 'Fresh Market',
+  COSTO: 'Costo',
+  CAMP: 'Camp',
+  KITCHEN: 'Central Kitchen',
+  ROASTERY: 'Roastery',
+  'FINE DINE': 'Fine Dine',
+};
 
 export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
   group,
@@ -88,7 +102,9 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
     if (!canWorkerWise && canLocationWise) return 'storewise';
     return 'userwise';
   });
+  const [storeReportGrouping, setStoreReportGrouping] = useState<'batch' | 'store_type'>('batch');
   const [selectedBatchFilter, setSelectedBatchFilter] = useState<string>('all');
+  const [selectedStoreTypeFilter, setSelectedStoreTypeFilter] = useState<string>('all');
   const [groupByLocation, setGroupByLocation] = useState(true);
   const [isVerticalOrientation, setIsVerticalOrientation] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
@@ -97,6 +113,7 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
   const [showWorkerDetailed, setShowWorkerDetailed] = useState(false);
   const [fetchedExpenseTypes, setFetchedExpenseTypes] = useState<any[]>([]);
   const [fetchedBatches, setFetchedBatches] = useState<LedgerBatchItem[]>([]);
+  const [fetchedStores, setFetchedStores] = useState<any[]>([]);
   const [isCapturing, setIsCapturing] = useState(false);
 
   // Ledger Group Rename States
@@ -185,6 +202,15 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
         setFetchedBatches(list);
       })
       .catch(err => console.error('Failed to fetch ledger batches:', err));
+
+    // 3. Fetch Stores (for Store Type mapping)
+    fetch(`${API_URL}/stores/?limit=1000`, { headers })
+      .then(r => r.ok ? r.json() : [])
+      .then(data => {
+        const list = Array.isArray(data) ? data : (Array.isArray(data.results) ? data.results : []);
+        setFetchedStores(list);
+      })
+      .catch(err => console.error('Failed to fetch stores:', err));
   }, [API_URL, token]);
 
   // Flatten all itemized expenses across all ledgers & bundles in this group
@@ -402,6 +428,20 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
     return map;
   }, [group.ledgers]);
 
+  // Create store lookup map: lowercase trimmed store name / code / id -> store_type
+  const storeTypeMap = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const s of fetchedStores) {
+      const type = s.store_type;
+      if (!type) continue;
+      if (s.store_name) map.set(s.store_name.trim().toLowerCase(), type);
+      if (s.store_code) map.set(s.store_code.trim().toLowerCase(), type);
+      if (s.store_id != null) map.set(String(s.store_id), type);
+      if (s.id != null) map.set(String(s.id), type);
+    }
+    return map;
+  }, [fetchedStores]);
+
   // Build Structured Ticket/Expense Rows
   const structuredRows = useMemo<TicketExpenseRow[]>(() => {
     const rowMap = new Map<string, TicketExpenseRow>();
@@ -439,6 +479,16 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
       }
 
       const location = exp.responsible_store?.store_name || exp.ticket_details?.store_name || (exp as any).store_name || 'General';
+      const rawStoreType = (exp.responsible_store as any)?.store_type ||
+        (exp.ticket_details as any)?.store_type ||
+        (exp as any).store_type ||
+        (exp.responsible_store?.store_id != null ? storeTypeMap.get(String(exp.responsible_store.store_id)) : undefined) ||
+        (location ? storeTypeMap.get(location.trim().toLowerCase()) : undefined) ||
+        'OTHER';
+
+      const storeTypeLabel = STORE_TYPE_LABELS[rawStoreType] ||
+        (rawStoreType ? rawStoreType.replace(/_/g, ' ').replace(/\b\w/g, (c: string) => c.toUpperCase()) : 'Other');
+
       const subDept = exp.ticket_details?.sub_department_name || exp.sub_department_name || 'General';
       const rawRemarks = (exp.remarks || '').trim();
       const rawTitle = (exp.ticket_details?.title || (exp as any).title || '').trim();
@@ -467,6 +517,8 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
           ticketNo,
           expenseIds: expId ? [expId] : [],
           location,
+          storeType: rawStoreType,
+          storeTypeLabel,
           subDepartment: subDept,
           issueTitle,
           remarks: rawRemarks,
@@ -522,6 +574,15 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
           const workerName = wObj?.full_name || wObj?.username || (workerId !== 'unknown' ? `Technician ${workerId}` : 'Unknown Technician');
           const workerEmpNo = wObj?.employee_no || '';
           const location = bundle.ticket_details?.store_name || l.store_detail?.store_name || 'General';
+          const rawStoreType = (bundle.ticket_details as any)?.store_type ||
+            (bundle as any).store_type ||
+            (l.store_detail as any)?.store_type ||
+            (location ? storeTypeMap.get(location.trim().toLowerCase()) : undefined) ||
+            'OTHER';
+
+          const storeTypeLabel = STORE_TYPE_LABELS[rawStoreType] ||
+            (rawStoreType ? rawStoreType.replace(/_/g, ' ').replace(/\b\w/g, (c: string) => c.toUpperCase()) : 'Other');
+
           const subDept = bundle.ticket_details?.sub_department_name || 'General';
           const issueTitle = bundle.ticket_details?.title || bundle.remarks || 'Worker Settlement';
           const ledgerBatch = resolveLedgerBatchName(l, bundle.ticket_details?.sub_department_id, subDept);
@@ -546,6 +607,8 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
               ticketNo,
               expenseIds: expId ? [expId] : [],
               location,
+              storeType: rawStoreType,
+              storeTypeLabel,
               subDepartment: subDept,
               issueTitle,
               remarks: (bundle.remarks || '').trim(),
@@ -563,7 +626,7 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
     }
 
     return Array.from(rowMap.values());
-  }, [allExpenses, group.ledgers, currentGroupName, resolveLedgerBatchName, groupBundlesMap, expenseToBundleMap]);
+  }, [allExpenses, group.ledgers, currentGroupName, resolveLedgerBatchName, groupBundlesMap, expenseToBundleMap, storeTypeMap]);
 
   // Helper to format ticket and its expense numbers across multiple lines if vertical orientation is enabled
   const formatTicketExpenseLines = (ticket: string, expIds: string[], isVertical: boolean): string[] => {
@@ -859,6 +922,188 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
       };
     }).filter(b => b.rows.length > 0);
   }, [dynamicLedgerBatches, selectedBatchFilter, storewiseFilteredRows, allChildExpenseColumns, isVerticalOrientation]);
+
+  // Dynamic list of store type labels present in structuredRows
+  const dynamicStoreTypes = useMemo(() => {
+    const set = new Set<string>();
+    for (const r of structuredRows) {
+      if (r.storeTypeLabel) {
+        set.add(r.storeTypeLabel);
+      }
+    }
+    if (set.size === 0) {
+      return ['Other / General'];
+    }
+    return Array.from(set).sort();
+  }, [structuredRows]);
+
+  // Filtered rows for Tab 2 Store Type Report
+  const storewiseFilteredRowsByStoreType = useMemo(() => {
+    let rows = structuredRows;
+    if (selectedStoreTypeFilter !== 'all') {
+      rows = rows.filter(r => (r.storeTypeLabel || '').trim().toLowerCase() === selectedStoreTypeFilter.trim().toLowerCase());
+    }
+    if (searchTerm.trim()) {
+      const q = searchTerm.toLowerCase();
+      rows = rows.filter(r =>
+        r.workerName.toLowerCase().includes(q) ||
+        String(r.expNo).toLowerCase().includes(q) ||
+        r.location.toLowerCase().includes(q) ||
+        (r.storeTypeLabel || '').toLowerCase().includes(q) ||
+        r.subDepartment.toLowerCase().includes(q) ||
+        r.issueTitle.toLowerCase().includes(q) ||
+        (r.remarks || '').toLowerCase().includes(q) ||
+        r.ledgerBatch.toLowerCase().includes(q)
+      );
+    }
+    return rows;
+  }, [structuredRows, selectedStoreTypeFilter, searchTerm]);
+
+  // Group rows by dynamic Store Type for Reporting (each store type includes locationRows)
+  const storewiseByStoreType = useMemo(() => {
+    return dynamicStoreTypes.map(typeName => {
+      const typeRows = structuredRows.filter(r => (r.storeTypeLabel || '').trim().toLowerCase() === typeName.trim().toLowerCase());
+      const typeTotals: Record<string, number> = {};
+      let typeTotal = 0;
+      for (const row of typeRows) {
+        typeTotal += row.total;
+        for (const col of allChildExpenseColumns) {
+          typeTotals[col] = (typeTotals[col] || 0) + (row.amountsByType[col] || 0);
+        }
+      }
+      const locationRows = groupRowsByLocation(typeRows, allChildExpenseColumns, isVerticalOrientation);
+      return {
+        typeName,
+        rows: typeRows,
+        locationRows,
+        subtotalByType: typeTotals,
+        typeTotal
+      };
+    }).filter(t => t.rows.length > 0);
+  }, [dynamicStoreTypes, structuredRows, allChildExpenseColumns, isVerticalOrientation]);
+
+  // Filtered storewise grouped by store type (for UI view with filters and search)
+  const storewiseFilteredByStoreType = useMemo(() => {
+    const types = selectedStoreTypeFilter === 'all'
+      ? dynamicStoreTypes
+      : dynamicStoreTypes.filter(t => t.trim().toLowerCase() === selectedStoreTypeFilter.trim().toLowerCase());
+
+    return types.map(typeName => {
+      const typeRows = storewiseFilteredRowsByStoreType.filter(r => (r.storeTypeLabel || '').trim().toLowerCase() === typeName.trim().toLowerCase());
+      const typeTotals: Record<string, number> = {};
+      let typeTotal = 0;
+      for (const row of typeRows) {
+        typeTotal += row.total;
+        for (const col of allChildExpenseColumns) {
+          typeTotals[col] = (typeTotals[col] || 0) + (row.amountsByType[col] || 0);
+        }
+      }
+      const locationRows = groupRowsByLocation(typeRows, allChildExpenseColumns, isVerticalOrientation);
+      return {
+        typeName,
+        rows: typeRows,
+        locationRows,
+        subtotalByType: typeTotals,
+        typeTotal
+      };
+    }).filter(t => t.rows.length > 0);
+  }, [dynamicStoreTypes, selectedStoreTypeFilter, storewiseFilteredRowsByStoreType, allChildExpenseColumns, isVerticalOrientation]);
+
+  // Store-wise Section Totals for Store Type mode
+  const storewiseTypeTotals = useMemo(() => {
+    const colTotals: Record<string, number> = {};
+    let total = 0;
+    for (const row of storewiseFilteredRowsByStoreType) {
+      total += row.total;
+      for (const col of allChildExpenseColumns) {
+        colTotals[col] = (colTotals[col] || 0) + (row.amountsByType[col] || 0);
+      }
+    }
+    const uniqueLocationsCount = new Set(storewiseFilteredRowsByStoreType.map(r => r.location.trim().toLowerCase())).size;
+    return {
+      colTotals,
+      total,
+      grandTotal: total,
+      uniqueLocationsCount,
+      ticketsCount: storewiseFilteredRowsByStoreType.length
+    };
+  }, [storewiseFilteredRowsByStoreType, allChildExpenseColumns]);
+
+  // Consolidated Store Type Statement Data
+  const consolidatedStoreTypeData = useMemo(() => {
+    const typeMap = new Map<string, {
+      section: string;
+      storeType: string;
+      storeTypeLabel: string;
+      storesCount: number;
+      locationsCount: number;
+      uniqueLocations: Set<string>;
+      ticketsCount: number;
+      labourCharge: number;
+      expense: number;
+      total: number;
+    }>();
+
+    for (const tName of dynamicStoreTypes) {
+      typeMap.set(tName, {
+        section: tName,
+        storeType: tName,
+        storeTypeLabel: tName,
+        storesCount: 0,
+        locationsCount: 0,
+        uniqueLocations: new Set(),
+        ticketsCount: 0,
+        labourCharge: 0,
+        expense: 0,
+        total: 0
+      });
+    }
+
+    for (const row of structuredRows) {
+      const tName = row.storeTypeLabel || 'Other / General';
+      if (!typeMap.has(tName)) {
+        typeMap.set(tName, {
+          section: tName,
+          storeType: tName,
+          storeTypeLabel: tName,
+          storesCount: 0,
+          locationsCount: 0,
+          uniqueLocations: new Set(),
+          ticketsCount: 0,
+          labourCharge: 0,
+          expense: 0,
+          total: 0
+        });
+      }
+      const entry = typeMap.get(tName)!;
+      const expAmt = row.total - row.labourAmount;
+      entry.expense += expAmt;
+      entry.labourCharge += row.labourAmount;
+      entry.total += row.total;
+      entry.ticketsCount += 1;
+      if (row.location) entry.uniqueLocations.add(row.location.trim().toLowerCase());
+    }
+
+    const list = Array.from(typeMap.values()).map(t => ({
+      ...t,
+      storesCount: t.uniqueLocations.size,
+      locationsCount: t.uniqueLocations.size
+    })).filter(t => t.total > 0).sort((a, b) => b.total - a.total);
+
+    const grandLabour = list.reduce((s, x) => s + x.labourCharge, 0);
+    const grandExpense = list.reduce((s, x) => s + x.expense, 0);
+    const grandTotal = list.reduce((s, x) => s + x.total, 0);
+    const totalStoresCount = new Set(structuredRows.map(r => r.location.trim().toLowerCase())).size;
+
+    return {
+      list,
+      grandLabour,
+      grandExpense,
+      grandTotal,
+      totalStoresCount,
+      totalLocations: totalStoresCount
+    };
+  }, [structuredRows, dynamicStoreTypes]);
 
   // Consolidated Dynamic Ledger Batch Data for Tab 3 (Sheet 5 in Excel)
   const consolidatedBatchData = useMemo(() => {
@@ -1241,8 +1486,8 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
             <strong>${userwiseGrandTotals.uniqueLocationsCount} Locations</strong>
           </div>
           <div class="meta-item">
-            <span>LEDGER BATCHES</span>
-            <strong>${dynamicLedgerBatches.length} Batches (${group.approvedCount}/${group.totalCount} Approved)</strong>
+            <span>${storeReportGrouping === 'store_type' && isAllOrActiveTab !== 'userwise' ? 'STORE TYPES' : 'LEDGER BATCHES'}</span>
+            <strong>${storeReportGrouping === 'store_type' && isAllOrActiveTab !== 'userwise' ? `${dynamicStoreTypes.length} Store Types` : `${dynamicLedgerBatches.length} Batches (${group.approvedCount}/${group.totalCount} Approved)`}</strong>
           </div>
         </div>
       `;
@@ -1375,6 +1620,156 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
         `;
       });
 
+      // Build Storewise Store Type Pages HTML (Each Store Type starts on a dedicated new page)
+      let storewiseStoreTypePagesHtml = '';
+      storewiseByStoreType.forEach((typeGroup, typeIndex) => {
+        const isLastType = typeIndex === storewiseByStoreType.length - 1;
+        let typeRowsHtml = '';
+
+        if (groupByLocation) {
+          let sl = 1;
+          for (const locRow of typeGroup.locationRows) {
+            let expCols = '';
+            for (const c of allChildExpenseColumns) {
+              const val = locRow.amountsByType[c] || 0;
+              expCols += `<td style="text-align:right;padding:4px 5px;border:1px solid #d1d5db;font-size:9.5px;color:${val > 0 ? '#111827' : '#9ca3af'};">${val > 0 ? val.toFixed(3) : '-'}</td>`;
+            }
+
+            typeRowsHtml += `
+              <tr style="border:1px solid #d1d5db;">
+                <td style="text-align:center;padding:4px;border:1px solid #d1d5db;font-size:9.5px;color:#4b5563;">${sl++}</td>
+                <td style="padding:4px 6px;border:1px solid #d1d5db;font-size:9.5px;font-weight:600;color:#1e40af;line-height:1.35;white-space:nowrap;">${locRow.ticketLines && locRow.ticketLines.length > 0 ? locRow.ticketLines.join('<br />') : (locRow.expNoStr || '-')}</td>
+                <td style="padding:4px 6px;border:1px solid #d1d5db;font-size:9.5px;font-weight:700;color:#111827;">${locRow.location}</td>
+                <td style="padding:4px 6px;border:1px solid #d1d5db;font-size:9.5px;color:#4b5563;">${locRow.subDeptStr || '-'}</td>
+                <td style="padding:4px 6px;border:1px solid #d1d5db;font-size:9.5px;color:#111827;">${locRow.summary}</td>
+                ${expCols}
+                <td style="text-align:right;padding:4px 6px;border:1px solid #d1d5db;font-size:10px;font-weight:700;color:#065f46;background:#ecfdf5;">KD ${locRow.total.toFixed(3)}</td>
+              </tr>
+            `;
+          }
+        } else {
+          let sl = 1;
+          for (const row of typeGroup.rows) {
+            let expCols = '';
+            for (const c of allChildExpenseColumns) {
+              const val = row.amountsByType[c] || 0;
+              expCols += `<td style="text-align:right;padding:4px 5px;border:1px solid #d1d5db;font-size:9.5px;color:${val > 0 ? '#111827' : '#9ca3af'};">${val > 0 ? val.toFixed(3) : '-'}</td>`;
+            }
+
+            typeRowsHtml += `
+              <tr style="border:1px solid #d1d5db;">
+                <td style="text-align:center;padding:4px;border:1px solid #d1d5db;font-size:9.5px;color:#4b5563;">${sl++}</td>
+                <td style="text-align:center;padding:4px;border:1px solid #d1d5db;font-size:9.5px;font-weight:600;color:#1e40af;">${row.bundleId}</td>
+                <td style="padding:4px 6px;border:1px solid #d1d5db;font-size:9.5px;font-weight:500;">${row.expNo}</td>
+                <td style="padding:4px 6px;border:1px solid #d1d5db;font-size:9.5px;font-weight:600;color:#111827;">${row.location}</td>
+                <td style="padding:4px 6px;border:1px solid #d1d5db;font-size:9.5px;color:#4b5563;">${row.subDepartment}</td>
+                <td style="padding:4px 6px;border:1px solid #d1d5db;font-size:9.5px;color:#111827;">${row.issueTitle}</td>
+                <td style="padding:4px 6px;border:1px solid #d1d5db;font-size:9.5px;color:#4b5563;">${row.ledgerBatch}</td>
+                ${expCols}
+                <td style="text-align:right;padding:4px 6px;border:1px solid #d1d5db;font-size:10px;font-weight:700;color:#065f46;background:#ecfdf5;">KD ${row.total.toFixed(3)}</td>
+              </tr>
+            `;
+          }
+        }
+
+        let subtotalCols = '';
+        for (const c of allChildExpenseColumns) {
+          const sum = typeGroup.subtotalByType[c] || 0;
+          subtotalCols += `<td style="text-align:right;padding:4px 5px;border:1px solid #9ca3af;font-size:9.5px;font-weight:700;color:#1f2937;">${sum > 0 ? sum.toFixed(3) : '-'}</td>`;
+        }
+
+        const subtotalRowHtml = `
+          <tr style="background:#f3f4f6;font-weight:700;border:1px solid #9ca3af;">
+            <td colspan="${leadingColSpan}" style="text-align:right;padding:5px 8px;font-size:10px;color:#1f2937;border:1px solid #9ca3af;">
+              Store Type Subtotal (${typeGroup.typeName}):
+            </td>
+            ${subtotalCols}
+            <td style="text-align:right;padding:5px 6px;border:1px solid #9ca3af;font-size:10.5px;font-weight:800;color:#065f46;background:#d1fae5;">KD ${typeGroup.typeTotal.toFixed(3)}</td>
+          </tr>
+        `;
+
+        const grandTotalRowHtml = isLastType ? `
+          <tr style="background:#e5e7eb;font-weight:800;border:2px solid #111827;">
+            <td colspan="${leadingColSpan}" style="text-align:right;padding:7px 8px;font-size:11px;color:#111827;border:1.5px solid #374151;text-transform:uppercase;">
+              GRAND TOTAL (ALL STORE TYPES):
+            </td>
+            ${grandCols}
+            <td style="text-align:right;padding:7px 6px;border:1.5px solid #374151;font-size:11.5px;font-weight:900;color:#064e3b;background:#a7f3d0;">KD ${userwiseGrandTotals.grandTotal.toFixed(3)}</td>
+          </tr>
+        ` : '';
+
+        storewiseStoreTypePagesHtml += `
+          <!-- STORE TYPE PAGE: ${typeGroup.typeName} -->
+          <div class="print-page batch-page" style="page-break-before: always; break-before: page; padding-top: 12px;">
+            ${getHeaderHtml(`Store Type Wise Detailed — ${typeGroup.typeName}`, undefined, false)}
+            <table style="width:100%;border-collapse:collapse;margin-top:12px;background:#fff;border:1px solid #9ca3af;">
+              <thead>
+                <tr style="background:#e5e7eb;border:1px solid #9ca3af;">
+                  ${groupByLocation ? `
+                    <th rowspan="2" style="width:35px;text-align:center;border:1px solid #9ca3af;padding:6px 4px;font-size:10px;font-weight:700;color:#111827;">SL</th>
+                    <th rowspan="2" style="width:140px;text-align:left;border:1px solid #9ca3af;padding:6px 5px;font-size:10px;font-weight:700;color:#111827;">TICKET -NO</th>
+                    <th rowspan="2" style="width:115px;text-align:left;border:1px solid #9ca3af;padding:6px 5px;font-size:10px;font-weight:700;color:#111827;">LOCATION</th>
+                    <th rowspan="2" style="width:95px;text-align:left;border:1px solid #9ca3af;padding:6px 5px;font-size:10px;font-weight:700;color:#111827;">SUB DEPT</th>
+                    <th rowspan="2" style="text-align:left;border:1px solid #9ca3af;padding:6px 6px;font-size:10px;font-weight:700;color:#111827;">SUMMARY[Exp]</th>
+                  ` : `
+                    <th rowspan="2" style="width:35px;text-align:center;border:1px solid #9ca3af;padding:6px 4px;font-size:10px;font-weight:700;color:#111827;">SL</th>
+                    <th rowspan="2" style="width:55px;text-align:center;border:1px solid #9ca3af;padding:6px 4px;font-size:10px;font-weight:700;color:#111827;">BUNDLE</th>
+                    <th rowspan="2" style="width:70px;text-align:left;border:1px solid #9ca3af;padding:6px 5px;font-size:10px;font-weight:700;color:#111827;">TICKET -NO</th>
+                    <th rowspan="2" style="width:100px;text-align:left;border:1px solid #9ca3af;padding:6px 5px;font-size:10px;font-weight:700;color:#111827;">LOCATION</th>
+                    <th rowspan="2" style="width:90px;text-align:left;border:1px solid #9ca3af;padding:6px 5px;font-size:10px;font-weight:700;color:#111827;">SUB DEPT</th>
+                    <th rowspan="2" style="text-align:left;border:1px solid #9ca3af;padding:6px 6px;font-size:10px;font-weight:700;color:#111827;">ISSUE TITLE</th>
+                    <th rowspan="2" style="width:85px;text-align:left;border:1px solid #9ca3af;padding:6px 5px;font-size:10px;font-weight:700;color:#111827;">LEDGER BATCH</th>
+                  `}
+                  ${parentHeadersHtml}
+                  <th rowspan="2" style="width:75px;text-align:right;border:1px solid #9ca3af;padding:6px 6px;font-size:10.5px;font-weight:800;color:#065f46;background:#d1fae5;">TOTAL</th>
+                </tr>
+                <tr>
+                  ${subHeadersHtml}
+                </tr>
+              </thead>
+              <tbody>
+                <tr style="background:#e0e7ff;font-weight:700;border:1px solid #9ca3af;">
+                  <td colspan="${totalColSpan}" style="padding:6px 8px;font-size:11px;color:#1e3a8a;border:1px solid #9ca3af;">
+                    🔹 STORE TYPE: ${typeGroup.typeName} 
+                    <span style="font-weight:normal;color:#4b5563;font-size:10px;margin-left:8px;">
+                      — ${typeGroup.rows.length} Tickets | Subtotal: KD ${typeGroup.typeTotal.toFixed(3)}
+                    </span>
+                  </td>
+                </tr>
+                ${typeRowsHtml}
+                ${subtotalRowHtml}
+                ${grandTotalRowHtml}
+              </tbody>
+            </table>
+          </div>
+        `;
+      });
+
+      // Build Store Type Summary Rows HTML
+      let consolidatedStoreTypeRowsHtml = '';
+      let stSl = 1;
+      for (const item of consolidatedStoreTypeData.list) {
+        consolidatedStoreTypeRowsHtml += `
+          <tr style="border:1px solid #d1d5db;background:#f9fafb;line-height:1.2;">
+            <td style="text-align:center;padding:5px 8px;border:1px solid #d1d5db;font-size:10px;font-weight:700;color:#4b5563;">${stSl++}</td>
+            <td style="padding:5px 10px;border:1px solid #d1d5db;font-size:10px;font-weight:700;color:#111827;">${item.section}</td>
+            <td style="text-align:center;padding:5px 8px;border:1px solid #d1d5db;font-size:10px;font-weight:700;color:#1f2937;">${item.locationsCount}</td>
+            <td style="text-align:right;padding:5px 10px;border:1px solid #d1d5db;font-size:10px;font-weight:700;color:#1f2937;">${item.labourCharge > 0 ? `KD ${item.labourCharge.toFixed(3)}` : '-'}</td>
+            <td style="text-align:right;padding:5px 10px;border:1px solid #d1d5db;font-size:10px;font-weight:700;color:#1f2937;">KD ${item.expense.toFixed(3)}</td>
+            <td style="text-align:right;padding:5px 10px;border:1px solid #d1d5db;font-size:10px;font-weight:800;color:#065f46;background:#ecfdf5;">KD ${item.total.toFixed(3)}</td>
+          </tr>
+        `;
+      }
+      consolidatedStoreTypeRowsHtml += `
+        <tr style="background:#e5e7eb;font-weight:800;border:2px solid #111827;line-height:1.2;">
+          <td colspan="2" style="text-align:right;padding:6px 10px;font-size:10.5px;color:#111827;border:1.5px solid #374151;text-transform:uppercase;">GRAND TOTAL:</td>
+          <td style="text-align:center;padding:6px 8px;border:1.5px solid #374151;font-size:10.5px;font-weight:800;color:#111827;">${consolidatedStoreTypeData.totalLocations}</td>
+          <td style="text-align:right;padding:6px 10px;border:1.5px solid #374151;font-size:10.5px;font-weight:800;color:#111827;">${consolidatedStoreTypeData.grandLabour > 0 ? `KD ${consolidatedStoreTypeData.grandLabour.toFixed(3)}` : '-'}</td>
+          <td style="text-align:right;padding:6px 10px;border:1.5px solid #374151;font-size:10.5px;font-weight:800;color:#111827;">KD ${consolidatedStoreTypeData.grandExpense.toFixed(3)}</td>
+          <td style="text-align:right;padding:6px 10px;border:1.5px solid #374151;font-size:11px;font-weight:900;color:#064e3b;background:#a7f3d0;">KD ${consolidatedStoreTypeData.grandTotal.toFixed(3)}</td>
+        </tr>
+      `;
+
       // Build Main Printable Content
       let mainBodyHtml = '';
       if (isAllOrActiveTab === 'userwise') {
@@ -1445,6 +1840,39 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
         ` : '';
 
         mainBodyHtml = summaryPageHtml + detailedPageHtml;
+      } else if (storeReportGrouping === 'store_type') {
+        // STORE TYPE GROUPED REPORT:
+        // Page 1 is Store Type Summary Statement + Signatures
+        // Each subsequent page is a dedicated Store Type page
+        mainBodyHtml = `
+          <!-- PAGE 1: Store Type Summary Statement -->
+          <div class="print-page first-page" style="page-break-after: always; break-after: page; box-sizing: border-box; min-height: ${isVerticalOrientation ? '276mm' : '185mm'}; display: flex; flex-direction: column; justify-content: space-between;">
+            <div>
+              ${getHeaderHtml('Store Type Wise Summary', undefined, true)}
+              ${metaGridHtml}
+              <div style="margin-top:12px;">
+                <table class="summary-table" style="width:100%;border-collapse:collapse;background:#fff;border:1.5px solid #374151;">
+                  <thead>
+                    <tr style="background:#e5e7eb;border:1.5px solid #374151;">
+                      <th style="width:50px;text-align:center;padding:6px 6px;border:1px solid #9ca3af;font-size:10px;font-weight:700;color:#111827;">SL</th>
+                      <th style="text-align:left;padding:6px 10px;border:1px solid #9ca3af;font-size:10px;font-weight:700;color:#111827;">STORE TYPE</th>
+                      <th style="width:80px;text-align:center;padding:6px 8px;border:1px solid #9ca3af;font-size:10px;font-weight:700;color:#111827;">STORES</th>
+                      <th style="text-align:right;padding:6px 10px;border:1px solid #9ca3af;font-size:10px;font-weight:700;color:#111827;">LABOUR CHARGE</th>
+                      <th style="text-align:right;padding:6px 10px;border:1px solid #9ca3af;font-size:10px;font-weight:700;color:#111827;">EXPENSE</th>
+                      <th style="text-align:right;padding:6px 10px;border:1px solid #9ca3af;font-size:10px;font-weight:800;color:#065f46;background:#d1fae5;">TOTAL</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    ${consolidatedStoreTypeRowsHtml}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+            ${signaturesHtml}
+          </div>
+
+          ${storewiseStoreTypePagesHtml}
+        `;
       } else {
         // STOREWISE / CONSOLIDATED MERGED TAB:
         // Page 1 is Consolidated Financial Settlement Report + Signatures
@@ -1837,268 +2265,524 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
       }
 
       if (isTargetTab === 'storewise') {
-        // --- PAGE 1: CONSOLIDATED FINANCIAL SETTLEMENT REPORT ---
-        const head1 = [['SL', 'Section (Ledger Batch)', 'Labour Charge', 'Expense', 'Total']];
-        const body1: any[] = [];
-        let cSl = 1;
-        for (const item of consolidatedBatchData.list) {
+        if (storeReportGrouping === 'store_type') {
+          // --- PAGE 1: CONSOLIDATED STORE TYPE STATEMENT ---
+          const head1 = [['SL', 'Store Type', 'Stores', 'Labour Charge', 'Expense', 'Total']];
+          const body1: any[] = [];
+          let cSl = 1;
+          for (const item of consolidatedStoreTypeData.list) {
+            body1.push([
+              cSl++,
+              item.section,
+              item.locationsCount,
+              item.labourCharge > 0 ? `KD ${item.labourCharge.toFixed(3)}` : '-',
+              `KD ${item.expense.toFixed(3)}`,
+              `KD ${item.total.toFixed(3)}`
+            ]);
+          }
           body1.push([
-            cSl++,
-            item.section,
-            item.labourCharge > 0 ? `KD ${item.labourCharge.toFixed(3)}` : '-',
-            `KD ${item.expense.toFixed(3)}`,
-            `KD ${item.total.toFixed(3)}`
+            { content: 'GRAND TOTAL', colSpan: 2, styles: { fontStyle: 'bold', fillColor: [229, 231, 235] } },
+            { content: String(consolidatedStoreTypeData.totalLocations), styles: { fontStyle: 'bold', halign: 'center', fillColor: [229, 231, 235] } },
+            { content: consolidatedStoreTypeData.grandLabour > 0 ? `KD ${consolidatedStoreTypeData.grandLabour.toFixed(3)}` : '-', styles: { fontStyle: 'bold', fillColor: [229, 231, 235] } },
+            { content: `KD ${consolidatedStoreTypeData.grandExpense.toFixed(3)}`, styles: { fontStyle: 'bold', fillColor: [229, 231, 235] } },
+            { content: `KD ${consolidatedStoreTypeData.grandTotal.toFixed(3)}`, styles: { fontStyle: 'bold', fillColor: [167, 243, 208], textColor: [6, 78, 59] } }
           ]);
 
-          if (showWorkerDetailsInSummary && item.workerList && item.workerList.length > 0) {
-            for (const w of item.workerList) {
-              body1.push([
-                '•',
-                `   ${w.workerName}${w.workerEmployeeNo ? ` (${w.workerEmployeeNo})` : ''}`,
-                w.labourCharge > 0 ? `KD ${w.labourCharge.toFixed(3)}` : '-',
-                w.expense > 0 ? `KD ${w.expense.toFixed(3)}` : '-',
-                `KD ${w.total.toFixed(3)}`
-              ]);
-            }
-          }
-        }
-        body1.push([
-          { content: 'GRAND TOTAL', colSpan: 2, styles: { fontStyle: 'bold', fillColor: [229, 231, 235] } },
-          { content: consolidatedBatchData.grandLabour > 0 ? `KD ${consolidatedBatchData.grandLabour.toFixed(3)}` : '-', styles: { fontStyle: 'bold', fillColor: [229, 231, 235] } },
-          { content: `KD ${consolidatedBatchData.grandExpense.toFixed(3)}`, styles: { fontStyle: 'bold', fillColor: [229, 231, 235] } },
-          { content: `KD ${consolidatedBatchData.grandTotal.toFixed(3)}`, styles: { fontStyle: 'bold', fillColor: [167, 243, 208], textColor: [6, 78, 59] } }
-        ]);
-
-        autoTable(doc, {
-          startY: 38,
-          head: head1,
-          body: body1,
-          theme: 'grid',
-          headStyles: { fillColor: [31, 41, 55], textColor: [255, 255, 255], fontStyle: 'bold', fontSize: 9 },
-          bodyStyles: { fontSize: 8.5 },
-          columnStyles: {
-            0: { cellWidth: 15, halign: 'center' },
-            1: { cellWidth: 95, fontStyle: 'bold' },
-            2: { cellWidth: 45, halign: 'right' },
-            3: { cellWidth: 45, halign: 'right' },
-            4: { cellWidth: 48, halign: 'right', fontStyle: 'bold' }
-          },
-          margin: { left: 14, right: 14 }
-        });
-
-        // 7-Tier Signatures on Page 1
-        const signHead = [['Prepared By', 'Verify By MEngg', 'Verify By Engg', 'Accountant', 'Audit', 'Finance', 'CEO / CCOO / Director']];
-        const signBody = [
-          [
-            `\n\n___________________\n${group.createdByName || 'Site Accountant'}`,
-            '\n\n___________________\nMaintenance Engineer',
-            '\n\n___________________\nProject Engineer',
-            '\n\n___________________\nAccounts Dept',
-            '\n\n___________________\nInternal Audit',
-            '\n\n___________________\nFinance Manager',
-            `\n\n___________________\n${group.completedByName || 'Executive Approval'}`
-          ]
-        ];
-
-        const finalTableY = (doc as any).lastAutoTable?.finalY || 100;
-        const targetBottomSigY = pageHeight - 28;
-        let sigStartY = targetBottomSigY;
-        if (finalTableY + 6 > targetBottomSigY) {
-          doc.addPage();
-          sigStartY = targetBottomSigY;
-        }
-
-        autoTable(doc, {
-          startY: sigStartY,
-          head: signHead,
-          body: signBody,
-          theme: 'plain',
-          headStyles: { fontStyle: 'bold', fontSize: 7, halign: 'center', textColor: [17, 24, 39], fillColor: [243, 244, 246] },
-          bodyStyles: { fontSize: 6.5, halign: 'center', textColor: [75, 85, 99], cellPadding: 1 },
-          margin: { left: 14, right: 14, bottom: 6 },
-          pageBreak: 'avoid'
-        });
-
-        // --- PAGE 2: STORE & DEPARTMENT EXPENSE STATEMENT BY LEDGER BATCHES ---
-        doc.addPage();
-        doc.setFontSize(14);
-        doc.setFont('helvetica', 'bold');
-        doc.setTextColor(17, 24, 39);
-        doc.text('WEEKLY EXPENSE PAYOUT & SETTLEMENT REPORT', 14, 14);
-
-        doc.setFontSize(9);
-        doc.setFont('helvetica', 'normal');
-        doc.setTextColor(75, 85, 99);
-        doc.text(`Group: ${currentGroupName} (ID ${group.groupId})   |   ${groupByLocation ? `Store & Department Expense Statement by Location (${userwiseGrandTotals.uniqueLocationsCount} Locations)` : 'Store & Department Expense Statement by Ledger Batches'}`, 14, 20);
-
-        const headerRow1: any[] = groupByLocation ? [
-          { content: 'SL', rowSpan: 2, styles: { halign: 'center', valign: 'middle' } },
-          { content: 'TICKET -NO', rowSpan: 2, styles: { valign: 'middle' } },
-          { content: 'LOCATION', rowSpan: 2, styles: { valign: 'middle' } },
-          { content: 'SUB DEPT', rowSpan: 2, styles: { valign: 'middle' } },
-          { content: 'SUMMARY', rowSpan: 2, styles: { valign: 'middle' } }
-        ] : [
-          { content: 'SL', rowSpan: 2, styles: { halign: 'center', valign: 'middle' } },
-          { content: 'BUNDLE', rowSpan: 2, styles: { halign: 'center', valign: 'middle' } },
-          { content: 'TICKET -NO', rowSpan: 2, styles: { valign: 'middle' } },
-          { content: 'LOCATION', rowSpan: 2, styles: { valign: 'middle' } },
-          { content: 'SUB DEPT', rowSpan: 2, styles: { valign: 'middle' } },
-          { content: 'ISSUE TITLE', rowSpan: 2, styles: { valign: 'middle' } },
-          { content: 'BATCH', rowSpan: 2, styles: { valign: 'middle' } }
-        ];
-
-        for (const cat of expenseColumnsHierarchy) {
-          headerRow1.push({
-            content: cat.parentName,
-            colSpan: cat.children.length,
-            styles: { halign: 'center', fillColor: [229, 231, 235], textColor: [17, 24, 39], fontStyle: 'bold' }
+          autoTable(doc, {
+            startY: 38,
+            head: head1,
+            body: body1,
+            theme: 'grid',
+            headStyles: { fillColor: [31, 41, 55], textColor: [255, 255, 255], fontStyle: 'bold', fontSize: 9 },
+            bodyStyles: { fontSize: 8.5 },
+            columnStyles: {
+              0: { cellWidth: 15, halign: 'center' },
+              1: { cellWidth: 80, fontStyle: 'bold' },
+              2: { cellWidth: 25, halign: 'center' },
+              3: { cellWidth: 40, halign: 'right' },
+              4: { cellWidth: 40, halign: 'right' },
+              5: { cellWidth: 45, halign: 'right', fontStyle: 'bold' }
+            },
+            margin: { left: 14, right: 14 }
           });
-        }
 
-        headerRow1.push({ content: 'TOTAL', rowSpan: 2, styles: { halign: 'right', valign: 'middle', fillColor: [209, 250, 229], textColor: [6, 95, 70] } });
+          // 7-Tier Signatures on Page 1
+          const signHead = [['Prepared By', 'Verify By MEngg', 'Verify By Engg', 'Accountant', 'Audit', 'Finance', 'CEO / CCOO / Director']];
+          const signBody = [
+            [
+              `\n\n___________________\n${group.createdByName || 'Site Accountant'}`,
+              '\n\n___________________\nMaintenance Engineer',
+              '\n\n___________________\nProject Engineer',
+              '\n\n___________________\nAccounts Dept',
+              '\n\n___________________\nInternal Audit',
+              '\n\n___________________\nFinance Manager',
+              `\n\n___________________\n${group.completedByName || 'Executive Approval'}`
+            ]
+          ];
 
-        const headerRow2: any[] = [];
-        for (const cat of expenseColumnsHierarchy) {
-          for (const child of cat.children) {
-            headerRow2.push({ content: child, styles: { halign: 'right', fontSize: 7.5 } });
-          }
-        }
-
-        const head2 = [headerRow1, headerRow2];
-
-        storewiseByBatch.forEach((batch, batchIndex) => {
-          if (batchIndex > 0) {
+          const finalTableY = (doc as any).lastAutoTable?.finalY || 100;
+          const targetBottomSigY = pageHeight - 28;
+          let sigStartY = targetBottomSigY;
+          if (finalTableY + 6 > targetBottomSigY) {
             doc.addPage();
-            doc.setFontSize(14);
-            doc.setFont('helvetica', 'bold');
-            doc.setTextColor(17, 24, 39);
-            doc.text('WEEKLY EXPENSE PAYOUT & SETTLEMENT REPORT', 14, 14);
-
-            doc.setFontSize(9);
-            doc.setFont('helvetica', 'normal');
-            doc.setTextColor(75, 85, 99);
-            doc.text(`Group: ${currentGroupName} (ID ${group.groupId})   |   Sub-Department Wise Detailed — ${batch.batchName}`, 14, 20);
-          } else {
-            // Update subtitle on first batch page to include the batch name
-            doc.setFillColor(255, 255, 255);
-            doc.rect(14, 16, 260, 6, 'F');
-            doc.setFontSize(9);
-            doc.setFont('helvetica', 'normal');
-            doc.setTextColor(75, 85, 99);
-            doc.text(`Group: ${currentGroupName} (ID ${group.groupId})   |   Sub-Department Wise Detailed — ${batch.batchName}`, 14, 20);
-          }
-
-          const isLastBatch = batchIndex === storewiseByBatch.length - 1;
-          const batchBody: any[] = [];
-
-          if (groupByLocation) {
-            batchBody.push([
-              {
-                content: `🔹 LEDGER BATCH: ${batch.batchName} — ${batch.rows.length} Tickets | Subtotal: KD ${batch.batchTotal.toFixed(3)}`,
-                colSpan: 5 + allChildExpenseColumns.length + 1,
-                styles: { fillColor: [224, 231, 255], fontStyle: 'bold', textColor: [30, 58, 138] }
-              }
-            ]);
-
-            let sl = 1;
-            for (const locRow of batch.locationRows) {
-              const rowData: any[] = [
-                sl++,
-                locRow.ticketLinesText || locRow.expNoStr,
-                locRow.location,
-                locRow.subDeptStr || '-',
-                locRow.summary
-              ];
-              for (const c of allChildExpenseColumns) {
-                const val = locRow.amountsByType[c] || 0;
-                rowData.push(val > 0 ? val.toFixed(3) : '-');
-              }
-              rowData.push(`KD ${locRow.total.toFixed(3)}`);
-              batchBody.push(rowData);
-            }
-
-            const subtotalRow: any[] = [
-              { content: `Batch Subtotal (${batch.batchName}):`, colSpan: 5, styles: { halign: 'right', fontStyle: 'bold', fillColor: [243, 244, 246] } }
-            ];
-            for (const c of allChildExpenseColumns) {
-              const sum = batch.subtotalByType[c] || 0;
-              subtotalRow.push({ content: sum > 0 ? sum.toFixed(3) : '-', styles: { halign: 'right', fontStyle: 'bold', fillColor: [243, 244, 246] } });
-            }
-            subtotalRow.push({ content: `KD ${batch.batchTotal.toFixed(3)}`, styles: { halign: 'right', fontStyle: 'bold', fillColor: [209, 250, 229], textColor: [6, 95, 70] } });
-            batchBody.push(subtotalRow);
-
-            if (isLastBatch) {
-              const grandTotalRow: any[] = [
-                { content: `GRAND TOTAL (ALL LEDGER BATCHES):`, colSpan: 5, styles: { halign: 'right', fontStyle: 'bold', fillColor: [229, 231, 235] } }
-              ];
-              for (const c of allChildExpenseColumns) {
-                const sum = userwiseGrandTotals.colTotals[c] || 0;
-                grandTotalRow.push({ content: sum.toFixed(3), styles: { halign: 'right', fontStyle: 'bold', fillColor: [229, 231, 235] } });
-              }
-              grandTotalRow.push({ content: `KD ${userwiseGrandTotals.grandTotal.toFixed(3)}`, styles: { halign: 'right', fontStyle: 'bold', fillColor: [167, 243, 208], textColor: [6, 78, 59] } });
-              batchBody.push(grandTotalRow);
-            }
-          } else {
-            batchBody.push([
-              {
-                content: `🔹 LEDGER BATCH: ${batch.batchName} — ${batch.rows.length} Tickets | Subtotal: KD ${batch.batchTotal.toFixed(3)}`,
-                colSpan: 7 + allChildExpenseColumns.length + 1,
-                styles: { fillColor: [224, 231, 255], fontStyle: 'bold', textColor: [30, 58, 138] }
-              }
-            ]);
-
-            let sl = 1;
-            for (const row of batch.rows) {
-              const rowData: any[] = [
-                sl++,
-                `${row.bundleId}`,
-                row.expNo,
-                row.location,
-                row.subDepartment,
-                row.issueTitle,
-                row.ledgerGroup
-              ];
-              for (const c of allChildExpenseColumns) {
-                const val = row.amountsByType[c] || 0;
-                rowData.push(val > 0 ? val.toFixed(3) : '-');
-              }
-              rowData.push(`KD ${row.total.toFixed(3)}`);
-              batchBody.push(rowData);
-            }
-
-            const subtotalRow: any[] = [
-              { content: `Batch Subtotal (${batch.batchName}):`, colSpan: 7, styles: { halign: 'right', fontStyle: 'bold', fillColor: [243, 244, 246] } }
-            ];
-            for (const c of allChildExpenseColumns) {
-              const sum = batch.subtotalByType[c] || 0;
-              subtotalRow.push({ content: sum > 0 ? sum.toFixed(3) : '-', styles: { halign: 'right', fontStyle: 'bold', fillColor: [243, 244, 246] } });
-            }
-            subtotalRow.push({ content: `KD ${batch.batchTotal.toFixed(3)}`, styles: { halign: 'right', fontStyle: 'bold', fillColor: [209, 250, 229], textColor: [6, 95, 70] } });
-            batchBody.push(subtotalRow);
-
-            if (isLastBatch) {
-              const grandTotalRow: any[] = [
-                { content: 'GRAND TOTAL (ALL LEDGER BATCHES):', colSpan: 7, styles: { halign: 'right', fontStyle: 'bold', fillColor: [229, 231, 235] } }
-              ];
-              for (const c of allChildExpenseColumns) {
-                const sum = userwiseGrandTotals.colTotals[c] || 0;
-                grandTotalRow.push({ content: sum.toFixed(3), styles: { halign: 'right', fontStyle: 'bold', fillColor: [229, 231, 235] } });
-              }
-              grandTotalRow.push({ content: `KD ${userwiseGrandTotals.grandTotal.toFixed(3)}`, styles: { halign: 'right', fontStyle: 'bold', fillColor: [167, 243, 208], textColor: [6, 78, 59] } });
-              batchBody.push(grandTotalRow);
-            }
+            sigStartY = targetBottomSigY;
           }
 
           autoTable(doc, {
-            startY: 28,
-            head: head2,
-            body: batchBody,
-            theme: 'grid',
-            headStyles: { fillColor: [31, 41, 55], textColor: [255, 255, 255], fontStyle: 'bold', fontSize: isVerticalOrientation ? 6.5 : 7.5 },
-            bodyStyles: { fontSize: isVerticalOrientation ? 6 : 7, cellPadding: isVerticalOrientation ? 1 : 1.5 },
-            margin: { left: isVerticalOrientation ? 6 : 10, right: isVerticalOrientation ? 6 : 10 }
+            startY: sigStartY,
+            head: signHead,
+            body: signBody,
+            theme: 'plain',
+            headStyles: { fontStyle: 'bold', fontSize: 7, halign: 'center', textColor: [17, 24, 39], fillColor: [243, 244, 246] },
+            bodyStyles: { fontSize: 6.5, halign: 'center', textColor: [75, 85, 99], cellPadding: 1 },
+            margin: { left: 14, right: 14, bottom: 6 },
+            pageBreak: 'avoid'
           });
-        });
+
+          // --- PAGE 2+: STORE TYPE DETAILED STATEMENTS ---
+          doc.addPage();
+          doc.setFontSize(14);
+          doc.setFont('helvetica', 'bold');
+          doc.setTextColor(17, 24, 39);
+          doc.text('WEEKLY EXPENSE PAYOUT & SETTLEMENT REPORT', 14, 14);
+
+          doc.setFontSize(9);
+          doc.setFont('helvetica', 'normal');
+          doc.setTextColor(75, 85, 99);
+          doc.text(`Group: ${currentGroupName} (ID ${group.groupId})   |   Store Type Expense Statement`, 14, 20);
+
+          const headerRow1: any[] = groupByLocation ? [
+            { content: 'SL', rowSpan: 2, styles: { halign: 'center', valign: 'middle' } },
+            { content: 'TICKET -NO', rowSpan: 2, styles: { valign: 'middle' } },
+            { content: 'LOCATION', rowSpan: 2, styles: { valign: 'middle' } },
+            { content: 'SUB DEPT', rowSpan: 2, styles: { valign: 'middle' } },
+            { content: 'SUMMARY', rowSpan: 2, styles: { valign: 'middle' } }
+          ] : [
+            { content: 'SL', rowSpan: 2, styles: { halign: 'center', valign: 'middle' } },
+            { content: 'BUNDLE', rowSpan: 2, styles: { halign: 'center', valign: 'middle' } },
+            { content: 'TICKET -NO', rowSpan: 2, styles: { valign: 'middle' } },
+            { content: 'LOCATION', rowSpan: 2, styles: { valign: 'middle' } },
+            { content: 'SUB DEPT', rowSpan: 2, styles: { valign: 'middle' } },
+            { content: 'ISSUE TITLE', rowSpan: 2, styles: { valign: 'middle' } },
+            { content: 'BATCH', rowSpan: 2, styles: { valign: 'middle' } }
+          ];
+
+          for (const cat of expenseColumnsHierarchy) {
+            headerRow1.push({
+              content: cat.parentName,
+              colSpan: cat.children.length,
+              styles: { halign: 'center', fillColor: [229, 231, 235], textColor: [17, 24, 39], fontStyle: 'bold' }
+            });
+          }
+          headerRow1.push({ content: 'TOTAL', rowSpan: 2, styles: { halign: 'right', valign: 'middle', fillColor: [209, 250, 229], textColor: [6, 95, 70] } });
+
+          const headerRow2: any[] = [];
+          for (const cat of expenseColumnsHierarchy) {
+            for (const child of cat.children) {
+              headerRow2.push({ content: child, styles: { halign: 'right', fontSize: 7.5 } });
+            }
+          }
+          const head2 = [headerRow1, headerRow2];
+
+          storewiseByStoreType.forEach((typeGroup, typeIndex) => {
+            if (typeIndex > 0) {
+              doc.addPage();
+              doc.setFontSize(14);
+              doc.setFont('helvetica', 'bold');
+              doc.setTextColor(17, 24, 39);
+              doc.text('WEEKLY EXPENSE PAYOUT & SETTLEMENT REPORT', 14, 14);
+
+              doc.setFontSize(9);
+              doc.setFont('helvetica', 'normal');
+              doc.setTextColor(75, 85, 99);
+              doc.text(`Group: ${currentGroupName} (ID ${group.groupId})   |   Store Type Detailed — ${typeGroup.typeName}`, 14, 20);
+            } else {
+              doc.setFillColor(255, 255, 255);
+              doc.rect(14, 16, 260, 6, 'F');
+              doc.setFontSize(9);
+              doc.setFont('helvetica', 'normal');
+              doc.setTextColor(75, 85, 99);
+              doc.text(`Group: ${currentGroupName} (ID ${group.groupId})   |   Store Type Detailed — ${typeGroup.typeName}`, 14, 20);
+            }
+
+            const isLastType = typeIndex === storewiseByStoreType.length - 1;
+            const typeBody: any[] = [];
+
+            if (groupByLocation) {
+              typeBody.push([
+                {
+                  content: `🔹 STORE TYPE: ${typeGroup.typeName} — ${typeGroup.rows.length} Tickets | Subtotal: KD ${typeGroup.typeTotal.toFixed(3)}`,
+                  colSpan: 5 + allChildExpenseColumns.length + 1,
+                  styles: { fillColor: [224, 231, 255], fontStyle: 'bold', textColor: [30, 58, 138] }
+                }
+              ]);
+
+              let sl = 1;
+              for (const locRow of typeGroup.locationRows) {
+                const rowData: any[] = [
+                  sl++,
+                  locRow.ticketLinesText || locRow.expNoStr,
+                  locRow.location,
+                  locRow.subDeptStr || '-',
+                  locRow.summary
+                ];
+                for (const c of allChildExpenseColumns) {
+                  const val = locRow.amountsByType[c] || 0;
+                  rowData.push(val > 0 ? val.toFixed(3) : '-');
+                }
+                rowData.push(`KD ${locRow.total.toFixed(3)}`);
+                typeBody.push(rowData);
+              }
+
+              const subtotalRow: any[] = [
+                { content: `Store Type Subtotal (${typeGroup.typeName}):`, colSpan: 5, styles: { halign: 'right', fontStyle: 'bold', fillColor: [243, 244, 246] } }
+              ];
+              for (const c of allChildExpenseColumns) {
+                const sum = typeGroup.subtotalByType[c] || 0;
+                subtotalRow.push({ content: sum > 0 ? sum.toFixed(3) : '-', styles: { halign: 'right', fontStyle: 'bold', fillColor: [243, 244, 246] } });
+              }
+              subtotalRow.push({ content: `KD ${typeGroup.typeTotal.toFixed(3)}`, styles: { halign: 'right', fontStyle: 'bold', fillColor: [209, 250, 229], textColor: [6, 95, 70] } });
+              typeBody.push(subtotalRow);
+
+              if (isLastType) {
+                const grandTotalRow: any[] = [
+                  { content: 'GRAND TOTAL (ALL STORE TYPES):', colSpan: 5, styles: { halign: 'right', fontStyle: 'bold', fillColor: [229, 231, 235] } }
+                ];
+                for (const c of allChildExpenseColumns) {
+                  const sum = userwiseGrandTotals.colTotals[c] || 0;
+                  grandTotalRow.push({ content: sum.toFixed(3), styles: { halign: 'right', fontStyle: 'bold', fillColor: [229, 231, 235] } });
+                }
+                grandTotalRow.push({ content: `KD ${userwiseGrandTotals.grandTotal.toFixed(3)}`, styles: { halign: 'right', fontStyle: 'bold', fillColor: [167, 243, 208], textColor: [6, 78, 59] } });
+                typeBody.push(grandTotalRow);
+              }
+            } else {
+              typeBody.push([
+                {
+                  content: `🔹 STORE TYPE: ${typeGroup.typeName} — ${typeGroup.rows.length} Tickets | Subtotal: KD ${typeGroup.typeTotal.toFixed(3)}`,
+                  colSpan: 7 + allChildExpenseColumns.length + 1,
+                  styles: { fillColor: [224, 231, 255], fontStyle: 'bold', textColor: [30, 58, 138] }
+                }
+              ]);
+
+              let sl = 1;
+              for (const row of typeGroup.rows) {
+                const rowTicketDisplay = row.expenseIds?.[0] && String(row.expNo) !== `EXP-${row.expenseIds[0]}`
+                  ? `${row.expNo} (EXP-${row.expenseIds[0]})`
+                  : row.expNo;
+                const rowData: any[] = [
+                  sl++,
+                  `${row.bundleId}`,
+                  rowTicketDisplay,
+                  row.location,
+                  row.subDepartment,
+                  row.issueTitle,
+                  row.ledgerBatch
+                ];
+                for (const c of allChildExpenseColumns) {
+                  const val = row.amountsByType[c] || 0;
+                  rowData.push(val > 0 ? val.toFixed(3) : '-');
+                }
+                rowData.push(`KD ${row.total.toFixed(3)}`);
+                typeBody.push(rowData);
+              }
+
+              const subtotalRow: any[] = [
+                { content: `Store Type Subtotal (${typeGroup.typeName}):`, colSpan: 7, styles: { halign: 'right', fontStyle: 'bold', fillColor: [243, 244, 246] } }
+              ];
+              for (const c of allChildExpenseColumns) {
+                const sum = typeGroup.subtotalByType[c] || 0;
+                subtotalRow.push({ content: sum > 0 ? sum.toFixed(3) : '-', styles: { halign: 'right', fontStyle: 'bold', fillColor: [243, 244, 246] } });
+              }
+              subtotalRow.push({ content: `KD ${typeGroup.typeTotal.toFixed(3)}`, styles: { halign: 'right', fontStyle: 'bold', fillColor: [209, 250, 229], textColor: [6, 95, 70] } });
+              typeBody.push(subtotalRow);
+
+              if (isLastType) {
+                const grandTotalRow: any[] = [
+                  { content: 'GRAND TOTAL (ALL STORE TYPES):', colSpan: 7, styles: { halign: 'right', fontStyle: 'bold', fillColor: [229, 231, 235] } }
+                ];
+                for (const c of allChildExpenseColumns) {
+                  const sum = userwiseGrandTotals.colTotals[c] || 0;
+                  grandTotalRow.push({ content: sum.toFixed(3), styles: { halign: 'right', fontStyle: 'bold', fillColor: [229, 231, 235] } });
+                }
+                grandTotalRow.push({ content: `KD ${userwiseGrandTotals.grandTotal.toFixed(3)}`, styles: { halign: 'right', fontStyle: 'bold', fillColor: [167, 243, 208], textColor: [6, 78, 59] } });
+                typeBody.push(grandTotalRow);
+              }
+            }
+
+            autoTable(doc, {
+              startY: 28,
+              head: head2,
+              body: typeBody,
+              theme: 'grid',
+              headStyles: { fillColor: [31, 41, 55], textColor: [255, 255, 255], fontStyle: 'bold', fontSize: isVerticalOrientation ? 6.5 : 7.5 },
+              bodyStyles: { fontSize: isVerticalOrientation ? 6 : 7, cellPadding: isVerticalOrientation ? 1 : 1.5 },
+              margin: { left: isVerticalOrientation ? 6 : 10, right: isVerticalOrientation ? 6 : 10 }
+            });
+          });
+        } else {
+          // --- PAGE 1: CONSOLIDATED FINANCIAL SETTLEMENT REPORT ---
+          const head1 = [['SL', 'Section (Ledger Batch)', 'Labour Charge', 'Expense', 'Total']];
+          const body1: any[] = [];
+          let cSl = 1;
+          for (const item of consolidatedBatchData.list) {
+            body1.push([
+              cSl++,
+              item.section,
+              item.labourCharge > 0 ? `KD ${item.labourCharge.toFixed(3)}` : '-',
+              `KD ${item.expense.toFixed(3)}`,
+              `KD ${item.total.toFixed(3)}`
+            ]);
+
+            if (showWorkerDetailsInSummary && item.workerList && item.workerList.length > 0) {
+              for (const w of item.workerList) {
+                body1.push([
+                  '•',
+                  `   ${w.workerName}${w.workerEmployeeNo ? ` (${w.workerEmployeeNo})` : ''}`,
+                  w.labourCharge > 0 ? `KD ${w.labourCharge.toFixed(3)}` : '-',
+                  w.expense > 0 ? `KD ${w.expense.toFixed(3)}` : '-',
+                  `KD ${w.total.toFixed(3)}`
+                ]);
+              }
+            }
+          }
+          body1.push([
+            { content: 'GRAND TOTAL', colSpan: 2, styles: { fontStyle: 'bold', fillColor: [229, 231, 235] } },
+            { content: consolidatedBatchData.grandLabour > 0 ? `KD ${consolidatedBatchData.grandLabour.toFixed(3)}` : '-', styles: { fontStyle: 'bold', fillColor: [229, 231, 235] } },
+            { content: `KD ${consolidatedBatchData.grandExpense.toFixed(3)}`, styles: { fontStyle: 'bold', fillColor: [229, 231, 235] } },
+            { content: `KD ${consolidatedBatchData.grandTotal.toFixed(3)}`, styles: { fontStyle: 'bold', fillColor: [167, 243, 208], textColor: [6, 78, 59] } }
+          ]);
+
+          autoTable(doc, {
+            startY: 38,
+            head: head1,
+            body: body1,
+            theme: 'grid',
+            headStyles: { fillColor: [31, 41, 55], textColor: [255, 255, 255], fontStyle: 'bold', fontSize: 9 },
+            bodyStyles: { fontSize: 8.5 },
+            columnStyles: {
+              0: { cellWidth: 15, halign: 'center' },
+              1: { cellWidth: 95, fontStyle: 'bold' },
+              2: { cellWidth: 45, halign: 'right' },
+              3: { cellWidth: 45, halign: 'right' },
+              4: { cellWidth: 48, halign: 'right', fontStyle: 'bold' }
+            },
+            margin: { left: 14, right: 14 }
+          });
+
+          // 7-Tier Signatures on Page 1
+          const signHead = [['Prepared By', 'Verify By MEngg', 'Verify By Engg', 'Accountant', 'Audit', 'Finance', 'CEO / CCOO / Director']];
+          const signBody = [
+            [
+              `\n\n___________________\n${group.createdByName || 'Site Accountant'}`,
+              '\n\n___________________\nMaintenance Engineer',
+              '\n\n___________________\nProject Engineer',
+              '\n\n___________________\nAccounts Dept',
+              '\n\n___________________\nInternal Audit',
+              '\n\n___________________\nFinance Manager',
+              `\n\n___________________\n${group.completedByName || 'Executive Approval'}`
+            ]
+          ];
+
+          const finalTableY = (doc as any).lastAutoTable?.finalY || 100;
+          const targetBottomSigY = pageHeight - 28;
+          let sigStartY = targetBottomSigY;
+          if (finalTableY + 6 > targetBottomSigY) {
+            doc.addPage();
+            sigStartY = targetBottomSigY;
+          }
+
+          autoTable(doc, {
+            startY: sigStartY,
+            head: signHead,
+            body: signBody,
+            theme: 'plain',
+            headStyles: { fontStyle: 'bold', fontSize: 7, halign: 'center', textColor: [17, 24, 39], fillColor: [243, 244, 246] },
+            bodyStyles: { fontSize: 6.5, halign: 'center', textColor: [75, 85, 99], cellPadding: 1 },
+            margin: { left: 14, right: 14, bottom: 6 },
+            pageBreak: 'avoid'
+          });
+
+          // --- PAGE 2: STORE & DEPARTMENT EXPENSE STATEMENT BY LEDGER BATCHES ---
+          doc.addPage();
+          doc.setFontSize(14);
+          doc.setFont('helvetica', 'bold');
+          doc.setTextColor(17, 24, 39);
+          doc.text('WEEKLY EXPENSE PAYOUT & SETTLEMENT REPORT', 14, 14);
+
+          doc.setFontSize(9);
+          doc.setFont('helvetica', 'normal');
+          doc.setTextColor(75, 85, 99);
+          doc.text(`Group: ${currentGroupName} (ID ${group.groupId})   |   ${groupByLocation ? `Store & Department Expense Statement by Location (${userwiseGrandTotals.uniqueLocationsCount} Locations)` : 'Store & Department Expense Statement by Ledger Batches'}`, 14, 20);
+
+          const headerRow1: any[] = groupByLocation ? [
+            { content: 'SL', rowSpan: 2, styles: { halign: 'center', valign: 'middle' } },
+            { content: 'TICKET -NO', rowSpan: 2, styles: { valign: 'middle' } },
+            { content: 'LOCATION', rowSpan: 2, styles: { valign: 'middle' } },
+            { content: 'SUB DEPT', rowSpan: 2, styles: { valign: 'middle' } },
+            { content: 'SUMMARY', rowSpan: 2, styles: { valign: 'middle' } }
+          ] : [
+            { content: 'SL', rowSpan: 2, styles: { halign: 'center', valign: 'middle' } },
+            { content: 'BUNDLE', rowSpan: 2, styles: { halign: 'center', valign: 'middle' } },
+            { content: 'TICKET -NO', rowSpan: 2, styles: { valign: 'middle' } },
+            { content: 'LOCATION', rowSpan: 2, styles: { valign: 'middle' } },
+            { content: 'SUB DEPT', rowSpan: 2, styles: { valign: 'middle' } },
+            { content: 'ISSUE TITLE', rowSpan: 2, styles: { valign: 'middle' } },
+            { content: 'BATCH', rowSpan: 2, styles: { valign: 'middle' } }
+          ];
+
+          for (const cat of expenseColumnsHierarchy) {
+            headerRow1.push({
+              content: cat.parentName,
+              colSpan: cat.children.length,
+              styles: { halign: 'center', fillColor: [229, 231, 235], textColor: [17, 24, 39], fontStyle: 'bold' }
+            });
+          }
+
+          headerRow1.push({ content: 'TOTAL', rowSpan: 2, styles: { halign: 'right', valign: 'middle', fillColor: [209, 250, 229], textColor: [6, 95, 70] } });
+
+          const headerRow2: any[] = [];
+          for (const cat of expenseColumnsHierarchy) {
+            for (const child of cat.children) {
+              headerRow2.push({ content: child, styles: { halign: 'right', fontSize: 7.5 } });
+            }
+          }
+
+          const head2 = [headerRow1, headerRow2];
+
+          storewiseByBatch.forEach((batch, batchIndex) => {
+            if (batchIndex > 0) {
+              doc.addPage();
+              doc.setFontSize(14);
+              doc.setFont('helvetica', 'bold');
+              doc.setTextColor(17, 24, 39);
+              doc.text('WEEKLY EXPENSE PAYOUT & SETTLEMENT REPORT', 14, 14);
+
+              doc.setFontSize(9);
+              doc.setFont('helvetica', 'normal');
+              doc.setTextColor(75, 85, 99);
+              doc.text(`Group: ${currentGroupName} (ID ${group.groupId})   |   Sub-Department Wise Detailed — ${batch.batchName}`, 14, 20);
+            } else {
+              // Update subtitle on first batch page to include the batch name
+              doc.setFillColor(255, 255, 255);
+              doc.rect(14, 16, 260, 6, 'F');
+              doc.setFontSize(9);
+              doc.setFont('helvetica', 'normal');
+              doc.setTextColor(75, 85, 99);
+              doc.text(`Group: ${currentGroupName} (ID ${group.groupId})   |   Sub-Department Wise Detailed — ${batch.batchName}`, 14, 20);
+            }
+
+            const isLastBatch = batchIndex === storewiseByBatch.length - 1;
+            const batchBody: any[] = [];
+
+            if (groupByLocation) {
+              batchBody.push([
+                {
+                  content: `🔹 LEDGER BATCH: ${batch.batchName} — ${batch.rows.length} Tickets | Subtotal: KD ${batch.batchTotal.toFixed(3)}`,
+                  colSpan: 5 + allChildExpenseColumns.length + 1,
+                  styles: { fillColor: [224, 231, 255], fontStyle: 'bold', textColor: [30, 58, 138] }
+                }
+              ]);
+
+              let sl = 1;
+              for (const locRow of batch.locationRows) {
+                const rowData: any[] = [
+                  sl++,
+                  locRow.ticketLinesText || locRow.expNoStr,
+                  locRow.location,
+                  locRow.subDeptStr || '-',
+                  locRow.summary
+                ];
+                for (const c of allChildExpenseColumns) {
+                  const val = locRow.amountsByType[c] || 0;
+                  rowData.push(val > 0 ? val.toFixed(3) : '-');
+                }
+                rowData.push(`KD ${locRow.total.toFixed(3)}`);
+                batchBody.push(rowData);
+              }
+
+              const subtotalRow: any[] = [
+                { content: `Batch Subtotal (${batch.batchName}):`, colSpan: 5, styles: { halign: 'right', fontStyle: 'bold', fillColor: [243, 244, 246] } }
+              ];
+              for (const c of allChildExpenseColumns) {
+                const sum = batch.subtotalByType[c] || 0;
+                subtotalRow.push({ content: sum > 0 ? sum.toFixed(3) : '-', styles: { halign: 'right', fontStyle: 'bold', fillColor: [243, 244, 246] } });
+              }
+              subtotalRow.push({ content: `KD ${batch.batchTotal.toFixed(3)}`, styles: { halign: 'right', fontStyle: 'bold', fillColor: [209, 250, 229], textColor: [6, 95, 70] } });
+              batchBody.push(subtotalRow);
+
+              if (isLastBatch) {
+                const grandTotalRow: any[] = [
+                  { content: `GRAND TOTAL (ALL LEDGER BATCHES):`, colSpan: 5, styles: { halign: 'right', fontStyle: 'bold', fillColor: [229, 231, 235] } }
+                ];
+                for (const c of allChildExpenseColumns) {
+                  const sum = userwiseGrandTotals.colTotals[c] || 0;
+                  grandTotalRow.push({ content: sum.toFixed(3), styles: { halign: 'right', fontStyle: 'bold', fillColor: [229, 231, 235] } });
+                }
+                grandTotalRow.push({ content: `KD ${userwiseGrandTotals.grandTotal.toFixed(3)}`, styles: { halign: 'right', fontStyle: 'bold', fillColor: [167, 243, 208], textColor: [6, 78, 59] } });
+                batchBody.push(grandTotalRow);
+              }
+            } else {
+              batchBody.push([
+                {
+                  content: `🔹 LEDGER BATCH: ${batch.batchName} — ${batch.rows.length} Tickets | Subtotal: KD ${batch.batchTotal.toFixed(3)}`,
+                  colSpan: 7 + allChildExpenseColumns.length + 1,
+                  styles: { fillColor: [224, 231, 255], fontStyle: 'bold', textColor: [30, 58, 138] }
+                }
+              ]);
+
+              let sl = 1;
+              for (const row of batch.rows) {
+                const rowData: any[] = [
+                  sl++,
+                  `${row.bundleId}`,
+                  row.expNo,
+                  row.location,
+                  row.subDepartment,
+                  row.issueTitle,
+                  row.ledgerGroup
+                ];
+                for (const c of allChildExpenseColumns) {
+                  const val = row.amountsByType[c] || 0;
+                  rowData.push(val > 0 ? val.toFixed(3) : '-');
+                }
+                rowData.push(`KD ${row.total.toFixed(3)}`);
+                batchBody.push(rowData);
+              }
+
+              const subtotalRow: any[] = [
+                { content: `Batch Subtotal (${batch.batchName}):`, colSpan: 7, styles: { halign: 'right', fontStyle: 'bold', fillColor: [243, 244, 246] } }
+              ];
+              for (const c of allChildExpenseColumns) {
+                const sum = batch.subtotalByType[c] || 0;
+                subtotalRow.push({ content: sum > 0 ? sum.toFixed(3) : '-', styles: { halign: 'right', fontStyle: 'bold', fillColor: [243, 244, 246] } });
+              }
+              subtotalRow.push({ content: `KD ${batch.batchTotal.toFixed(3)}`, styles: { halign: 'right', fontStyle: 'bold', fillColor: [209, 250, 229], textColor: [6, 95, 70] } });
+              batchBody.push(subtotalRow);
+
+              if (isLastBatch) {
+                const grandTotalRow: any[] = [
+                  { content: 'GRAND TOTAL (ALL LEDGER BATCHES):', colSpan: 7, styles: { halign: 'right', fontStyle: 'bold', fillColor: [229, 231, 235] } }
+                ];
+                for (const c of allChildExpenseColumns) {
+                  const sum = userwiseGrandTotals.colTotals[c] || 0;
+                  grandTotalRow.push({ content: sum.toFixed(3), styles: { halign: 'right', fontStyle: 'bold', fillColor: [229, 231, 235] } });
+                }
+                grandTotalRow.push({ content: `KD ${userwiseGrandTotals.grandTotal.toFixed(3)}`, styles: { halign: 'right', fontStyle: 'bold', fillColor: [167, 243, 208], textColor: [6, 78, 59] } });
+                batchBody.push(grandTotalRow);
+              }
+            }
+
+            autoTable(doc, {
+              startY: 28,
+              head: head2,
+              body: batchBody,
+              theme: 'grid',
+              headStyles: { fillColor: [31, 41, 55], textColor: [255, 255, 255], fontStyle: 'bold', fontSize: isVerticalOrientation ? 6.5 : 7.5 },
+              bodyStyles: { fontSize: isVerticalOrientation ? 6 : 7, cellPadding: isVerticalOrientation ? 1 : 1.5 },
+              margin: { left: isVerticalOrientation ? 6 : 10, right: isVerticalOrientation ? 6 : 10 }
+            });
+          });
+        }
       } else {
         const includeSummary = showWorkerSummary || (!showWorkerSummary && !showWorkerDetailed);
         const includeDetailed = showWorkerDetailed;
@@ -2315,48 +2999,88 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
       // ==========================================
       // SHEET 1: Consolidated Financial Settlement Report (First Sheet)
       // ==========================================
-      const s5Data: any[][] = [
-        ['', 'Consolidated Financial Settlement Report'],
-        ['Section', 'Labour Charge', 'Expense', 'Total']
-      ];
+      let s5Data: any[][];
+      let s5SheetName = 'Consolidated Settlement';
+      let s5Cols: any[] = [{ wch: 32 }, { wch: 18 }, { wch: 18 }, { wch: 18 }];
+      let s5Merges: XLSX.Range[] = [{ s: { r: 0, c: 1 }, e: { r: 0, c: 3 } }];
 
-      for (const item of consolidatedBatchData.list) {
+      if (storeReportGrouping === 'store_type') {
+        s5SheetName = 'Store Type Summary';
+        s5Cols = [{ wch: 8 }, { wch: 28 }, { wch: 14 }, { wch: 18 }, { wch: 18 }, { wch: 18 }];
+        s5Merges = [{ s: { r: 0, c: 1 }, e: { r: 0, c: 5 } }];
+        s5Data = [
+          ['', 'Store Type Expense Summary Report'],
+          ['SL', 'Store Type', 'Stores Count', 'Labour Charge (KD)', 'Expense (KD)', 'Total Amount (KD)']
+        ];
+
+        consolidatedStoreTypeData.list.forEach((item, idx) => {
+          s5Data.push([
+            idx + 1,
+            item.storeTypeLabel,
+            item.storesCount,
+            Number(item.labourCharge.toFixed(3)),
+            Number(item.expense.toFixed(3)),
+            Number(item.total.toFixed(3))
+          ]);
+        });
+
         s5Data.push([
-          item.section,
-          Number(item.labourCharge.toFixed(3)),
-          Number(item.expense.toFixed(3)),
-          Number(item.total.toFixed(3))
+          'GRAND TOTAL',
+          '',
+          consolidatedStoreTypeData.totalStoresCount,
+          Number(consolidatedStoreTypeData.grandLabour.toFixed(3)),
+          Number(consolidatedStoreTypeData.grandExpense.toFixed(3)),
+          Number(consolidatedStoreTypeData.grandTotal.toFixed(3))
         ]);
 
-        if (showWorkerDetailsInSummary && item.workerList && item.workerList.length > 0) {
-          for (const w of item.workerList) {
-            s5Data.push([
-              `    • ${w.workerName}${w.workerEmployeeNo ? ` (${w.workerEmployeeNo})` : ''}`,
-              Number(w.labourCharge.toFixed(3)),
-              Number(w.expense.toFixed(3)),
-              Number(w.total.toFixed(3))
-            ]);
+        s5Data.push([]);
+        s5Data.push(['SIGNATURES & APPROVALS:']);
+        s5Data.push(['Prepared By', 'Verify By MEngg', 'Verify By Engg', 'Accountant', 'Audit', 'Finance', 'CEO / CCOO / Director']);
+        s5Data.push([group.createdByName || 'Site Accountant', 'Maintenance Engineer', 'Project Engineer', 'Accounts Dept', 'Internal Audit', 'Finance Manager', group.completedByName || 'Executive Management']);
+      } else {
+        s5Data = [
+          ['', 'Consolidated Financial Settlement Report'],
+          ['Section', 'Labour Charge', 'Expense', 'Total']
+        ];
+
+        for (const item of consolidatedBatchData.list) {
+          s5Data.push([
+            item.section,
+            Number(item.labourCharge.toFixed(3)),
+            Number(item.expense.toFixed(3)),
+            Number(item.total.toFixed(3))
+          ]);
+
+          if (showWorkerDetailsInSummary && item.workerList && item.workerList.length > 0) {
+            for (const w of item.workerList) {
+              s5Data.push([
+                `    • ${w.workerName}${w.workerEmployeeNo ? ` (${w.workerEmployeeNo})` : ''}`,
+                Number(w.labourCharge.toFixed(3)),
+                Number(w.expense.toFixed(3)),
+                Number(w.total.toFixed(3))
+              ]);
+            }
           }
         }
+
+        s5Data.push([
+          'GRAND TOTAL',
+          Number(consolidatedBatchData.grandLabour.toFixed(3)),
+          Number(consolidatedBatchData.grandExpense.toFixed(3)),
+          Number(consolidatedBatchData.grandTotal.toFixed(3))
+        ]);
+
+        // Signatures row for Consolidated Sheet
+        s5Data.push([]);
+        s5Data.push(['SIGNATURES & APPROVALS:']);
+        s5Data.push(['Prepared By', 'Verify By MEngg', 'Verify By Engg', 'Accountant', 'Audit', 'Finance', 'CEO / CCOO / Director']);
+        s5Data.push([group.createdByName || 'Site Accountant', 'Maintenance Engineer', 'Project Engineer', 'Accounts Dept', 'Internal Audit', 'Finance Manager', group.completedByName || 'Executive Management']);
       }
 
-      s5Data.push([
-        'GRAND TOTAL',
-        Number(consolidatedBatchData.grandLabour.toFixed(3)),
-        Number(consolidatedBatchData.grandExpense.toFixed(3)),
-        Number(consolidatedBatchData.grandTotal.toFixed(3))
-      ]);
-
-      // Signatures row for Consolidated Sheet
-      s5Data.push([]);
-      s5Data.push(['SIGNATURES & APPROVALS:']);
-      s5Data.push(['Prepared By', 'Verify By MEngg', 'Verify By Engg', 'Accountant', 'Audit', 'Finance', 'CEO / CCOO / Director']);
-      s5Data.push([group.createdByName || 'Site Accountant', 'Maintenance Engineer', 'Project Engineer', 'Accounts Dept', 'Internal Audit', 'Finance Manager', group.completedByName || 'Executive Management']);
-
       const ws5 = XLSX.utils.aoa_to_sheet(s5Data);
-      ws5['!merges'] = [{ s: { r: 0, c: 1 }, e: { r: 0, c: 3 } }];
-      ws5['!cols'] = [{ wch: 32 }, { wch: 18 }, { wch: 18 }, { wch: 18 }];
-      XLSX.utils.book_append_sheet(wb, ws5, 'Consolidated Settlement');
+      ws5['!merges'] = s5Merges;
+      ws5['!cols'] = s5Cols;
+      XLSX.utils.book_append_sheet(wb, ws5, s5SheetName);
 
       // ==========================================
       // SHEET 2: Consolidated Technician Payout Summary
@@ -2598,155 +3322,305 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
       }
 
       // =========================================================
-      // SHEETS 2, 3, 4...: DYNAMIC LEDGER BATCHES (Store-wise)
-      // e.g. Civil, Carpentry & Painting, Electrical & Plumbing, etc.
+      // SHEETS 2, 3, 4...: DYNAMIC LEDGER BATCHES OR STORE TYPES (Store-wise)
       // =========================================================
-      const batchesToExport = dynamicLedgerBatches.length > 0 ? dynamicLedgerBatches : ['General Maintenance'];
+      if (storeReportGrouping === 'store_type') {
+        const typesToExport = dynamicStoreTypes.length > 0 ? dynamicStoreTypes : ['Other'];
 
-      batchesToExport.forEach((batchName) => {
-        const batchRows = structuredRows.filter(r => r.ledgerBatch === batchName);
-        const cleanSheetTitle = batchName.slice(0, 31).replace(/[:\\\/\?\*\[\]]/g, '_');
-        const sHeaderRow1: any[] = ['SLNO', 'BUNDLE ID', 'TICKET -NO', 'LOCATION', 'SUB DEPARTMENT', 'Issue Title(Consolidation)', 'Ledger Group'];
-        const sHeaderRow2: any[] = ['', '', '', '', '', '', ''];
-        const sMerges: XLSX.Range[] = [
-          { s: { r: 1, c: 3 }, e: { r: 1, c: 6 } },
-          { s: { r: 3, c: 0 }, e: { r: 4, c: 0 } },
-          { s: { r: 3, c: 1 }, e: { r: 4, c: 1 } },
-          { s: { r: 3, c: 2 }, e: { r: 4, c: 2 } },
-          { s: { r: 3, c: 3 }, e: { r: 4, c: 3 } },
-          { s: { r: 3, c: 4 }, e: { r: 4, c: 4 } },
-          { s: { r: 3, c: 5 }, e: { r: 4, c: 5 } },
-          { s: { r: 3, c: 6 }, e: { r: 4, c: 6 } },
-        ];
-
-        let sColIdx = 7;
-        for (const cat of expenseColumnsHierarchy) {
-          const startC = sColIdx;
-          const endC = sColIdx + cat.children.length - 1;
-          sHeaderRow1.push(cat.parentName);
-          for (let i = 1; i < cat.children.length; i++) {
-            sHeaderRow1.push('');
-          }
-          for (const child of cat.children) {
-            sHeaderRow2.push(child);
-          }
-          if (endC > startC) {
-            sMerges.push({ s: { r: 3, c: startC }, e: { r: 3, c: endC } });
-          }
-          sColIdx += cat.children.length;
-        }
-        sHeaderRow1.push('TOTAL');
-        sHeaderRow2.push('');
-        sMerges.push({ s: { r: 3, c: sColIdx }, e: { r: 4, c: sColIdx } });
-
-        const sData: any[][] = [
-          [],
-          ['', '', '', batchName],
-          [],
-          sHeaderRow1,
-          sHeaderRow2
-        ];
-
-        const batchColTotals: Record<string, number> = {};
-        let batchTotalAmt = 0;
-
-        batchRows.forEach((row, idx) => {
-          batchTotalAmt += row.total;
-          const rowData: any[] = [
-            idx + 1,
-            row.bundleId,
-            row.expNo,
-            row.location,
-            row.subDepartment,
-            row.issueTitle,
-            row.ledgerBatch
+        typesToExport.forEach((typeName) => {
+          const typeRows = structuredRows.filter(r => (r.storeTypeLabel || '').trim().toLowerCase() === typeName.trim().toLowerCase());
+          if (typeRows.length === 0) return;
+          const cleanSheetTitle = typeName.slice(0, 31).replace(/[:\\\/\?\*\[\]]/g, '_');
+          const sHeaderRow1: any[] = ['SLNO', 'BUNDLE ID', 'TICKET -NO', 'LOCATION', 'SUB DEPARTMENT', 'Issue Title(Consolidation)', 'Store Type'];
+          const sHeaderRow2: any[] = ['', '', '', '', '', '', ''];
+          const sMerges: XLSX.Range[] = [
+            { s: { r: 1, c: 3 }, e: { r: 1, c: 6 } },
+            { s: { r: 3, c: 0 }, e: { r: 4, c: 0 } },
+            { s: { r: 3, c: 1 }, e: { r: 4, c: 1 } },
+            { s: { r: 3, c: 2 }, e: { r: 4, c: 2 } },
+            { s: { r: 3, c: 3 }, e: { r: 4, c: 3 } },
+            { s: { r: 3, c: 4 }, e: { r: 4, c: 4 } },
+            { s: { r: 3, c: 5 }, e: { r: 4, c: 5 } },
+            { s: { r: 3, c: 6 }, e: { r: 4, c: 6 } },
           ];
-          for (const colName of allChildExpenseColumns) {
-            const amt = row.amountsByType[colName] || 0;
-            batchColTotals[colName] = (batchColTotals[colName] || 0) + amt;
-            rowData.push(amt > 0 ? Number(amt.toFixed(3)) : '-');
+
+          let sColIdx = 7;
+          for (const cat of expenseColumnsHierarchy) {
+            const startC = sColIdx;
+            const endC = sColIdx + cat.children.length - 1;
+            sHeaderRow1.push(cat.parentName);
+            for (let i = 1; i < cat.children.length; i++) {
+              sHeaderRow1.push('');
+            }
+            for (const child of cat.children) {
+              sHeaderRow2.push(child);
+            }
+            if (endC > startC) {
+              sMerges.push({ s: { r: 3, c: startC }, e: { r: 3, c: endC } });
+            }
+            sColIdx += cat.children.length;
           }
-          rowData.push(Number(row.total.toFixed(3)));
-          sData.push(rowData);
-        });
+          sHeaderRow1.push('TOTAL');
+          sHeaderRow2.push('');
+          sMerges.push({ s: { r: 3, c: sColIdx }, e: { r: 4, c: sColIdx } });
 
-        const totalRow: any[] = ['', '', '', 'Total', '', '', ''];
-        for (const colName of allChildExpenseColumns) {
-          const cAmt = batchColTotals[colName] || 0;
-          totalRow.push(cAmt > 0 ? Number(cAmt.toFixed(3)) : '-');
-        }
-        totalRow.push(Number(batchTotalAmt.toFixed(3)));
-        sData.push(totalRow);
+          const sData: any[][] = [
+            [],
+            ['', '', '', `STORE TYPE: ${typeName}`],
+            [],
+            sHeaderRow1,
+            sHeaderRow2
+          ];
 
-        const wsBatch = XLSX.utils.aoa_to_sheet(sData);
-        wsBatch['!merges'] = sMerges;
-        wsBatch['!cols'] = [
-          { wch: 8 }, { wch: 12 }, { wch: 12 }, { wch: 18 },
-          { wch: 18 }, { wch: 24 }, { wch: 22 },
-          ...allChildExpenseColumns.map(() => ({ wch: 14 })),
-          { wch: 14 }
-        ];
-        XLSX.utils.book_append_sheet(wb, wsBatch, cleanSheetTitle);
-      });
+          const typeColTotals: Record<string, number> = {};
+          let typeTotalAmt = 0;
 
-      if (groupByLocation) {
-        const locHeaders = ['SL', 'TICKET -NO', 'LOCATION', 'SUB DEPARTMENT', 'SUMMARY', ...allChildExpenseColumns, 'TOTAL'];
-        const locData: any[][] = [
-          [],
-          ['', '', 'Store & Department Expense Statement (Grouped by Location & Ledger Batches)'],
-          [],
-          locHeaders
-        ];
-
-        storewiseByBatch.forEach(batch => {
-          locData.push([
-            `LEDGER BATCH: ${batch.batchName} — ${batch.rows.length} Tickets | Subtotal: KD ${batch.batchTotal.toFixed(3)}`,
-            '', '', '', '',
-            ...allChildExpenseColumns.map(() => ''),
-            ''
-          ]);
-
-          batch.locationRows.forEach((loc, idx) => {
+          typeRows.forEach((row, idx) => {
+            typeTotalAmt += row.total;
             const rowData: any[] = [
               idx + 1,
-              loc.ticketLinesText || loc.expNoStr,
-              loc.location,
-              loc.subDeptStr || '-',
-              loc.summary
+              row.bundleId,
+              row.expNo,
+              row.location,
+              row.subDepartment,
+              row.issueTitle,
+              row.storeTypeLabel || row.storeType || '-'
             ];
-            for (const c of allChildExpenseColumns) {
-              const amt = loc.amountsByType[c] || 0;
+            for (const colName of allChildExpenseColumns) {
+              const amt = row.amountsByType[colName] || 0;
+              typeColTotals[colName] = (typeColTotals[colName] || 0) + amt;
               rowData.push(amt > 0 ? Number(amt.toFixed(3)) : '-');
             }
-            rowData.push(Number(loc.total.toFixed(3)));
-            locData.push(rowData);
+            rowData.push(Number(row.total.toFixed(3)));
+            sData.push(rowData);
           });
 
-          const subtotalRow: any[] = [`Batch Subtotal (${batch.batchName})`, '', '', '', ''];
-          for (const c of allChildExpenseColumns) {
-            const sAmt = batch.subtotalByType[c] || 0;
-            subtotalRow.push(sAmt > 0 ? Number(sAmt.toFixed(3)) : '-');
+          const totalRow: any[] = ['', '', '', 'Total', '', '', ''];
+          for (const colName of allChildExpenseColumns) {
+            const cAmt = typeColTotals[colName] || 0;
+            totalRow.push(cAmt > 0 ? Number(cAmt.toFixed(3)) : '-');
           }
-          subtotalRow.push(Number(batch.batchTotal.toFixed(3)));
-          locData.push(subtotalRow);
-          locData.push([]);
+          totalRow.push(Number(typeTotalAmt.toFixed(3)));
+          sData.push(totalRow);
+
+          const wsType = XLSX.utils.aoa_to_sheet(sData);
+          wsType['!merges'] = sMerges;
+          wsType['!cols'] = [
+            { wch: 8 }, { wch: 12 }, { wch: 12 }, { wch: 18 },
+            { wch: 18 }, { wch: 24 }, { wch: 22 },
+            ...allChildExpenseColumns.map(() => ({ wch: 14 })),
+            { wch: 14 }
+          ];
+          XLSX.utils.book_append_sheet(wb, wsType, cleanSheetTitle);
         });
 
-        const locTotalRow: any[] = [`GRAND TOTAL (${userwiseGrandTotals.uniqueLocationsCount} Locations)`, '', '', '', ''];
-        for (const c of allChildExpenseColumns) {
-          const cAmt = userwiseGrandTotals.colTotals[c] || 0;
-          locTotalRow.push(cAmt > 0 ? Number(cAmt.toFixed(3)) : '-');
-        }
-        locTotalRow.push(Number(userwiseGrandTotals.grandTotal.toFixed(3)));
-        locData.push(locTotalRow);
+        if (groupByLocation) {
+          const locHeaders = ['SL', 'TICKET -NO', 'LOCATION', 'SUB DEPARTMENT', 'SUMMARY', ...allChildExpenseColumns, 'TOTAL'];
+          const locData: any[][] = [
+            [],
+            ['', '', 'Store & Department Expense Statement (Grouped by Store Type)'],
+            [],
+            locHeaders
+          ];
 
-        const wsLoc = XLSX.utils.aoa_to_sheet(locData);
-        wsLoc['!cols'] = [
-          { wch: 8 }, { wch: 28 }, { wch: 22 }, { wch: 20 }, { wch: 30 },
-          ...allChildExpenseColumns.map(() => ({ wch: 14 })),
-          { wch: 14 }
-        ];
-        XLSX.utils.book_append_sheet(wb, wsLoc, 'Location Statement');
+          storewiseByStoreType.forEach(typeGroup => {
+            locData.push([
+              `STORE TYPE: ${typeGroup.typeName} — ${typeGroup.rows.length} Tickets | Subtotal: KD ${typeGroup.typeTotal.toFixed(3)}`,
+              '', '', '', '',
+              ...allChildExpenseColumns.map(() => ''),
+              ''
+            ]);
+
+            typeGroup.locationRows.forEach((loc, idx) => {
+              const rowData: any[] = [
+                idx + 1,
+                loc.ticketLinesText || loc.expNoStr,
+                loc.location,
+                loc.subDeptStr || '-',
+                loc.summary
+              ];
+              for (const c of allChildExpenseColumns) {
+                const amt = loc.amountsByType[c] || 0;
+                rowData.push(amt > 0 ? Number(amt.toFixed(3)) : '-');
+              }
+              rowData.push(Number(loc.total.toFixed(3)));
+              locData.push(rowData);
+            });
+
+            const subtotalRow: any[] = [`Type Subtotal (${typeGroup.typeName})`, '', '', '', ''];
+            for (const c of allChildExpenseColumns) {
+              const sAmt = typeGroup.subtotalByType[c] || 0;
+              subtotalRow.push(sAmt > 0 ? Number(sAmt.toFixed(3)) : '-');
+            }
+            subtotalRow.push(Number(typeGroup.typeTotal.toFixed(3)));
+            locData.push(subtotalRow);
+            locData.push([]);
+          });
+
+          const locTotalRow: any[] = [`GRAND TOTAL (${storewiseTypeTotals.uniqueLocationsCount} Locations)`, '', '', '', ''];
+          for (const c of allChildExpenseColumns) {
+            const cAmt = storewiseTypeTotals.colTotals[c] || 0;
+            locTotalRow.push(cAmt > 0 ? Number(cAmt.toFixed(3)) : '-');
+          }
+          locTotalRow.push(Number(storewiseTypeTotals.grandTotal.toFixed(3)));
+          locData.push(locTotalRow);
+
+          const wsLoc = XLSX.utils.aoa_to_sheet(locData);
+          wsLoc['!cols'] = [
+            { wch: 8 }, { wch: 28 }, { wch: 22 }, { wch: 20 }, { wch: 30 },
+            ...allChildExpenseColumns.map(() => ({ wch: 14 })),
+            { wch: 14 }
+          ];
+          XLSX.utils.book_append_sheet(wb, wsLoc, 'Store Type Statement');
+        }
+      } else {
+        const batchesToExport = dynamicLedgerBatches.length > 0 ? dynamicLedgerBatches : ['General Maintenance'];
+
+        batchesToExport.forEach((batchName) => {
+          const batchRows = structuredRows.filter(r => r.ledgerBatch === batchName);
+          const cleanSheetTitle = batchName.slice(0, 31).replace(/[:\\\/\?\*\[\]]/g, '_');
+          const sHeaderRow1: any[] = ['SLNO', 'BUNDLE ID', 'TICKET -NO', 'LOCATION', 'SUB DEPARTMENT', 'Issue Title(Consolidation)', 'Ledger Group'];
+          const sHeaderRow2: any[] = ['', '', '', '', '', '', ''];
+          const sMerges: XLSX.Range[] = [
+            { s: { r: 1, c: 3 }, e: { r: 1, c: 6 } },
+            { s: { r: 3, c: 0 }, e: { r: 4, c: 0 } },
+            { s: { r: 3, c: 1 }, e: { r: 4, c: 1 } },
+            { s: { r: 3, c: 2 }, e: { r: 4, c: 2 } },
+            { s: { r: 3, c: 3 }, e: { r: 4, c: 3 } },
+            { s: { r: 3, c: 4 }, e: { r: 4, c: 4 } },
+            { s: { r: 3, c: 5 }, e: { r: 4, c: 5 } },
+            { s: { r: 3, c: 6 }, e: { r: 4, c: 6 } },
+          ];
+
+          let sColIdx = 7;
+          for (const cat of expenseColumnsHierarchy) {
+            const startC = sColIdx;
+            const endC = sColIdx + cat.children.length - 1;
+            sHeaderRow1.push(cat.parentName);
+            for (let i = 1; i < cat.children.length; i++) {
+              sHeaderRow1.push('');
+            }
+            for (const child of cat.children) {
+              sHeaderRow2.push(child);
+            }
+            if (endC > startC) {
+              sMerges.push({ s: { r: 3, c: startC }, e: { r: 3, c: endC } });
+            }
+            sColIdx += cat.children.length;
+          }
+          sHeaderRow1.push('TOTAL');
+          sHeaderRow2.push('');
+          sMerges.push({ s: { r: 3, c: sColIdx }, e: { r: 4, c: sColIdx } });
+
+          const sData: any[][] = [
+            [],
+            ['', '', '', batchName],
+            [],
+            sHeaderRow1,
+            sHeaderRow2
+          ];
+
+          const batchColTotals: Record<string, number> = {};
+          let batchTotalAmt = 0;
+
+          batchRows.forEach((row, idx) => {
+            batchTotalAmt += row.total;
+            const rowData: any[] = [
+              idx + 1,
+              row.bundleId,
+              row.expNo,
+              row.location,
+              row.subDepartment,
+              row.issueTitle,
+              row.ledgerBatch
+            ];
+            for (const colName of allChildExpenseColumns) {
+              const amt = row.amountsByType[colName] || 0;
+              batchColTotals[colName] = (batchColTotals[colName] || 0) + amt;
+              rowData.push(amt > 0 ? Number(amt.toFixed(3)) : '-');
+            }
+            rowData.push(Number(row.total.toFixed(3)));
+            sData.push(rowData);
+          });
+
+          const totalRow: any[] = ['', '', '', 'Total', '', '', ''];
+          for (const colName of allChildExpenseColumns) {
+            const cAmt = batchColTotals[colName] || 0;
+            totalRow.push(cAmt > 0 ? Number(cAmt.toFixed(3)) : '-');
+          }
+          totalRow.push(Number(batchTotalAmt.toFixed(3)));
+          sData.push(totalRow);
+
+          const wsBatch = XLSX.utils.aoa_to_sheet(sData);
+          wsBatch['!merges'] = sMerges;
+          wsBatch['!cols'] = [
+            { wch: 8 }, { wch: 12 }, { wch: 12 }, { wch: 18 },
+            { wch: 18 }, { wch: 24 }, { wch: 22 },
+            ...allChildExpenseColumns.map(() => ({ wch: 14 })),
+            { wch: 14 }
+          ];
+          XLSX.utils.book_append_sheet(wb, wsBatch, cleanSheetTitle);
+        });
+
+        if (groupByLocation) {
+          const locHeaders = ['SL', 'TICKET -NO', 'LOCATION', 'SUB DEPARTMENT', 'SUMMARY', ...allChildExpenseColumns, 'TOTAL'];
+          const locData: any[][] = [
+            [],
+            ['', '', 'Store & Department Expense Statement (Grouped by Location & Ledger Batches)'],
+            [],
+            locHeaders
+          ];
+
+          storewiseByBatch.forEach(batch => {
+            locData.push([
+              `LEDGER BATCH: ${batch.batchName} — ${batch.rows.length} Tickets | Subtotal: KD ${batch.batchTotal.toFixed(3)}`,
+              '', '', '', '',
+              ...allChildExpenseColumns.map(() => ''),
+              ''
+            ]);
+
+            batch.locationRows.forEach((loc, idx) => {
+              const rowData: any[] = [
+                idx + 1,
+                loc.ticketLinesText || loc.expNoStr,
+                loc.location,
+                loc.subDeptStr || '-',
+                loc.summary
+              ];
+              for (const c of allChildExpenseColumns) {
+                const amt = loc.amountsByType[c] || 0;
+                rowData.push(amt > 0 ? Number(amt.toFixed(3)) : '-');
+              }
+              rowData.push(Number(loc.total.toFixed(3)));
+              locData.push(rowData);
+            });
+
+            const subtotalRow: any[] = [`Batch Subtotal (${batch.batchName})`, '', '', '', ''];
+            for (const c of allChildExpenseColumns) {
+              const sAmt = batch.subtotalByType[c] || 0;
+              subtotalRow.push(sAmt > 0 ? Number(sAmt.toFixed(3)) : '-');
+            }
+            subtotalRow.push(Number(batch.batchTotal.toFixed(3)));
+            locData.push(subtotalRow);
+            locData.push([]);
+          });
+
+          const locTotalRow: any[] = [`GRAND TOTAL (${userwiseGrandTotals.uniqueLocationsCount} Locations)`, '', '', '', ''];
+          for (const c of allChildExpenseColumns) {
+            const cAmt = userwiseGrandTotals.colTotals[c] || 0;
+            locTotalRow.push(cAmt > 0 ? Number(cAmt.toFixed(3)) : '-');
+          }
+          locTotalRow.push(Number(userwiseGrandTotals.grandTotal.toFixed(3)));
+          locData.push(locTotalRow);
+
+          const wsLoc = XLSX.utils.aoa_to_sheet(locData);
+          wsLoc['!cols'] = [
+            { wch: 8 }, { wch: 28 }, { wch: 22 }, { wch: 20 }, { wch: 30 },
+            ...allChildExpenseColumns.map(() => ({ wch: 14 })),
+            { wch: 14 }
+          ];
+          XLSX.utils.book_append_sheet(wb, wsLoc, 'Location Statement');
+        }
       }
 
       const fileName = `Weekly_Expense_Payout_Report_${currentGroupName.replace(/\s+/g, '_')}_${new Date().toISOString().split('T')[0]}.xlsx`;
@@ -2761,7 +3635,7 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
 
   return (
     <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-xs flex items-center justify-center p-2 sm:p-4 overflow-y-auto">
-      <div className="bg-surface-container border border-outline-variant rounded  w-full shadow-2xl overflow-hidden flex flex-col max-h-[94vh] print:max-h-none print:shadow-none print:border-0 print:p-0">
+      <div className="bg-surface-container border border-outline-variant rounded  w-full shadow-2xl overflow-hidden flex flex-col h-full .max-h-[94vh] print:max-h-none print:shadow-none print:border-0 print:p-0">
 
         {/* MODAL HEADER */}
         <div className="px-5 py-3.5 border-b border-outline-variant bg-surface-container-low flex items-center justify-between flex-wrap gap-3 shrink-0">
@@ -2864,6 +3738,40 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
               <Building2 className="w-3.5 h-3.5 text-primary" />
               <span>Group by Location</span>
             </label>
+
+            {/* Ledger Batch vs Store Type Grouping Switcher in Header */}
+            {/* <div className="flex items-center bg-surface-container border border-outline-variant rounded p-0.5 shadow-2xs">
+              <button
+                type="button"
+                onClick={() => {
+                  setActiveTab('storewise');
+                  setStoreReportGrouping('batch');
+                }}
+                className={`px-2.5 py-1 rounded text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer ${activeTab === 'storewise' && storeReportGrouping === 'batch'
+                  ? 'bg-primary text-on-primary shadow-xs'
+                  : 'text-on-surface-variant hover:text-on-surface'
+                  }`}
+                title="Group report by Ledger Batch"
+              >
+                <Boxes className="w-3.5 h-3.5" />
+                <span>By Ledger Batch</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setActiveTab('storewise');
+                  setStoreReportGrouping('store_type');
+                }}
+                className={`px-2.5 py-1 rounded text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer ${activeTab === 'storewise' && storeReportGrouping === 'store_type'
+                  ? 'bg-primary text-on-primary shadow-xs'
+                  : 'text-on-surface-variant hover:text-on-surface'
+                  }`}
+                title="Group report by Store Type"
+              >
+                <Store className="w-3.5 h-3.5" />
+                <span>By Store Type</span>
+              </button>
+            </div> */}
 
 
 
@@ -3039,14 +3947,33 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
 
               <Can permission={['finance.location_wise_expenses', 'reports.can_generate_report'] as any}>
                 <button
-                  onClick={() => setActiveTab('storewise')}
-                  className={`px-3 py-1.5 rounded text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer ${activeTab === 'storewise'
+                  onClick={() => {
+                    setActiveTab('storewise');
+                    setStoreReportGrouping('batch');
+                  }}
+                  className={`px-3 py-1.5 rounded text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer ${activeTab === 'storewise' && storeReportGrouping === 'batch'
                     ? 'bg-primary text-on-primary shadow-2xs'
                     : 'text-on-surface-variant hover:text-on-surface hover:bg-surface-container'
                     }`}
                 >
                   <Boxes className="w-3.5 h-3.5" />
-                  <span>Expenses(For Accounts)</span>
+                  <span>Expenses by Ledger Batch</span>
+                </button>
+              </Can>
+
+              <Can permission={['finance.location_wise_expenses', 'reports.can_generate_report'] as any}>
+                <button
+                  onClick={() => {
+                    setActiveTab('storewise');
+                    setStoreReportGrouping('store_type');
+                  }}
+                  className={`px-3 py-1.5 rounded text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer ${activeTab === 'storewise' && storeReportGrouping === 'store_type'
+                    ? 'bg-primary text-on-primary shadow-2xs'
+                    : 'text-on-surface-variant hover:text-on-surface hover:bg-surface-container'
+                    }`}
+                >
+                  <Store className="w-3.5 h-3.5" />
+                  <span>Expenses by Store Type</span>
                 </button>
               </Can>
             </div>
@@ -3102,434 +4029,434 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
               <div className="space-y-8">
                 {/* 1. FIRST SECTION: CONSOLIDATED TECHNICIAN PAYOUT STATEMENT */}
                 {showWorkerSummary && (
-                <div className="space-y-4">
-                <div className="flex items-center justify-between flex-wrap gap-2.5 bg-primary/10 border border-primary/25 rounded px-4 py-2.5 text-xs text-primary font-bold">
-                  <span className="flex items-center gap-2">
-                    <div className="rounded-lg bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
-                      <UserCheck className="w-5 h-5" />
+                  <div className="space-y-4">
+                    <div className="flex items-center justify-between flex-wrap gap-2.5 bg-primary/10 border border-primary/25 rounded px-4 py-2.5 text-xs text-primary font-bold">
+                      <span className="flex items-center gap-2">
+                        <div className="rounded-lg bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
+                          <UserCheck className="w-5 h-5" />
+                        </div>
+                        {/* <FileText className="w-4 h-4" /> */}
+                        Worker Summary Report
+                      </span>
+                      <div className="flex items-center gap-3">
+
+                        <span className="text-xs font-semibold px-2.5 py-1 rounded bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border border-emerald-500/30">
+                          Total Payout: KD {consolidatedUserData.grandTotal.toFixed(3)}
+                        </span>
+                      </div>
                     </div>
-                    {/* <FileText className="w-4 h-4" /> */}
-                    Worker Summary Report
-                  </span>
-                  <div className="flex items-center gap-3">
 
-                    <span className="text-xs font-semibold px-2.5 py-1 rounded bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border border-emerald-500/30">
-                      Total Payout: KD {consolidatedUserData.grandTotal.toFixed(3)}
-                    </span>
-                  </div>
-                </div>
-
-                <div className="border border-outline-variant rounded overflow-hidden bg-surface-container shadow-2xs">
-                  <table className="w-full text-xs text-left text-on-surface">
-                    <thead className="bg-surface-container-high text-on-surface-variant uppercase text-[11px] font-bold tracking-wider border-b border-outline-variant">
-                      <tr>
-                        <th className="px-4 py-3 text-center w-12">SL</th>
-                        <th className="px-5 py-3">Worker</th>
-                        <th className="px-4 py-3 text-center">Bundles(ID)</th>
-                        <th className="px-4 py-3 text-center">Tickets</th>
-                        <th className="px-4 py-3 text-center">Locations</th>
-                        <th className="px-5 py-3 text-right bg-emerald-500/10 text-emerald-800 dark:text-emerald-300">Amount to be Given (KD)</th>
-                        <th className="px-5 py-3 text-center w-36">Paid</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-outline-variant/60">
-                      {consolidatedUserData.list.map((item) => (
-                        <tr key={item.workerId || item.workerName} className="hover:bg-surface-container-high/40 transition-colors">
-                          <td className="px-4 py-3 text-center font-mono text-on-surface-variant">
-                            {item.sl}
-                          </td>
-                          <td className="px-5 py-3 font-semibold text-on-surface">
-                            <div className="flex items-center gap-2.5">
-                              <User className="w-4 h-4 text-primary shrink-0" />
-                              <div>
-                                <span className="font-bold text-on-surface">{item.workerName}</span>
-                                {item.workerEmployeeNo && (
-                                  <span className="ml-2 px-1.5 py-0.5 rounded text-[10px] bg-surface-container-high text-on-surface-variant font-mono">
-                                    {item.workerEmployeeNo}
+                    <div className="border border-outline-variant rounded overflow-hidden bg-surface-container shadow-2xs">
+                      <table className="w-full text-xs text-left text-on-surface">
+                        <thead className="bg-surface-container-high text-on-surface-variant uppercase text-[11px] font-bold tracking-wider border-b border-outline-variant">
+                          <tr>
+                            <th className="px-4 py-3 text-center w-12">SL</th>
+                            <th className="px-5 py-3">Worker</th>
+                            <th className="px-4 py-3 text-center">Bundles(ID)</th>
+                            <th className="px-4 py-3 text-center">Tickets</th>
+                            <th className="px-4 py-3 text-center">Locations</th>
+                            <th className="px-5 py-3 text-right bg-emerald-500/10 text-emerald-800 dark:text-emerald-300">Amount to be Given (KD)</th>
+                            <th className="px-5 py-3 text-center w-36">Paid</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-outline-variant/60">
+                          {consolidatedUserData.list.map((item) => (
+                            <tr key={item.workerId || item.workerName} className="hover:bg-surface-container-high/40 transition-colors">
+                              <td className="px-4 py-3 text-center font-mono text-on-surface-variant">
+                                {item.sl}
+                              </td>
+                              <td className="px-5 py-3 font-semibold text-on-surface">
+                                <div className="flex items-center gap-2.5">
+                                  <User className="w-4 h-4 text-primary shrink-0" />
+                                  <div>
+                                    <span className="font-bold text-on-surface">{item.workerName}</span>
+                                    {item.workerEmployeeNo && (
+                                      <span className="ml-2 px-1.5 py-0.5 rounded text-[10px] bg-surface-container-high text-on-surface-variant font-mono">
+                                        {item.workerEmployeeNo}
+                                      </span>
+                                    )}
+                                  </div>
+                                </div>
+                              </td>
+                              <td className="px-4 py-3 text-center font-mono font-medium text-on-surface">
+                                <span>{item.bundleCount}</span>
+                                {item.bundleNumbersStr && (
+                                  <span className="ml-1.5 text-[11px] font-semibold text-primary">
+                                    ({item.bundleNumbersStr})
                                   </span>
                                 )}
-                              </div>
-                            </div>
-                          </td>
-                          <td className="px-4 py-3 text-center font-mono font-medium text-on-surface">
-                            <span>{item.bundleCount}</span>
-                            {item.bundleNumbersStr && (
-                              <span className="ml-1.5 text-[11px] font-semibold text-primary">
-                                ({item.bundleNumbersStr})
-                              </span>
-                            )}
-                          </td>
-                          <td className="px-4 py-3 text-center font-mono font-medium text-on-surface">
-                            {item.ticketCount}
-                          </td>
-                          <td className="px-4 py-3 text-center font-mono font-medium text-on-surface">
-                            {item.locationCount}
-                          </td>
-                          <td className="px-5 py-3 text-right font-mono font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-500/5 text-sm">
-                            KD {item.totalAmount.toFixed(3)}
-                          </td>
-                          <td className="px-5 py-3 text-center">
-                            <div className="w-24 mx-auto border-b-2 border-dashed border-outline-variant/80 h-5" title="Manually mark payment status"></div>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                    <tfoot className="bg-surface-container-high font-extrabold border-t-2 border-outline-variant text-xs">
-                      <tr>
-                        <td colSpan={2} className="px-5 py-3.5 text-on-surface uppercase tracking-wider">
-                          GRAND TOTAL
-                        </td>
-                        <td className="px-4 py-3.5 text-center font-mono text-on-surface">
-                          {consolidatedUserData.totalBundles}
-                        </td>
-                        <td className="px-4 py-3.5 text-center font-mono text-on-surface">
-                          {consolidatedUserData.totalTickets}
-                        </td>
-                        <td className="px-4 py-3.5 text-center font-mono text-on-surface">
-                          {userwiseGrandTotals.uniqueLocationsCount}
-                        </td>
-                        <td className="px-5 py-3.5 text-right font-mono text-emerald-600 dark:text-emerald-400 text-sm bg-emerald-500/15 font-black">
-                          KD {consolidatedUserData.grandTotal.toFixed(3)}
-                        </td>
-                        <td className="px-5 py-3.5 text-center"></td>
-                      </tr>
-                    </tfoot>
-                  </table>
-                </div>
-                </div>
+                              </td>
+                              <td className="px-4 py-3 text-center font-mono font-medium text-on-surface">
+                                {item.ticketCount}
+                              </td>
+                              <td className="px-4 py-3 text-center font-mono font-medium text-on-surface">
+                                {item.locationCount}
+                              </td>
+                              <td className="px-5 py-3 text-right font-mono font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-500/5 text-sm">
+                                KD {item.totalAmount.toFixed(3)}
+                              </td>
+                              <td className="px-5 py-3 text-center">
+                                <div className="w-24 mx-auto border-b-2 border-dashed border-outline-variant/80 h-5" title="Manually mark payment status"></div>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                        <tfoot className="bg-surface-container-high font-extrabold border-t-2 border-outline-variant text-xs">
+                          <tr>
+                            <td colSpan={2} className="px-5 py-3.5 text-on-surface uppercase tracking-wider">
+                              GRAND TOTAL
+                            </td>
+                            <td className="px-4 py-3.5 text-center font-mono text-on-surface">
+                              {consolidatedUserData.totalBundles}
+                            </td>
+                            <td className="px-4 py-3.5 text-center font-mono text-on-surface">
+                              {consolidatedUserData.totalTickets}
+                            </td>
+                            <td className="px-4 py-3.5 text-center font-mono text-on-surface">
+                              {userwiseGrandTotals.uniqueLocationsCount}
+                            </td>
+                            <td className="px-5 py-3.5 text-right font-mono text-emerald-600 dark:text-emerald-400 text-sm bg-emerald-500/15 font-black">
+                              KD {consolidatedUserData.grandTotal.toFixed(3)}
+                            </td>
+                            <td className="px-5 py-3.5 text-center"></td>
+                          </tr>
+                        </tfoot>
+                      </table>
+                    </div>
+                  </div>
                 )}
 
                 {/* 2. SECOND SECTION: ITEMIZED / LOCATION-GROUPED EXPENSE STATEMENT BY CATEGORIES */}
                 {showWorkerDetailed && (
-                <div className="space-y-4 pt-2">
-                  <div className="flex items-center justify-between flex-wrap gap-2.5 bg-primary/10 border border-primary/25 rounded px-4 py-2.5 text-xs text-primary font-bold">
-                    <span className="flex items-center gap-2">
-                      <FileText className="w-4 h-4" />
-                      Worker Wise Detailed Statement
-                      {/* - {groupByLocation ? 'Location-Grouped' : 'Itemized'} */}
-                    </span>
-                    <div className="flex items-center gap-3">
-
+                  <div className="space-y-4 pt-2">
+                    <div className="flex items-center justify-between flex-wrap gap-2.5 bg-primary/10 border border-primary/25 rounded px-4 py-2.5 text-xs text-primary font-bold">
+                      <span className="flex items-center gap-2">
+                        <FileText className="w-4 h-4" />
+                        Worker Wise Detailed Statement
+                        {/* - {groupByLocation ? 'Location-Grouped' : 'Itemized'} */}
+                      </span>
                       <div className="flex items-center gap-3">
-                        <div className="flex items-center gap-3">
 
-                          <span
-                            className={
-                              groupByLocation
-                                ? "text-[11px] font-normal text-on-surface-variant"
-                                : "text-[10px] font-normal text-red-600 animate-pulse"
-                            }
-                          >
-                            {groupByLocation
-                              ? `Grouped by location (${userwiseGrandTotals.uniqueLocationsCount} locations)`
-                              : "⚠ Location Will Be repeated"}
-                          </span>
+                        <div className="flex items-center gap-3">
+                          <div className="flex items-center gap-3">
+
+                            <span
+                              className={
+                                groupByLocation
+                                  ? "text-[11px] font-normal text-on-surface-variant"
+                                  : "text-[10px] font-normal text-red-600 animate-pulse"
+                              }
+                            >
+                              {groupByLocation
+                                ? `Grouped by location (${userwiseGrandTotals.uniqueLocationsCount} locations)`
+                                : "⚠ Location Will Be repeated"}
+                            </span>
+                          </div>
                         </div>
                       </div>
                     </div>
-                  </div>
 
-                  <div className="border border-outline-variant rounded overflow-x-auto bg-surface-container shadow-2xs">
-                    <table className="w-full text-xs text-left text-on-surface border-collapse">
-                      <thead className="bg-surface-container-high text-on-surface-variant text-[11px] font-bold border-b-2 border-outline-variant sticky top-0 z-10">
-                        <tr>
-                          {groupByLocation ? (
-                            <>
-                              <th rowSpan={2} className="px-3 py-2.5 border-r border-outline-variant text-center bg-surface-container-low font-bold">Worker</th>
-                              <th rowSpan={2} className="px-2.5 py-2.5 border-r border-outline-variant text-center w-12 font-bold">SL</th>
-                              <th rowSpan={2} className="px-3.5 py-2.5 border-r border-outline-variant text-left font-bold min-w-[150px]">TICKET -NO</th>
-                              <th rowSpan={2} className="px-4 py-2.5 border-r border-outline-variant text-left font-bold">LOCATION</th>
-                              <th rowSpan={2} className="px-3 py-2.5 border-r border-outline-variant text-left font-bold">SUB DEPARTMENT</th>
-                              <th rowSpan={2} className="px-4 py-2.5 border-r border-outline-variant text-left font-bold">SUMMARY[Exp]</th>
-                            </>
-                          ) : (
-                            <>
-                              <th rowSpan={2} className="px-3 py-2.5 border-r border-outline-variant text-center bg-surface-container-low font-bold">Worker</th>
-                              <th rowSpan={2} className="px-2.5 py-2.5 border-r border-outline-variant text-center">SLNo</th>
-                              <th rowSpan={2} className="px-3 py-2.5 border-r border-outline-variant text-center">BUNDLE ID</th>
-                              <th rowSpan={2} className="px-3 py-2.5 border-r border-outline-variant">TICKET -NO</th>
-                              <th rowSpan={2} className="px-3 py-2.5 border-r border-outline-variant">LOCATION</th>
-                              <th rowSpan={2} className="px-3 py-2.5 border-r border-outline-variant">SUB DEPARTMENT</th>
-                              <th rowSpan={2} className="px-4 py-2.5 border-r border-outline-variant">ISSUE TITLE</th>
-                              <th rowSpan={2} className="px-3 py-2.5 border-r border-outline-variant">Ledger Group</th>
-                            </>
-                          )}
-
-                          {/* Parent Expense Categories */}
-                          {expenseColumnsHierarchy.map(cat => (
-                            <th
-                              key={cat.parentName}
-                              colSpan={cat.children.length}
-                              className="px-3 py-1.5 text-center border-r border-outline-variant bg-surface-container-lowest font-bold text-primary dark:text-primary-container uppercase tracking-wider text-[10px]"
-                            >
-                              {cat.parentName}
-                            </th>
-                          ))}
-
-                          <th rowSpan={2} className="px-3.5 py-2.5 text-right font-bold bg-emerald-500/10 text-emerald-800 dark:text-emerald-300">
-                            TOTAL
-                          </th>
-                        </tr>
-
-                        {/* Sub Expense Types */}
-                        <tr>
-                          {expenseColumnsHierarchy.map(cat => (
-                            cat.children.map(child => (
-                              <th
-                                key={`${cat.parentName}_${child}`}
-                                className="px-2.5 py-1.5 text-right border-r border-outline-variant bg-surface-container-low font-medium text-[10px] text-on-surface-variant whitespace-nowrap"
-                              >
-                                {child}
-                              </th>
-                            ))
-                          ))}
-                        </tr>
-                      </thead>
-
-                      <tbody className="divide-y divide-outline-variant/60 text-xs">
-                        {workerGroupedRows.length === 0 ? (
+                    <div className="border border-outline-variant rounded overflow-x-auto bg-surface-container shadow-2xs">
+                      <table className="w-full text-xs text-left text-on-surface border-collapse">
+                        <thead className="bg-surface-container-high text-on-surface-variant text-[11px] font-bold border-b-2 border-outline-variant sticky top-0 z-10">
                           <tr>
-                            <td colSpan={(groupByLocation ? 6 : 8) + allChildExpenseColumns.length + 1} className="p-8 text-center text-on-surface-variant">
-                              No expenses found matching the current criteria.
-                            </td>
+                            {groupByLocation ? (
+                              <>
+                                <th rowSpan={2} className="px-3 py-2.5 border-r border-outline-variant text-center bg-surface-container-low font-bold">Worker</th>
+                                <th rowSpan={2} className="px-2.5 py-2.5 border-r border-outline-variant text-center w-12 font-bold">SL</th>
+                                <th rowSpan={2} className="px-3.5 py-2.5 border-r border-outline-variant text-left font-bold min-w-[150px]">TICKET -NO</th>
+                                <th rowSpan={2} className="px-4 py-2.5 border-r border-outline-variant text-left font-bold">LOCATION</th>
+                                <th rowSpan={2} className="px-3 py-2.5 border-r border-outline-variant text-left font-bold">SUB DEPARTMENT</th>
+                                <th rowSpan={2} className="px-4 py-2.5 border-r border-outline-variant text-left font-bold">SUMMARY[Exp]</th>
+                              </>
+                            ) : (
+                              <>
+                                <th rowSpan={2} className="px-3 py-2.5 border-r border-outline-variant text-center bg-surface-container-low font-bold">Worker</th>
+                                <th rowSpan={2} className="px-2.5 py-2.5 border-r border-outline-variant text-center">SLNo</th>
+                                <th rowSpan={2} className="px-3 py-2.5 border-r border-outline-variant text-center">BUNDLE ID</th>
+                                <th rowSpan={2} className="px-3 py-2.5 border-r border-outline-variant">TICKET -NO</th>
+                                <th rowSpan={2} className="px-3 py-2.5 border-r border-outline-variant">LOCATION</th>
+                                <th rowSpan={2} className="px-3 py-2.5 border-r border-outline-variant">SUB DEPARTMENT</th>
+                                <th rowSpan={2} className="px-4 py-2.5 border-r border-outline-variant">ISSUE TITLE</th>
+                                <th rowSpan={2} className="px-3 py-2.5 border-r border-outline-variant">Ledger Group</th>
+                              </>
+                            )}
+
+                            {/* Parent Expense Categories */}
+                            {expenseColumnsHierarchy.map(cat => (
+                              <th
+                                key={cat.parentName}
+                                colSpan={cat.children.length}
+                                className="px-3 py-1.5 text-center border-r border-outline-variant bg-surface-container-lowest font-bold text-primary dark:text-primary-container uppercase tracking-wider text-[10px]"
+                              >
+                                {cat.parentName}
+                              </th>
+                            ))}
+
+                            <th rowSpan={2} className="px-3.5 py-2.5 text-right font-bold bg-emerald-500/10 text-emerald-800 dark:text-emerald-300">
+                              TOTAL
+                            </th>
                           </tr>
-                        ) : (
-                          workerGroupedRows.map((wGroup, wIdx) => (
-                            <React.Fragment key={wGroup.workerId || wGroup.workerName || wIdx}>
-                              {groupByLocation ? (
-                                wGroup.locationRows.map((locRow, locIdx) => (
-                                  <tr key={locRow.location || locIdx} className="hover:bg-surface-container-high/40 transition-colors">
-                                    {locIdx === 0 && (
-                                      <td
-                                        rowSpan={wGroup.locationRows.length}
-                                        className="px-3 py-2.5 font-bold text-on-surface border-r border-outline-variant bg-surface-container-lowest align-top"
-                                      >
-                                        <div className="sticky top-12 space-y-0.5">
-                                          <span className="font-semibold text-primary">{wGroup.workerName}</span>
-                                          {wGroup.workerEmployeeNo && (
-                                            <span className="block text-[10px] font-mono text-on-surface-variant">{wGroup.workerEmployeeNo}</span>
-                                          )}
-                                        </div>
-                                      </td>
-                                    )}
-                                    <td className="px-2.5 py-2 border-r border-outline-variant text-center font-mono text-on-surface-variant text-[11px]">
-                                      {locIdx + 1}
-                                    </td>
-                                    <td className="px-3.5 py-2.5 border-r border-outline-variant font-mono text-[11px]">
-                                      <div className="flex flex-col gap-0.5 whitespace-nowrap font-semibold text-primary">
-                                        {locRow.ticketLines && locRow.ticketLines.length > 0 ? (
-                                          locRow.ticketLines.map((line, lIdx) => (
-                                            <span key={lIdx}>{line}</span>
-                                          ))
-                                        ) : (
-                                          <span>{locRow.expNoStr || '-'}</span>
-                                        )}
-                                      </div>
-                                    </td>
-                                    <td className="px-3 py-2 border-r border-outline-variant font-bold text-on-surface">
-                                      <div className="flex items-center gap-1.5">
-                                        <Building2 className="w-3.5 h-3.5 text-primary shrink-0" />
-                                        <span>{locRow.location}</span>
-                                      </div>
-                                    </td>
-                                    <td className="px-3 py-2 border-r border-outline-variant text-on-surface-variant text-[11px]">
-                                      {locRow.subDeptStr || '-'}
-                                    </td>
-                                    <td className="px-4 py-2 border-r border-outline-variant text-on-surface text-[11px] max-w-sm truncate" title={locRow.summary}>
-                                      <span className="font-medium text-on-surface">{locRow.summary}</span>
-                                    </td>
 
-                                    {allChildExpenseColumns.map(colName => {
-                                      const amt = locRow.amountsByType[colName];
-                                      return (
-                                        <td
-                                          key={colName}
-                                          className="px-2.5 py-2 text-right border-r border-outline-variant font-mono text-[11px] text-on-surface"
-                                        >
-                                          {amt !== undefined && amt > 0 ? (
-                                            <span className="font-semibold">{amt.toFixed(3)}</span>
-                                          ) : (
-                                            <span className="text-on-surface-variant/40">-</span>
-                                          )}
-                                        </td>
-                                      );
-                                    })}
+                          {/* Sub Expense Types */}
+                          <tr>
+                            {expenseColumnsHierarchy.map(cat => (
+                              cat.children.map(child => (
+                                <th
+                                  key={`${cat.parentName}_${child}`}
+                                  className="px-2.5 py-1.5 text-right border-r border-outline-variant bg-surface-container-low font-medium text-[10px] text-on-surface-variant whitespace-nowrap"
+                                >
+                                  {child}
+                                </th>
+                              ))
+                            ))}
+                          </tr>
+                        </thead>
 
-                                    <td className="px-3.5 py-2 text-right font-bold text-emerald-600 dark:text-emerald-400 font-mono text-[11px] bg-emerald-500/5">
-                                      {locRow.total.toFixed(3)}
-                                    </td>
-                                  </tr>
-                                ))
-                              ) : (
-                                wGroup.rows.map((row, rIdx) => (
-                                  <tr key={row.uniqueKey || rIdx} className="hover:bg-surface-container-high/40 transition-colors">
-                                    {rIdx === 0 && (
-                                      <td
-                                        rowSpan={wGroup.rows.length}
-                                        className="px-3 py-2.5 font-bold text-on-surface border-r border-outline-variant bg-surface-container-lowest align-top"
-                                      >
-                                        <div className="sticky top-12 space-y-0.5">
-                                          <span className="font-semibold text-primary">{wGroup.workerName}</span>
-                                          {wGroup.workerEmployeeNo && (
-                                            <span className="block text-[10px] font-mono text-on-surface-variant">{wGroup.workerEmployeeNo}</span>
-                                          )}
-                                        </div>
-                                      </td>
-                                    )}
-                                    <td className="px-2.5 py-2 border-r border-outline-variant text-center font-mono text-on-surface-variant text-[11px]">
-                                      {rIdx + 1}
-                                    </td>
-                                    <td className="px-3 py-2 border-r border-outline-variant text-center font-mono text-primary font-semibold text-[11px]">
-                                      #{row.bundleId}
-                                    </td>
-                                    <td className="px-3 py-2 border-r border-outline-variant font-mono font-medium text-[11px]">
-                                      <div className="flex flex-col">
-                                        {row.ticketObj && setSelectedTicketForModal ? (
-                                          <button
-                                            type="button"
-                                            onClick={() => setSelectedTicketForModal(row.ticketObj)}
-                                            className="text-primary hover:underline cursor-pointer font-bold text-left"
-                                          >
-                                            {row.expNo}
-                                          </button>
-                                        ) : (
-                                          <span>{row.expNo}</span>
-                                        )}
-                                        {row.expenseIds?.[0] && String(row.expNo) !== `EXP-${row.expenseIds[0]}` && (
-                                          <span className="text-[10px] text-on-surface-variant font-mono">
-                                            (EXP-{row.expenseIds[0]})
-                                          </span>
-                                        )}
-                                      </div>
-                                    </td>
-                                    <td className="px-3 py-2 border-r border-outline-variant font-medium text-on-surface">
-                                      {row.location}
-                                    </td>
-                                    <td className="px-3 py-2 border-r border-outline-variant text-on-surface-variant text-[11px]">
-                                      {row.subDepartment}
-                                    </td>
-                                    <td className="px-4 py-2 border-r border-outline-variant font-normal text-on-surface truncate max-w-xs" title={row.issueTitle}>
-                                      {row.issueTitle}
-                                    </td>
-                                    <td className="px-3 py-2 border-r border-outline-variant text-on-surface-variant text-[11px]">
-                                      <span className="px-1.5 py-0.5 rounded bg-surface-container-high text-[10px] border border-outline-variant/60 font-medium">
-                                        {row.ledgerBatch}
-                                      </span>
-                                    </td>
-
-                                    {allChildExpenseColumns.map(colName => {
-                                      const amt = row.amountsByType[colName];
-                                      return (
-                                        <td
-                                          key={colName}
-                                          className="px-2.5 py-2 text-right border-r border-outline-variant font-mono text-[11px] text-on-surface"
-                                        >
-                                          {amt !== undefined && amt > 0 ? (
-                                            <span className="font-semibold">{amt.toFixed(3)}</span>
-                                          ) : (
-                                            <span className="text-on-surface-variant/40">-</span>
-                                          )}
-                                        </td>
-                                      );
-                                    })}
-
-                                    <td className="px-3.5 py-2 text-right font-bold text-emerald-600 dark:text-emerald-400 font-mono text-[11px] bg-emerald-500/5">
-                                      {row.total.toFixed(3)}
-                                    </td>
-                                  </tr>
-                                ))
-                              )}
-
-                              {/* Worker Subtotal Row */}
-                              <tr className="bg-surface-container-high/70 font-semibold border-b-2 border-outline-variant text-[11px]">
+                        <tbody className="divide-y divide-outline-variant/60 text-xs">
+                          {workerGroupedRows.length === 0 ? (
+                            <tr>
+                              <td colSpan={(groupByLocation ? 6 : 8) + allChildExpenseColumns.length + 1} className="p-8 text-center text-on-surface-variant">
+                                No expenses found matching the current criteria.
+                              </td>
+                            </tr>
+                          ) : (
+                            workerGroupedRows.map((wGroup, wIdx) => (
+                              <React.Fragment key={wGroup.workerId || wGroup.workerName || wIdx}>
                                 {groupByLocation ? (
-                                  <>
-                                    <td colSpan={2} className="px-3 py-2 border-r border-outline-variant text-right text-on-surface-variant font-bold">
-                                      Subtotal
-                                    </td>
-                                    <td colSpan={2} className="px-3 py-2 border-r border-outline-variant font-bold text-primary">
-                                      {wGroup.locationRows.length} Locations ({new Set(wGroup.rows.map(r => r.ticketNo || r.expNo).filter(Boolean)).size} Tickets)
-                                    </td>
-                                    <td colSpan={2} className="px-3 py-2 border-r border-outline-variant"></td>
-                                  </>
+                                  wGroup.locationRows.map((locRow, locIdx) => (
+                                    <tr key={locRow.location || locIdx} className="hover:bg-surface-container-high/40 transition-colors">
+                                      {locIdx === 0 && (
+                                        <td
+                                          rowSpan={wGroup.locationRows.length}
+                                          className="px-3 py-2.5 font-bold text-on-surface border-r border-outline-variant bg-surface-container-lowest align-top"
+                                        >
+                                          <div className="sticky top-12 space-y-0.5">
+                                            <span className="font-semibold text-primary">{wGroup.workerName}</span>
+                                            {wGroup.workerEmployeeNo && (
+                                              <span className="block text-[10px] font-mono text-on-surface-variant">{wGroup.workerEmployeeNo}</span>
+                                            )}
+                                          </div>
+                                        </td>
+                                      )}
+                                      <td className="px-2.5 py-2 border-r border-outline-variant text-center font-mono text-on-surface-variant text-[11px]">
+                                        {locIdx + 1}
+                                      </td>
+                                      <td className="px-3.5 py-2.5 border-r border-outline-variant font-mono text-[11px]">
+                                        <div className="flex flex-col gap-0.5 whitespace-nowrap font-semibold text-primary">
+                                          {locRow.ticketLines && locRow.ticketLines.length > 0 ? (
+                                            locRow.ticketLines.map((line, lIdx) => (
+                                              <span key={lIdx}>{line}</span>
+                                            ))
+                                          ) : (
+                                            <span>{locRow.expNoStr || '-'}</span>
+                                          )}
+                                        </div>
+                                      </td>
+                                      <td className="px-3 py-2 border-r border-outline-variant font-bold text-on-surface">
+                                        <div className="flex items-center gap-1.5">
+                                          <Building2 className="w-3.5 h-3.5 text-primary shrink-0" />
+                                          <span>{locRow.location}</span>
+                                        </div>
+                                      </td>
+                                      <td className="px-3 py-2 border-r border-outline-variant text-on-surface-variant text-[11px]">
+                                        {locRow.subDeptStr || '-'}
+                                      </td>
+                                      <td className="px-4 py-2 border-r border-outline-variant text-on-surface text-[11px] max-w-sm truncate" title={locRow.summary}>
+                                        <span className="font-medium text-on-surface">{locRow.summary}</span>
+                                      </td>
+
+                                      {allChildExpenseColumns.map(colName => {
+                                        const amt = locRow.amountsByType[colName];
+                                        return (
+                                          <td
+                                            key={colName}
+                                            className="px-2.5 py-2 text-right border-r border-outline-variant font-mono text-[11px] text-on-surface"
+                                          >
+                                            {amt !== undefined && amt > 0 ? (
+                                              <span className="font-semibold">{amt.toFixed(3)}</span>
+                                            ) : (
+                                              <span className="text-on-surface-variant/40">-</span>
+                                            )}
+                                          </td>
+                                        );
+                                      })}
+
+                                      <td className="px-3.5 py-2 text-right font-bold text-emerald-600 dark:text-emerald-400 font-mono text-[11px] bg-emerald-500/5">
+                                        {locRow.total.toFixed(3)}
+                                      </td>
+                                    </tr>
+                                  ))
                                 ) : (
-                                  <>
-                                    <td colSpan={4} className="px-3 py-2 border-r border-outline-variant text-right text-on-surface-variant font-bold">
-                                      Subtotal
-                                    </td>
-                                    <td colSpan={2} className="px-3 py-2 border-r border-outline-variant font-bold text-primary">
-                                      {wGroup.uniqueLocationsCount} Locations ({new Set(wGroup.rows.map(r => r.ticketNo || r.expNo).filter(Boolean)).size} Tickets, {wGroup.rows.length} Expenses)
-                                    </td>
-                                    <td colSpan={3} className="px-3 py-2 border-r border-outline-variant"></td>
-                                  </>
+                                  wGroup.rows.map((row, rIdx) => (
+                                    <tr key={row.uniqueKey || rIdx} className="hover:bg-surface-container-high/40 transition-colors">
+                                      {rIdx === 0 && (
+                                        <td
+                                          rowSpan={wGroup.rows.length}
+                                          className="px-3 py-2.5 font-bold text-on-surface border-r border-outline-variant bg-surface-container-lowest align-top"
+                                        >
+                                          <div className="sticky top-12 space-y-0.5">
+                                            <span className="font-semibold text-primary">{wGroup.workerName}</span>
+                                            {wGroup.workerEmployeeNo && (
+                                              <span className="block text-[10px] font-mono text-on-surface-variant">{wGroup.workerEmployeeNo}</span>
+                                            )}
+                                          </div>
+                                        </td>
+                                      )}
+                                      <td className="px-2.5 py-2 border-r border-outline-variant text-center font-mono text-on-surface-variant text-[11px]">
+                                        {rIdx + 1}
+                                      </td>
+                                      <td className="px-3 py-2 border-r border-outline-variant text-center font-mono text-primary font-semibold text-[11px]">
+                                        #{row.bundleId}
+                                      </td>
+                                      <td className="px-3 py-2 border-r border-outline-variant font-mono font-medium text-[11px]">
+                                        <div className="flex flex-col">
+                                          {row.ticketObj && setSelectedTicketForModal ? (
+                                            <button
+                                              type="button"
+                                              onClick={() => setSelectedTicketForModal(row.ticketObj)}
+                                              className="text-primary hover:underline cursor-pointer font-bold text-left"
+                                            >
+                                              {row.expNo}
+                                            </button>
+                                          ) : (
+                                            <span>{row.expNo}</span>
+                                          )}
+                                          {row.expenseIds?.[0] && String(row.expNo) !== `EXP-${row.expenseIds[0]}` && (
+                                            <span className="text-[10px] text-on-surface-variant font-mono">
+                                              (EXP-{row.expenseIds[0]})
+                                            </span>
+                                          )}
+                                        </div>
+                                      </td>
+                                      <td className="px-3 py-2 border-r border-outline-variant font-medium text-on-surface">
+                                        {row.location}
+                                      </td>
+                                      <td className="px-3 py-2 border-r border-outline-variant text-on-surface-variant text-[11px]">
+                                        {row.subDepartment}
+                                      </td>
+                                      <td className="px-4 py-2 border-r border-outline-variant font-normal text-on-surface truncate max-w-xs" title={row.issueTitle}>
+                                        {row.issueTitle}
+                                      </td>
+                                      <td className="px-3 py-2 border-r border-outline-variant text-on-surface-variant text-[11px]">
+                                        <span className="px-1.5 py-0.5 rounded bg-surface-container-high text-[10px] border border-outline-variant/60 font-medium">
+                                          {row.ledgerBatch}
+                                        </span>
+                                      </td>
+
+                                      {allChildExpenseColumns.map(colName => {
+                                        const amt = row.amountsByType[colName];
+                                        return (
+                                          <td
+                                            key={colName}
+                                            className="px-2.5 py-2 text-right border-r border-outline-variant font-mono text-[11px] text-on-surface"
+                                          >
+                                            {amt !== undefined && amt > 0 ? (
+                                              <span className="font-semibold">{amt.toFixed(3)}</span>
+                                            ) : (
+                                              <span className="text-on-surface-variant/40">-</span>
+                                            )}
+                                          </td>
+                                        );
+                                      })}
+
+                                      <td className="px-3.5 py-2 text-right font-bold text-emerald-600 dark:text-emerald-400 font-mono text-[11px] bg-emerald-500/5">
+                                        {row.total.toFixed(3)}
+                                      </td>
+                                    </tr>
+                                  ))
                                 )}
 
-                                {allChildExpenseColumns.map(colName => {
-                                  const sAmt = wGroup.subtotalByType[colName] || 0;
-                                  return (
-                                    <td
-                                      key={`subtotal_${colName}`}
-                                      className="px-2.5 py-2 text-right border-r border-outline-variant font-bold font-mono text-on-surface"
-                                    >
-                                      {sAmt > 0 ? sAmt.toFixed(3) : '-'}
-                                    </td>
-                                  );
-                                })}
+                                {/* Worker Subtotal Row */}
+                                <tr className="bg-surface-container-high/70 font-semibold border-b-2 border-outline-variant text-[11px]">
+                                  {groupByLocation ? (
+                                    <>
+                                      <td colSpan={2} className="px-3 py-2 border-r border-outline-variant text-right text-on-surface-variant font-bold">
+                                        Subtotal
+                                      </td>
+                                      <td colSpan={2} className="px-3 py-2 border-r border-outline-variant font-bold text-primary">
+                                        {wGroup.locationRows.length} Locations ({new Set(wGroup.rows.map(r => r.ticketNo || r.expNo).filter(Boolean)).size} Tickets)
+                                      </td>
+                                      <td colSpan={2} className="px-3 py-2 border-r border-outline-variant"></td>
+                                    </>
+                                  ) : (
+                                    <>
+                                      <td colSpan={4} className="px-3 py-2 border-r border-outline-variant text-right text-on-surface-variant font-bold">
+                                        Subtotal
+                                      </td>
+                                      <td colSpan={2} className="px-3 py-2 border-r border-outline-variant font-bold text-primary">
+                                        {wGroup.uniqueLocationsCount} Locations ({new Set(wGroup.rows.map(r => r.ticketNo || r.expNo).filter(Boolean)).size} Tickets, {wGroup.rows.length} Expenses)
+                                      </td>
+                                      <td colSpan={3} className="px-3 py-2 border-r border-outline-variant"></td>
+                                    </>
+                                  )}
 
-                                <td className="px-3.5 py-2 text-right font-bold text-emerald-600 dark:text-emerald-400 font-mono bg-emerald-500/10">
-                                  {wGroup.totalAmount.toFixed(3)}
-                                </td>
-                              </tr>
-                            </React.Fragment>
-                          ))
-                        )}
-                      </tbody>
+                                  {allChildExpenseColumns.map(colName => {
+                                    const sAmt = wGroup.subtotalByType[colName] || 0;
+                                    return (
+                                      <td
+                                        key={`subtotal_${colName}`}
+                                        className="px-2.5 py-2 text-right border-r border-outline-variant font-bold font-mono text-on-surface"
+                                      >
+                                        {sAmt > 0 ? sAmt.toFixed(3) : '-'}
+                                      </td>
+                                    );
+                                  })}
 
-                      {/* TFOOT: GRAND TOTAL ROW */}
-                      <tfoot className="bg-surface-container-high font-bold border-t-2 border-outline-variant text-xs sticky bottom-0 z-10 shadow-lg">
-                        <tr className="border-t border-outline-variant">
-                          {groupByLocation ? (
-                            <>
-                              <td colSpan={2} className="px-4 py-3 text-on-surface font-extrabold uppercase tracking-wider">
-                                GRAND TOTAL
-                              </td>
-                              <td colSpan={2} className="px-3 py-3 border-r border-outline-variant font-extrabold text-primary">
-                                {userwiseGrandTotals.uniqueLocationsCount} Locations ({structuredRows.length} Tickets)
-                              </td>
-                              <td colSpan={2} className="px-3 py-3 border-r border-outline-variant"></td>
-                            </>
-                          ) : (
-                            <>
-                              <td colSpan={4} className="px-4 py-3 text-on-surface font-extrabold uppercase tracking-wider">
-                                GRAND TOTAL
-                              </td>
-                              <td className="px-3 py-3 border-r border-outline-variant font-extrabold text-primary">
-                                {userwiseGrandTotals.uniqueLocationsCount} Locations
-                              </td>
-                              <td colSpan={3} className="px-3 py-3 border-r border-outline-variant"></td>
-                            </>
+                                  <td className="px-3.5 py-2 text-right font-bold text-emerald-600 dark:text-emerald-400 font-mono bg-emerald-500/10">
+                                    {wGroup.totalAmount.toFixed(3)}
+                                  </td>
+                                </tr>
+                              </React.Fragment>
+                            ))
                           )}
+                        </tbody>
 
-                          {allChildExpenseColumns.map(colName => {
-                            const gAmt = userwiseGrandTotals.colTotals[colName] || 0;
-                            return (
-                              <td
-                                key={`grand_${colName}`}
-                                className="px-2.5 py-3 text-right border-r border-outline-variant font-extrabold font-mono text-on-surface"
-                              >
-                                {gAmt > 0 ? gAmt.toFixed(3) : '-'}
-                              </td>
-                            );
-                          })}
+                        {/* TFOOT: GRAND TOTAL ROW */}
+                        <tfoot className="bg-surface-container-high font-bold border-t-2 border-outline-variant text-xs sticky bottom-0 z-10 shadow-lg">
+                          <tr className="border-t border-outline-variant">
+                            {groupByLocation ? (
+                              <>
+                                <td colSpan={2} className="px-4 py-3 text-on-surface font-extrabold uppercase tracking-wider">
+                                  GRAND TOTAL
+                                </td>
+                                <td colSpan={2} className="px-3 py-3 border-r border-outline-variant font-extrabold text-primary">
+                                  {userwiseGrandTotals.uniqueLocationsCount} Locations ({structuredRows.length} Tickets)
+                                </td>
+                                <td colSpan={2} className="px-3 py-3 border-r border-outline-variant"></td>
+                              </>
+                            ) : (
+                              <>
+                                <td colSpan={4} className="px-4 py-3 text-on-surface font-extrabold uppercase tracking-wider">
+                                  GRAND TOTAL
+                                </td>
+                                <td className="px-3 py-3 border-r border-outline-variant font-extrabold text-primary">
+                                  {userwiseGrandTotals.uniqueLocationsCount} Locations
+                                </td>
+                                <td colSpan={3} className="px-3 py-3 border-r border-outline-variant"></td>
+                              </>
+                            )}
 
-                          <td className="px-3.5 py-3 text-right font-extrabold text-emerald-600 dark:text-emerald-400 font-mono text-sm bg-emerald-500/15">
-                            KD {userwiseGrandTotals.grandTotal.toFixed(3)}
-                          </td>
-                        </tr>
-                      </tfoot>
-                    </table>
+                            {allChildExpenseColumns.map(colName => {
+                              const gAmt = userwiseGrandTotals.colTotals[colName] || 0;
+                              return (
+                                <td
+                                  key={`grand_${colName}`}
+                                  className="px-2.5 py-3 text-right border-r border-outline-variant font-extrabold font-mono text-on-surface"
+                                >
+                                  {gAmt > 0 ? gAmt.toFixed(3) : '-'}
+                                </td>
+                              );
+                            })}
+
+                            <td className="px-3.5 py-3 text-right font-extrabold text-emerald-600 dark:text-emerald-400 font-mono text-sm bg-emerald-500/15">
+                              KD {userwiseGrandTotals.grandTotal.toFixed(3)}
+                            </td>
+                          </tr>
+                        </tfoot>
+                      </table>
+                    </div>
                   </div>
-                </div>
                 )}
 
                 {!showWorkerSummary && !showWorkerDetailed && (
@@ -3542,149 +4469,619 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
             )}
 
             {/* ========================================================================= */}
-            {/* TAB 2: CONSOLIDATED FINANCIAL SETTLEMENT & DYNAMIC LEDGER BATCH REPORTS */}
+            {/* TAB 2: CONSOLIDATED FINANCIAL SETTLEMENT & DYNAMIC LEDGER BATCH / STORE TYPE REPORTS */}
             {/* ========================================================================= */}
             {activeTab === 'storewise' && (
-              <div className="space-y-8">
-                {/* 1. FIRST SHEET: CONSOLIDATED FINANCIAL SETTLEMENT REPORT */}
-                {/* <div className="space-y-2 bg-surface-container-low/40 p-4 rounded-xl border border-outline-variant"> */}
-                <div className="flex items-center justify-between flex-wrap gap-2.5 bg-primary/10 border border-primary/25 rounded px-4 py-2.5 text-xs text-primary font-bold">
-                  <span className="flex items-center gap-2">
-                    <div className="rounded-lg bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
-                      <UserCheck className="w-5 h-5" />
-                    </div>
-                    {/* <FileText className="w-4 h-4" /> */}
-                    Location Summary Report
-                  </span>
-                  <div className="flex items-center gap-3">
-
-                    <span className="text-xs font-semibold px-2.5 py-1 rounded bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border border-emerald-500/30">
-                      Total Payout: KD {consolidatedUserData.grandTotal.toFixed(3)}
+              <div className="space-y-6">
+                {/* Storewise Grouping Mode Switcher */}
+                {/* <div className="flex items-center justify-between flex-wrap gap-3 bg-surface-container-high/60 p-2.5 rounded-lg border border-outline-variant">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-bold text-on-surface flex items-center gap-1.5">
+                      <Layers className="w-4 h-4 text-primary" />
+                      Report Grouping:
                     </span>
+                    <div className="flex items-center bg-surface-container-lowest p-0.5 rounded border border-outline-variant">
+                      <button
+                        type="button"
+                        onClick={() => setStoreReportGrouping('batch')}
+                        className={`px-3 py-1 rounded text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer ${storeReportGrouping === 'batch'
+                          ? 'bg-primary text-on-primary shadow-xs'
+                          : 'text-on-surface-variant hover:text-on-surface'
+                          }`}
+                      >
+                        <Boxes className="w-3.5 h-3.5" />
+                        By Ledger Batch
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setStoreReportGrouping('store_type')}
+                        className={`px-3 py-1 rounded text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer ${storeReportGrouping === 'store_type'
+                          ? 'bg-primary text-on-primary shadow-xs'
+                          : 'text-on-surface-variant hover:text-on-surface'
+                          }`}
+                      >
+                        <Store className="w-3.5 h-3.5" />
+                        By Store Type
+                      </button>
+                    </div>
                   </div>
-                </div>
-                <div className="border border-outline-variant rounded overflow-hidden bg-surface-container shadow-2xs">
-                  <table className="w-full text-xs text-left text-on-surface">
-                    <thead className="bg-surface-container-high text-on-surface-variant uppercase text-[11px] font-bold tracking-wider border-b border-outline-variant">
-                      <tr>
-                        <th className="px-5 py-3">Section (Ledger Batch)</th>
-                        <th className="px-5 py-3 text-right">Labour Charge</th>
-                        <th className="px-5 py-3 text-right">Expense</th>
-                        <th className="px-5 py-3 text-right bg-emerald-500/10 text-emerald-800 dark:text-emerald-300">Total</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-outline-variant/60">
-                      {consolidatedBatchData.list.map((item) => (
-                        <React.Fragment key={item.section}>
-                          <tr className="hover:bg-surface-container-high/40 transition-colors">
-                            <td className="px-5 py-3 font-semibold text-on-surface">
-                              <div className="flex items-center gap-2">
-                                <Boxes className="w-4 h-4 text-primary shrink-0" />
-                                <span>{item.section}</span>
-                              </div>
-                            </td>
-                            <td className="px-5 py-3 text-right font-mono font-medium text-on-surface">
-                              {item.labourCharge > 0 ? item.labourCharge.toFixed(3) : '-'}
-                            </td>
-                            <td className="px-5 py-3 text-right font-mono font-medium text-on-surface">
-                              {item.expense.toFixed(3)}
-                            </td>
-                            <td className="px-5 py-3 text-right font-mono font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-500/5">
-                              KD {item.total.toFixed(3)}
-                            </td>
+                  <span className="text-[11px] text-on-surface-variant">
+                    {storeReportGrouping === 'store_type'
+                      ? `Categorized by ${dynamicStoreTypes.length} Store Types across all branches`
+                      : `Categorized by ${dynamicLedgerBatches.length} Ledger Batches`}
+                  </span>
+                </div> */}
+
+                {/* 1. FIRST SHEET / SUMMARY SECTION */}
+                {storeReportGrouping === 'store_type' ? (
+                  <>
+                    <div className="flex items-center justify-between flex-wrap gap-2.5 bg-primary/10 border border-primary/25 rounded px-4 py-2.5 text-xs text-primary font-bold">
+                      <span className="flex items-center gap-2">
+                        <div className="rounded-lg bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
+                          <Store className="w-5 h-5" />
+                        </div>
+                        Store Type Summary Statement
+                      </span>
+                      <div className="flex items-center gap-3">
+                        <span className="text-xs font-semibold px-2.5 py-1 rounded bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border border-emerald-500/30">
+                          Total Payout: KD {consolidatedStoreTypeData.grandTotal.toFixed(3)}
+                        </span>
+                      </div>
+                    </div>
+                    <div className="border border-outline-variant rounded overflow-hidden bg-surface-container shadow-2xs">
+                      <table className="w-full text-xs text-left text-on-surface">
+                        <thead className="bg-surface-container-high text-on-surface-variant uppercase text-[11px] font-bold tracking-wider border-b border-outline-variant">
+                          <tr>
+                            <th className="px-5 py-3">Store Type</th>
+                            <th className="px-5 py-3 text-center">Stores Count</th>
+                            <th className="px-5 py-3 text-right">Labour Charge</th>
+                            <th className="px-5 py-3 text-right">Expense</th>
+                            <th className="px-5 py-3 text-right bg-emerald-500/10 text-emerald-800 dark:text-emerald-300">Total</th>
                           </tr>
-                          {showWorkerDetailsInSummary && item.workerList && item.workerList.map((w) => (
-                            <tr key={`${item.section}_${w.workerId || w.workerName}`} className="bg-surface-container-lowest/50 hover:bg-surface-container-high/30 transition-colors text-[11px]">
-                              <td className="px-5 py-2 pl-11 text-on-surface flex items-center gap-2">
-                                <span className="text-primary font-bold">•</span>
-                                <User className="w-3.5 h-3.5 text-primary/70 shrink-0" />
-                                <span className="font-semibold text-on-surface">{w.workerName}</span>
-                                {w.workerEmployeeNo && (
-                                  <span className="text-[10px] text-on-surface-variant font-mono">({w.workerEmployeeNo})</span>
-                                )}
+                        </thead>
+                        <tbody className="divide-y divide-outline-variant/60">
+                          {consolidatedStoreTypeData.list.map((item) => (
+                            <tr key={item.storeType} className="hover:bg-surface-container-high/40 transition-colors">
+                              <td className="px-5 py-3 font-semibold text-on-surface">
+                                <div className="flex items-center gap-2">
+                                  <Store className="w-4 h-4 text-primary shrink-0" />
+                                  <span>{item.storeTypeLabel}</span>
+                                </div>
                               </td>
-                              <td className="px-5 py-2 text-right font-mono text-on-surface-variant">
-                                {w.labourCharge > 0 ? w.labourCharge.toFixed(3) : '-'}
+                              <td className="px-5 py-3 text-center font-mono font-medium text-on-surface">
+                                <span className="px-2 py-0.5 rounded bg-surface-container-highest text-[11px] font-semibold">
+                                  {item.storesCount} {item.storesCount === 1 ? 'Store' : 'Stores'}
+                                </span>
                               </td>
-                              <td className="px-5 py-2 text-right font-mono text-on-surface-variant">
-                                {w.expense.toFixed(3)}
+                              <td className="px-5 py-3 text-right font-mono font-medium text-on-surface">
+                                {item.labourCharge > 0 ? item.labourCharge.toFixed(3) : '-'}
                               </td>
-                              <td className="px-5 py-2 text-right font-mono font-semibold text-emerald-600 dark:text-emerald-400 bg-emerald-500/5">
-                                KD {w.total.toFixed(3)}
+                              <td className="px-5 py-3 text-right font-mono font-medium text-on-surface">
+                                {item.expense.toFixed(3)}
+                              </td>
+                              <td className="px-5 py-3 text-right font-mono font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-500/5">
+                                KD {item.total.toFixed(3)}
                               </td>
                             </tr>
                           ))}
-                        </React.Fragment>
-                      ))}
-                    </tbody>
-                    <tfoot className="bg-surface-container-high font-extrabold border-t-2 border-outline-variant text-xs">
-                      <tr>
-                        <td className="px-5 py-3.5 text-on-surface uppercase tracking-wider">
-                          GRAND TOTAL
-                        </td>
-                        <td className="px-5 py-3.5 text-right font-mono text-on-surface">
-                          {consolidatedBatchData.grandLabour > 0 ? consolidatedBatchData.grandLabour.toFixed(3) : '-'}
-                        </td>
-                        <td className="px-5 py-3.5 text-right font-mono text-on-surface">
-                          {consolidatedBatchData.grandExpense.toFixed(3)}
-                        </td>
-                        <td className="px-5 py-3.5 text-right font-mono text-emerald-600 dark:text-emerald-400 text-sm bg-emerald-500/15">
-                          KD {consolidatedBatchData.grandTotal.toFixed(3)}
-                        </td>
-                      </tr>
-                    </tfoot>
-                  </table>
-                </div>
+                        </tbody>
+                        <tfoot className="bg-surface-container-high font-extrabold border-t-2 border-outline-variant text-xs">
+                          <tr>
+                            <td className="px-5 py-3.5 text-on-surface uppercase tracking-wider">
+                              GRAND TOTAL
+                            </td>
+                            <td className="px-5 py-3.5 text-center font-mono font-bold text-primary">
+                              {consolidatedStoreTypeData.totalStoresCount} Stores
+                            </td>
+                            <td className="px-5 py-3.5 text-right font-mono text-on-surface">
+                              {consolidatedStoreTypeData.grandLabour > 0 ? consolidatedStoreTypeData.grandLabour.toFixed(3) : '-'}
+                            </td>
+                            <td className="px-5 py-3.5 text-right font-mono text-on-surface">
+                              {consolidatedStoreTypeData.grandExpense.toFixed(3)}
+                            </td>
+                            <td className="px-5 py-3.5 text-right font-mono text-emerald-600 dark:text-emerald-400 text-sm bg-emerald-500/15">
+                              KD {consolidatedStoreTypeData.grandTotal.toFixed(3)}
+                            </td>
+                          </tr>
+                        </tfoot>
+                      </table>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <div className="flex items-center justify-between flex-wrap gap-2.5 bg-primary/10 border border-primary/25 rounded px-4 py-2.5 text-xs text-primary font-bold">
+                      <span className="flex items-center gap-2">
+                        <div className="rounded-lg bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
+                          <UserCheck className="w-5 h-5" />
+                        </div>
+                        Location Summary Report
+                      </span>
+                      <div className="flex items-center gap-3">
+                        <span className="text-xs font-semibold px-2.5 py-1 rounded bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border border-emerald-500/30">
+                          Total Payout: KD {consolidatedUserData.grandTotal.toFixed(3)}
+                        </span>
+                      </div>
+                    </div>
+                    <div className="border border-outline-variant rounded overflow-hidden bg-surface-container shadow-2xs">
+                      <table className="w-full text-xs text-left text-on-surface">
+                        <thead className="bg-surface-container-high text-on-surface-variant uppercase text-[11px] font-bold tracking-wider border-b border-outline-variant">
+                          <tr>
+                            <th className="px-5 py-3">Section (Ledger Batch)</th>
+                            <th className="px-5 py-3 text-right">Labour Charge</th>
+                            <th className="px-5 py-3 text-right">Expense</th>
+                            <th className="px-5 py-3 text-right bg-emerald-500/10 text-emerald-800 dark:text-emerald-300">Total</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-outline-variant/60">
+                          {consolidatedBatchData.list.map((item) => (
+                            <React.Fragment key={item.section}>
+                              <tr className="hover:bg-surface-container-high/40 transition-colors">
+                                <td className="px-5 py-3 font-semibold text-on-surface">
+                                  <div className="flex items-center gap-2">
+                                    <Boxes className="w-4 h-4 text-primary shrink-0" />
+                                    <span>{item.section}</span>
+                                  </div>
+                                </td>
+                                <td className="px-5 py-3 text-right font-mono font-medium text-on-surface">
+                                  {item.labourCharge > 0 ? item.labourCharge.toFixed(3) : '-'}
+                                </td>
+                                <td className="px-5 py-3 text-right font-mono font-medium text-on-surface">
+                                  {item.expense.toFixed(3)}
+                                </td>
+                                <td className="px-5 py-3 text-right font-mono font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-500/5">
+                                  KD {item.total.toFixed(3)}
+                                </td>
+                              </tr>
+                              {showWorkerDetailsInSummary && item.workerList && item.workerList.map((w) => (
+                                <tr key={`${item.section}_${w.workerId || w.workerName}`} className="bg-surface-container-lowest/50 hover:bg-surface-container-high/30 transition-colors text-[11px]">
+                                  <td className="px-5 py-2 pl-11 text-on-surface flex items-center gap-2">
+                                    <span className="text-primary font-bold">•</span>
+                                    <User className="w-3.5 h-3.5 text-primary/70 shrink-0" />
+                                    <span className="font-semibold text-on-surface">{w.workerName}</span>
+                                    {w.workerEmployeeNo && (
+                                      <span className="text-[10px] text-on-surface-variant font-mono">({w.workerEmployeeNo})</span>
+                                    )}
+                                  </td>
+                                  <td className="px-5 py-2 text-right font-mono text-on-surface-variant">
+                                    {w.labourCharge > 0 ? w.labourCharge.toFixed(3) : '-'}
+                                  </td>
+                                  <td className="px-5 py-2 text-right font-mono text-on-surface-variant">
+                                    {w.expense.toFixed(3)}
+                                  </td>
+                                  <td className="px-5 py-2 text-right font-mono font-semibold text-emerald-600 dark:text-emerald-400 bg-emerald-500/5">
+                                    KD {w.total.toFixed(3)}
+                                  </td>
+                                </tr>
+                              ))}
+                            </React.Fragment>
+                          ))}
+                        </tbody>
+                        <tfoot className="bg-surface-container-high font-extrabold border-t-2 border-outline-variant text-xs">
+                          <tr>
+                            <td className="px-5 py-3.5 text-on-surface uppercase tracking-wider">
+                              GRAND TOTAL
+                            </td>
+                            <td className="px-5 py-3.5 text-right font-mono text-on-surface">
+                              {consolidatedBatchData.grandLabour > 0 ? consolidatedBatchData.grandLabour.toFixed(3) : '-'}
+                            </td>
+                            <td className="px-5 py-3.5 text-right font-mono text-on-surface">
+                              {consolidatedBatchData.grandExpense.toFixed(3)}
+                            </td>
+                            <td className="px-5 py-3.5 text-right font-mono text-emerald-600 dark:text-emerald-400 text-sm bg-emerald-500/15">
+                              KD {consolidatedBatchData.grandTotal.toFixed(3)}
+                            </td>
+                          </tr>
+                        </tfoot>
+                      </table>
+                    </div>
+                  </>
+                )}
 
-                {/* 7-TIER VERIFICATION & AUTHORIZATION WORKFLOW (Consolidated Settlement) */}
-                {/* {renderSignaturesBlock()} */}
-                {/* </div> */}
-
-                {/* 2. SECOND SHEET: STORE & DEPARTMENT EXPENSE STATEMENT BY LEDGER BATCHES */}
-                <div className="space-y-4 pt-2">
-                  {/* Dynamic Ledger Batch Selector Pills */}
-                  <div className="flex items-center justify-between flex-wrap gap-2.5 bg-surface-container p-2.5 rounded border border-outline-variant print:hidden">
-                    <div className="flex items-center gap-1.5 flex-wrap">
-
-                      <button
-                        onClick={() => setSelectedBatchFilter('all')}
-                        className={`px-2.5 py-1 rounded text-xs font-semibold transition-colors cursor-pointer ${selectedBatchFilter === 'all'
-                          ? 'bg-primary text-on-primary shadow-xs'
-                          : 'bg-surface-container-high text-on-surface-variant hover:text-on-surface'
-                          }`}
-                      >
-                        All Batches ({structuredRows.length} tickets | {allExpenses.length} exp)
-                      </button>
-                      {dynamicLedgerBatches.map(bName => {
-                        const count = structuredRows.filter(r => (r.ledgerBatch || '').trim().toLowerCase() === bName.trim().toLowerCase()).length;
-                        const expCount = allExpenses.filter(e => (e.batch_name || '').trim().toLowerCase() === bName.trim().toLowerCase()).length;
-                        return (
-                          <button
-                            key={bName}
-                            onClick={() => setSelectedBatchFilter(bName)}
-                            className={`px-2.5 py-1 rounded text-xs font-semibold transition-colors cursor-pointer ${selectedBatchFilter === bName
-                              ? 'bg-primary text-on-primary shadow-xs'
-                              : 'bg-surface-container-high text-on-surface-variant hover:text-on-surface'
-                              }`}
-                          >
-                            {bName} ({count} tickets | {expCount} exp)
-                          </button>
-                        );
-                      })}
+                {/* 2. SECOND SECTION: DETAILED STATEMENT BY STORE TYPE OR LEDGER BATCHES */}
+                {storeReportGrouping === 'store_type' ? (
+                  <div className="space-y-4 pt-2">
+                    {/* Dynamic Store Type Selector Pills */}
+                    <div className="flex items-center justify-between flex-wrap gap-2.5 bg-surface-container p-2.5 rounded border border-outline-variant print:hidden">
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <button
+                          onClick={() => setSelectedStoreTypeFilter('all')}
+                          className={`px-2.5 py-1 rounded text-xs font-semibold transition-colors cursor-pointer ${selectedStoreTypeFilter === 'all'
+                            ? 'bg-primary text-on-primary shadow-xs'
+                            : 'bg-surface-container-high text-on-surface-variant hover:text-on-surface'
+                            }`}
+                        >
+                          All Store Types ({structuredRows.length} tickets | {allExpenses.length} exp)
+                        </button>
+                        {dynamicStoreTypes.map(tName => {
+                          const count = structuredRows.filter(r => (r.storeTypeLabel || '').trim().toLowerCase() === tName.trim().toLowerCase()).length;
+                          const storeCount = new Set(structuredRows.filter(r => (r.storeTypeLabel || '').trim().toLowerCase() === tName.trim().toLowerCase()).map(r => r.location)).size;
+                          return (
+                            <button
+                              key={tName}
+                              onClick={() => setSelectedStoreTypeFilter(tName)}
+                              className={`px-2.5 py-1 rounded text-xs font-semibold transition-colors cursor-pointer ${selectedStoreTypeFilter === tName
+                                ? 'bg-primary text-on-primary shadow-xs'
+                                : 'bg-surface-container-high text-on-surface-variant hover:text-on-surface'
+                                }`}
+                            >
+                              {tName} ({count} tickets · {storeCount} stores)
+                            </button>
+                          );
+                        })}
+                      </div>
                     </div>
 
-
-                  </div>
-
-
-                  <div className="flex items-center justify-between flex-wrap gap-2.5 bg-primary/10 border border-primary/25 rounded px-4 py-2.5 text-xs text-primary font-bold">
-                    <h3 className="text-md font-bold  tracking-wider flex items-center gap-2">
-                      <Boxes className="w-4 h-4 text-primary" />
-                      <span>{selectedBatchFilter === 'all' ? 'Location Detailed Report' : selectedBatchFilter}</span>
-                    </h3>
-                    <div className="flex items-center gap-3">
+                    <div className="flex items-center justify-between flex-wrap gap-2.5 bg-primary/10 border border-primary/25 rounded px-4 py-2.5 text-xs text-primary font-bold">
+                      <h3 className="text-md font-bold tracking-wider flex items-center gap-2">
+                        <Store className="w-4 h-4 text-primary" />
+                        <span>{selectedStoreTypeFilter === 'all' ? 'Store Type Detailed Report' : selectedStoreTypeFilter}</span>
+                      </h3>
                       <div className="flex items-center gap-3">
+                        <span
+                          className={
+                            groupByLocation
+                              ? "text-[11px] font-normal text-on-surface-variant"
+                              : "text-[10px] font-normal text-red-600 animate-pulse"
+                          }
+                        >
+                          {groupByLocation
+                            ? `Grouped by location (${storewiseTypeTotals.uniqueLocationsCount} locations)`
+                            : "⚠ Location Will Be repeated"}
+                        </span>
+                      </div>
+                    </div>
 
+                    {/* Table with Multi-Level Headers for Store Type */}
+                    <div className="border border-outline-variant rounded overflow-x-auto bg-surface-container shadow-2xs">
+                      <table className="w-full text-xs text-left text-on-surface border-collapse">
+                        <thead className="bg-surface-container-high text-on-surface-variant text-[11px] font-bold border-b-2 border-outline-variant sticky top-0 z-10">
+                          <tr>
+                            {groupByLocation ? (
+                              <>
+                                <th rowSpan={2} className="px-2.5 py-2.5 border-r border-outline-variant text-center w-12 font-bold">SL</th>
+                                <th rowSpan={2} className="px-3.5 py-2.5 border-r border-outline-variant text-left font-bold min-w-[150px]">TICKET -NO</th>
+                                <th rowSpan={2} className="px-4 py-2.5 border-r border-outline-variant text-left font-bold">LOCATION</th>
+                                <th rowSpan={2} className="px-3 py-2.5 border-r border-outline-variant text-left font-bold">SUB DEPARTMENT</th>
+                                <th rowSpan={2} className="px-4 py-2.5 border-r border-outline-variant text-left font-bold">SUMMARY[Exp]</th>
+                              </>
+                            ) : (
+                              <>
+                                <th rowSpan={2} className="px-2.5 py-2.5 border-r border-outline-variant text-center">SLNO</th>
+                                <th rowSpan={2} className="px-3 py-2.5 border-r border-outline-variant text-center">BUNDLE ID</th>
+                                <th rowSpan={2} className="px-3 py-2.5 border-r border-outline-variant">TICKET -NO</th>
+                                <th rowSpan={2} className="px-3 py-2.5 border-r border-outline-variant">LOCATION</th>
+                                <th rowSpan={2} className="px-3 py-2.5 border-r border-outline-variant">SUB DEPARTMENT</th>
+                                <th rowSpan={2} className="px-4 py-2.5 border-r border-outline-variant">Issue Title (Consolidation)</th>
+                                <th rowSpan={2} className="px-3 py-2.5 border-r border-outline-variant">Store Type</th>
+                              </>
+                            )}
+
+                            {/* Parent Expense Categories */}
+                            {expenseColumnsHierarchy.map(cat => (
+                              <th
+                                key={cat.parentName}
+                                colSpan={cat.children.length}
+                                className="px-3 py-1.5 text-center border-r border-outline-variant bg-surface-container-lowest font-bold text-primary uppercase tracking-wider text-[10px]"
+                              >
+                                {cat.parentName}
+                              </th>
+                            ))}
+
+                            <th rowSpan={2} className="px-3.5 py-2.5 text-right font-bold bg-emerald-500/10 text-emerald-800 dark:text-emerald-300">
+                              TOTAL
+                            </th>
+                          </tr>
+
+                          <tr>
+                            {expenseColumnsHierarchy.map(cat => (
+                              cat.children.map(child => (
+                                <th
+                                  key={`${cat.parentName}_${child}`}
+                                  className="px-2.5 py-1.5 text-right border-r border-outline-variant bg-surface-container-low font-medium text-[10px] text-on-surface-variant whitespace-nowrap"
+                                >
+                                  {child}
+                                </th>
+                              ))
+                            ))}
+                          </tr>
+                        </thead>
+
+                        <tbody className="divide-y divide-outline-variant/60 text-xs">
+                          {groupByLocation ? (
+                            storewiseFilteredByStoreType.length === 0 ? (
+                              <tr>
+                                <td colSpan={5 + allChildExpenseColumns.length + 1} className="p-8 text-center text-on-surface-variant">
+                                  No records found for the selected store type.
+                                </td>
+                              </tr>
+                            ) : (
+                              storewiseFilteredByStoreType.map(typeGroup => (
+                                <React.Fragment key={typeGroup.typeName}>
+                                  {/* STORE TYPE HEADER ROW */}
+                                  <tr className="bg-primary/10 border-y border-primary/25 font-bold text-primary print:break-before-page">
+                                    <td
+                                      colSpan={5 + allChildExpenseColumns.length + 1}
+                                      className="px-4 py-2.5 text-xs tracking-wide"
+                                    >
+                                      <div className="flex items-center justify-between">
+                                        <div className="flex items-center gap-2">
+                                          <Store className="w-4 h-4 text-primary" />
+                                          <span className="font-bold">🔹 STORE TYPE: {typeGroup.typeName}</span>
+                                          <span className="text-[11px] font-normal text-on-surface-variant">
+                                            — {typeGroup.rows.length} Tickets
+                                          </span>
+                                        </div>
+                                        <span className="text-xs font-bold text-emerald-600 dark:text-emerald-400 font-mono">
+                                          Subtotal: KD {typeGroup.typeTotal.toFixed(3)}
+                                        </span>
+                                      </div>
+                                    </td>
+                                  </tr>
+
+                                  {/* STORE TYPE LOCATION ROWS */}
+                                  {typeGroup.locationRows.map((locRow, idx) => (
+                                    <tr key={locRow.location || idx} className="hover:bg-surface-container-high/40 transition-colors">
+                                      <td className="px-2.5 py-2.5 border-r border-outline-variant text-center font-mono text-on-surface-variant text-[11px]">
+                                        {idx + 1}
+                                      </td>
+                                      <td className="px-3.5 py-2.5 border-r border-outline-variant font-mono text-[11px]">
+                                        <div className="flex flex-col gap-0.5 whitespace-nowrap font-semibold text-primary">
+                                          {locRow.ticketLines && locRow.ticketLines.length > 0 ? (
+                                            locRow.ticketLines.map((line, lIdx) => (
+                                              <span key={lIdx}>{line}</span>
+                                            ))
+                                          ) : (
+                                            <span>{locRow.expNoStr || '-'}</span>
+                                          )}
+                                        </div>
+                                      </td>
+                                      <td className="px-4 py-2.5 border-r border-outline-variant font-bold text-on-surface">
+                                        <div className="flex items-center gap-1.5">
+                                          <Building2 className="w-3.5 h-3.5 text-primary shrink-0" />
+                                          <span>{locRow.location}</span>
+                                        </div>
+                                      </td>
+                                      <td className="px-3 py-2.5 border-r border-outline-variant text-on-surface-variant text-[11px]">
+                                        {locRow.subDeptStr || '-'}
+                                      </td>
+                                      <td className="px-4 py-2.5 border-r border-outline-variant text-on-surface text-[11px] max-w-sm truncate" title={locRow.summary}>
+                                        <span className="font-medium text-on-surface">{locRow.summary}</span>
+                                      </td>
+
+                                      {allChildExpenseColumns.map(colName => {
+                                        const amt = locRow.amountsByType[colName];
+                                        return (
+                                          <td
+                                            key={colName}
+                                            className="px-2.5 py-2.5 text-right border-r border-outline-variant font-mono text-[11px] text-on-surface"
+                                          >
+                                            {amt !== undefined && amt > 0 ? (
+                                              <span className="font-semibold">{amt.toFixed(3)}</span>
+                                            ) : (
+                                              <span className="text-on-surface-variant/40">-</span>
+                                            )}
+                                          </td>
+                                        );
+                                      })}
+
+                                      <td className="px-3.5 py-2.5 text-right font-bold text-emerald-600 dark:text-emerald-400 font-mono text-[11px] bg-emerald-500/5">
+                                        {locRow.total.toFixed(3)}
+                                      </td>
+                                    </tr>
+                                  ))}
+
+                                  {/* STORE TYPE SUBTOTAL ROW */}
+                                  <tr className="bg-surface-container-high/60 font-bold border-t border-b border-outline-variant text-[11px]">
+                                    <td colSpan={5} className="px-4 py-2 text-right text-on-surface font-semibold uppercase">
+                                      Type Subtotal ({typeGroup.typeName}):
+                                    </td>
+                                    {allChildExpenseColumns.map(colName => {
+                                      const sum = typeGroup.subtotalByType[colName] || 0;
+                                      return (
+                                        <td
+                                          key={colName}
+                                          className="px-2.5 py-2 text-right border-r border-outline-variant font-mono text-on-surface"
+                                        >
+                                          {sum > 0 ? (
+                                            <span className="font-semibold">{sum.toFixed(3)}</span>
+                                          ) : (
+                                            <span className="text-on-surface-variant/40">-</span>
+                                          )}
+                                        </td>
+                                      );
+                                    })}
+                                    <td className="px-3.5 py-2 text-right font-bold text-emerald-600 dark:text-emerald-400 font-mono bg-emerald-500/10">
+                                      KD {typeGroup.typeTotal.toFixed(3)}
+                                    </td>
+                                  </tr>
+                                </React.Fragment>
+                              ))
+                            )
+                          ) : (
+                            storewiseFilteredByStoreType.length === 0 ? (
+                              <tr>
+                                <td colSpan={8 + allChildExpenseColumns.length} className="p-8 text-center text-on-surface-variant">
+                                  No records found for the selected store type.
+                                </td>
+                              </tr>
+                            ) : (
+                              storewiseFilteredByStoreType.map(typeGroup => (
+                                <React.Fragment key={typeGroup.typeName}>
+                                  {/* STORE TYPE HEADER ROW */}
+                                  <tr className="bg-primary/10 border-y border-primary/25 font-bold text-primary print:break-before-page">
+                                    <td
+                                      colSpan={7 + allChildExpenseColumns.length + 1}
+                                      className="px-4 py-2 text-xs tracking-wide"
+                                    >
+                                      <div className="flex items-center justify-between">
+                                        <div className="flex items-center gap-2">
+                                          <Store className="w-4 h-4 text-primary" />
+                                          <span className="font-bold">🔹 STORE TYPE: {typeGroup.typeName}</span>
+                                          <span className="text-[11px] font-normal text-on-surface-variant">
+                                            — {typeGroup.rows.length} Tickets
+                                          </span>
+                                        </div>
+                                        <span className="text-xs font-bold text-emerald-600 dark:text-emerald-400 font-mono">
+                                          Subtotal: KD {typeGroup.typeTotal.toFixed(3)}
+                                        </span>
+                                      </div>
+                                    </td>
+                                  </tr>
+
+                                  {/* STORE TYPE ROWS */}
+                                  {typeGroup.rows.map((row, idx) => (
+                                    <tr key={row.uniqueKey || idx} className="hover:bg-surface-container-high/40 transition-colors">
+                                      <td className="px-2.5 py-2 border-r border-outline-variant text-center font-mono text-on-surface-variant text-[11px]">
+                                        {idx + 1}
+                                      </td>
+                                      <td className="px-3 py-2 border-r border-outline-variant text-center font-mono text-primary font-semibold text-[11px]">
+                                        #{row.bundleId}
+                                      </td>
+                                      <td className="px-3 py-2 border-r border-outline-variant font-mono font-medium text-[11px]">
+                                        {row.ticketObj && setSelectedTicketForModal ? (
+                                          <button
+                                            type="button"
+                                            onClick={() => setSelectedTicketForModal(row.ticketObj)}
+                                            className="text-primary hover:underline cursor-pointer font-bold"
+                                          >
+                                            {row.expNo}
+                                          </button>
+                                        ) : (
+                                          <span>{row.expNo}</span>
+                                        )}
+                                      </td>
+                                      <td className="px-3 py-2 border-r border-outline-variant font-medium text-on-surface">
+                                        {row.location}
+                                      </td>
+                                      <td className="px-3 py-2 border-r border-outline-variant text-on-surface-variant text-[11px]">
+                                        {row.subDepartment}
+                                      </td>
+                                      <td className="px-4 py-2 border-r border-outline-variant font-normal text-on-surface truncate max-w-xs" title={row.issueTitle}>
+                                        {row.issueTitle}
+                                      </td>
+                                      <td className="px-3 py-2 border-r border-outline-variant text-on-surface-variant text-[11px]">
+                                        <span className="px-1.5 py-0.5 rounded bg-surface-container-high text-[10px] border border-outline-variant/60 font-medium">
+                                          {row.storeTypeLabel || row.storeType || '-'}
+                                        </span>
+                                      </td>
+
+                                      {allChildExpenseColumns.map(colName => {
+                                        const amt = row.amountsByType[colName];
+                                        return (
+                                          <td
+                                            key={colName}
+                                            className="px-2.5 py-2 text-right border-r border-outline-variant font-mono text-[11px] text-on-surface"
+                                          >
+                                            {amt !== undefined && amt > 0 ? (
+                                              <span className="font-semibold">{amt.toFixed(3)}</span>
+                                            ) : (
+                                              <span className="text-on-surface-variant/40">-</span>
+                                            )}
+                                          </td>
+                                        );
+                                      })}
+
+                                      <td className="px-3.5 py-2 text-right font-bold text-emerald-600 dark:text-emerald-400 font-mono text-[11px] bg-emerald-500/5">
+                                        {row.total.toFixed(3)}
+                                      </td>
+                                    </tr>
+                                  ))}
+
+                                  {/* STORE TYPE SUBTOTAL ROW */}
+                                  <tr className="bg-surface-container-high/60 font-bold border-t border-b border-outline-variant text-[11px]">
+                                    <td colSpan={7} className="px-4 py-2 text-right text-on-surface font-semibold uppercase">
+                                      Type Subtotal ({typeGroup.typeName}):
+                                    </td>
+                                    {allChildExpenseColumns.map(colName => {
+                                      const sum = typeGroup.subtotalByType[colName] || 0;
+                                      return (
+                                        <td
+                                          key={colName}
+                                          className="px-2.5 py-2 text-right border-r border-outline-variant font-mono text-on-surface"
+                                        >
+                                          {sum > 0 ? (
+                                            <span className="font-semibold">{sum.toFixed(3)}</span>
+                                          ) : (
+                                            <span className="text-on-surface-variant/40">-</span>
+                                          )}
+                                        </td>
+                                      );
+                                    })}
+                                    <td className="px-3.5 py-2 text-right font-bold text-emerald-600 dark:text-emerald-400 font-mono bg-emerald-500/10">
+                                      KD {typeGroup.typeTotal.toFixed(3)}
+                                    </td>
+                                  </tr>
+                                </React.Fragment>
+                              ))
+                            )
+                          )}
+                        </tbody>
+
+                        <tfoot className="bg-surface-container-high font-bold border-t-2 border-outline-variant text-xs sticky bottom-0 z-10 shadow-lg">
+                          <tr>
+                            <td colSpan={groupByLocation ? 5 : 7} className="px-4 py-3 text-on-surface font-extrabold uppercase">
+                              {groupByLocation ? `Total (${storewiseTypeTotals.uniqueLocationsCount} Locations)` : 'Total'}
+                            </td>
+
+                            {allChildExpenseColumns.map(colName => {
+                              const amt = storewiseTypeTotals.colTotals[colName] || 0;
+                              return (
+                                <td
+                                  key={`store_type_total_${colName}`}
+                                  className="px-2.5 py-3 text-right border-r border-outline-variant font-extrabold font-mono text-on-surface"
+                                >
+                                  {amt > 0 ? amt.toFixed(3) : '-'}
+                                </td>
+                              );
+                            })}
+
+                            <td className="px-3.5 py-3 text-right font-extrabold text-emerald-600 dark:text-emerald-400 font-mono text-sm bg-emerald-500/15">
+                              KD {storewiseTypeTotals.grandTotal.toFixed(3)}
+                            </td>
+                          </tr>
+                        </tfoot>
+                      </table>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="space-y-4 pt-2">
+                    {/* Dynamic Ledger Batch Selector Pills */}
+                    <div className="flex items-center justify-between flex-wrap gap-2.5 bg-surface-container p-2.5 rounded border border-outline-variant print:hidden">
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <button
+                          onClick={() => setSelectedBatchFilter('all')}
+                          className={`px-2.5 py-1 rounded text-xs font-semibold transition-colors cursor-pointer ${selectedBatchFilter === 'all'
+                            ? 'bg-primary text-on-primary shadow-xs'
+                            : 'bg-surface-container-high text-on-surface-variant hover:text-on-surface'
+                            }`}
+                        >
+                          All Batches ({structuredRows.length} tickets | {allExpenses.length} exp)
+                        </button>
+                        {dynamicLedgerBatches.map(bName => {
+                          const count = structuredRows.filter(r => (r.ledgerBatch || '').trim().toLowerCase() === bName.trim().toLowerCase()).length;
+                          const expCount = allExpenses.filter(e => (e.batch_name || '').trim().toLowerCase() === bName.trim().toLowerCase()).length;
+                          return (
+                            <button
+                              key={bName}
+                              onClick={() => setSelectedBatchFilter(bName)}
+                              className={`px-2.5 py-1 rounded text-xs font-semibold transition-colors cursor-pointer ${selectedBatchFilter === bName
+                                ? 'bg-primary text-on-primary shadow-xs'
+                                : 'bg-surface-container-high text-on-surface-variant hover:text-on-surface'
+                                }`}
+                            >
+                              {bName} ({count} tickets | {expCount} exp)
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    <div className="flex items-center justify-between flex-wrap gap-2.5 bg-primary/10 border border-primary/25 rounded px-4 py-2.5 text-xs text-primary font-bold">
+                      <h3 className="text-md font-bold tracking-wider flex items-center gap-2">
+                        <Boxes className="w-4 h-4 text-primary" />
+                        <span>{selectedBatchFilter === 'all' ? 'Location Detailed Report' : selectedBatchFilter}</span>
+                      </h3>
+                      <div className="flex items-center gap-3">
                         <span
                           className={
                             groupByLocation
@@ -3698,320 +5095,320 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
                         </span>
                       </div>
                     </div>
-                  </div>
 
-                  {/* Table with Multi-Level Headers */}
-                  <div className="border border-outline-variant rounded overflow-x-auto bg-surface-container shadow-2xs">
-                    <table className="w-full text-xs text-left text-on-surface border-collapse">
-                      <thead className="bg-surface-container-high text-on-surface-variant text-[11px] font-bold border-b-2 border-outline-variant sticky top-0 z-10">
-                        <tr>
-                          {groupByLocation ? (
-                            <>
-                              <th rowSpan={2} className="px-2.5 py-2.5 border-r border-outline-variant text-center w-12 font-bold">SL</th>
-                              <th rowSpan={2} className="px-3.5 py-2.5 border-r border-outline-variant text-left font-bold min-w-[150px]">TICKET -NO</th>
-                              <th rowSpan={2} className="px-4 py-2.5 border-r border-outline-variant text-left font-bold">LOCATION</th>
-                              <th rowSpan={2} className="px-3 py-2.5 border-r border-outline-variant text-left font-bold">SUB DEPARTMENT</th>
-                              <th rowSpan={2} className="px-4 py-2.5 border-r border-outline-variant text-left font-bold">SUMMARY[Exp]</th>
-                            </>
-                          ) : (
-                            <>
-                              <th rowSpan={2} className="px-2.5 py-2.5 border-r border-outline-variant text-center">SLNO</th>
-                              <th rowSpan={2} className="px-3 py-2.5 border-r border-outline-variant text-center">BUNDLE ID</th>
-                              <th rowSpan={2} className="px-3 py-2.5 border-r border-outline-variant">TICKET -NO</th>
-                              <th rowSpan={2} className="px-3 py-2.5 border-r border-outline-variant">LOCATION</th>
-                              <th rowSpan={2} className="px-3 py-2.5 border-r border-outline-variant">SUB DEPARTMENT</th>
-                              <th rowSpan={2} className="px-4 py-2.5 border-r border-outline-variant">Issue Title (Consolidation)</th>
-                              <th rowSpan={2} className="px-3 py-2.5 border-r border-outline-variant">Ledger Group</th>
-                            </>
-                          )}
+                    {/* Table with Multi-Level Headers */}
+                    <div className="border border-outline-variant rounded overflow-x-auto bg-surface-container shadow-2xs">
+                      <table className="w-full text-xs text-left text-on-surface border-collapse">
+                        <thead className="bg-surface-container-high text-on-surface-variant text-[11px] font-bold border-b-2 border-outline-variant sticky top-0 z-10">
+                          <tr>
+                            {groupByLocation ? (
+                              <>
+                                <th rowSpan={2} className="px-2.5 py-2.5 border-r border-outline-variant text-center w-12 font-bold">SL</th>
+                                <th rowSpan={2} className="px-3.5 py-2.5 border-r border-outline-variant text-left font-bold min-w-[150px]">TICKET -NO</th>
+                                <th rowSpan={2} className="px-4 py-2.5 border-r border-outline-variant text-left font-bold">LOCATION</th>
+                                <th rowSpan={2} className="px-3 py-2.5 border-r border-outline-variant text-left font-bold">SUB DEPARTMENT</th>
+                                <th rowSpan={2} className="px-4 py-2.5 border-r border-outline-variant text-left font-bold">SUMMARY[Exp]</th>
+                              </>
+                            ) : (
+                              <>
+                                <th rowSpan={2} className="px-2.5 py-2.5 border-r border-outline-variant text-center">SLNO</th>
+                                <th rowSpan={2} className="px-3 py-2.5 border-r border-outline-variant text-center">BUNDLE ID</th>
+                                <th rowSpan={2} className="px-3 py-2.5 border-r border-outline-variant">TICKET -NO</th>
+                                <th rowSpan={2} className="px-3 py-2.5 border-r border-outline-variant">LOCATION</th>
+                                <th rowSpan={2} className="px-3 py-2.5 border-r border-outline-variant">SUB DEPARTMENT</th>
+                                <th rowSpan={2} className="px-4 py-2.5 border-r border-outline-variant">Issue Title (Consolidation)</th>
+                                <th rowSpan={2} className="px-3 py-2.5 border-r border-outline-variant">Ledger Group</th>
+                              </>
+                            )}
 
-                          {/* Parent Expense Categories */}
-                          {expenseColumnsHierarchy.map(cat => (
-                            <th
-                              key={cat.parentName}
-                              colSpan={cat.children.length}
-                              className="px-3 py-1.5 text-center border-r border-outline-variant bg-surface-container-lowest font-bold text-primary uppercase tracking-wider text-[10px]"
-                            >
-                              {cat.parentName}
-                            </th>
-                          ))}
-
-                          <th rowSpan={2} className="px-3.5 py-2.5 text-right font-bold bg-emerald-500/10 text-emerald-800 dark:text-emerald-300">
-                            TOTAL
-                          </th>
-                        </tr>
-
-                        <tr>
-                          {expenseColumnsHierarchy.map(cat => (
-                            cat.children.map(child => (
+                            {/* Parent Expense Categories */}
+                            {expenseColumnsHierarchy.map(cat => (
                               <th
-                                key={`${cat.parentName}_${child}`}
-                                className="px-2.5 py-1.5 text-right border-r border-outline-variant bg-surface-container-low font-medium text-[10px] text-on-surface-variant whitespace-nowrap"
+                                key={cat.parentName}
+                                colSpan={cat.children.length}
+                                className="px-3 py-1.5 text-center border-r border-outline-variant bg-surface-container-lowest font-bold text-primary uppercase tracking-wider text-[10px]"
                               >
-                                {child}
+                                {cat.parentName}
                               </th>
-                            ))
-                          ))}
-                        </tr>
-                      </thead>
+                            ))}
 
-                      <tbody className="divide-y divide-outline-variant/60 text-xs">
-                        {groupByLocation ? (
-                          storewiseFilteredByBatch.length === 0 ? (
-                            <tr>
-                              <td colSpan={5 + allChildExpenseColumns.length + 1} className="p-8 text-center text-on-surface-variant">
-                                No records found for the selected criteria.
-                              </td>
-                            </tr>
-                          ) : (
-                            storewiseFilteredByBatch.map(batch => (
-                              <React.Fragment key={batch.batchName}>
-                                {/* BATCH HEADER ROW */}
-                                <tr className="bg-primary/10 border-y border-primary/25 font-bold text-primary print:break-before-page">
-                                  <td
-                                    colSpan={5 + allChildExpenseColumns.length + 1}
-                                    className="px-4 py-2.5 text-xs tracking-wide"
-                                  >
-                                    <div className="flex items-center justify-between">
-                                      <div className="flex items-center gap-2">
-                                        <Boxes className="w-4 h-4 text-primary" />
-                                        <span className="font-bold">🔹 LEDGER BATCH: {batch.batchName}</span>
-                                        <span className="text-[11px] font-normal text-on-surface-variant">
-                                          — {batch.rows.length} Tickets
+                            <th rowSpan={2} className="px-3.5 py-2.5 text-right font-bold bg-emerald-500/10 text-emerald-800 dark:text-emerald-300">
+                              TOTAL
+                            </th>
+                          </tr>
+
+                          <tr>
+                            {expenseColumnsHierarchy.map(cat => (
+                              cat.children.map(child => (
+                                <th
+                                  key={`${cat.parentName}_${child}`}
+                                  className="px-2.5 py-1.5 text-right border-r border-outline-variant bg-surface-container-low font-medium text-[10px] text-on-surface-variant whitespace-nowrap"
+                                >
+                                  {child}
+                                </th>
+                              ))
+                            ))}
+                          </tr>
+                        </thead>
+
+                        <tbody className="divide-y divide-outline-variant/60 text-xs">
+                          {groupByLocation ? (
+                            storewiseFilteredByBatch.length === 0 ? (
+                              <tr>
+                                <td colSpan={5 + allChildExpenseColumns.length + 1} className="p-8 text-center text-on-surface-variant">
+                                  No records found for the selected criteria.
+                                </td>
+                              </tr>
+                            ) : (
+                              storewiseFilteredByBatch.map(batch => (
+                                <React.Fragment key={batch.batchName}>
+                                  {/* BATCH HEADER ROW */}
+                                  <tr className="bg-primary/10 border-y border-primary/25 font-bold text-primary print:break-before-page">
+                                    <td
+                                      colSpan={5 + allChildExpenseColumns.length + 1}
+                                      className="px-4 py-2.5 text-xs tracking-wide"
+                                    >
+                                      <div className="flex items-center justify-between">
+                                        <div className="flex items-center gap-2">
+                                          <Boxes className="w-4 h-4 text-primary" />
+                                          <span className="font-bold">🔹 LEDGER BATCH: {batch.batchName}</span>
+                                          <span className="text-[11px] font-normal text-on-surface-variant">
+                                            — {batch.rows.length} Tickets
+                                          </span>
+                                        </div>
+                                        <span className="text-xs font-bold text-emerald-600 dark:text-emerald-400 font-mono">
+                                          Subtotal: KD {batch.batchTotal.toFixed(3)}
                                         </span>
                                       </div>
-                                      <span className="text-xs font-bold text-emerald-600 dark:text-emerald-400 font-mono">
-                                        Subtotal: KD {batch.batchTotal.toFixed(3)}
-                                      </span>
-                                    </div>
-                                  </td>
-                                </tr>
+                                    </td>
+                                  </tr>
 
-                                {/* BATCH LOCATION ROWS */}
-                                {batch.locationRows.map((locRow, idx) => (
-                                  <tr key={locRow.location || idx} className="hover:bg-surface-container-high/40 transition-colors">
-                                    <td className="px-2.5 py-2.5 border-r border-outline-variant text-center font-mono text-on-surface-variant text-[11px]">
-                                      {idx + 1}
-                                    </td>
-                                    <td className="px-3.5 py-2.5 border-r border-outline-variant font-mono text-[11px]">
-                                      <div className="flex flex-col gap-0.5 whitespace-nowrap font-semibold text-primary">
-                                        {locRow.ticketLines && locRow.ticketLines.length > 0 ? (
-                                          locRow.ticketLines.map((line, lIdx) => (
-                                            <span key={lIdx}>{line}</span>
-                                          ))
-                                        ) : (
-                                          <span>{locRow.expNoStr || '-'}</span>
-                                        )}
-                                      </div>
-                                    </td>
-                                    <td className="px-4 py-2.5 border-r border-outline-variant font-bold text-on-surface">
-                                      <div className="flex items-center gap-1.5">
-                                        <Building2 className="w-3.5 h-3.5 text-primary shrink-0" />
-                                        <span>{locRow.location}</span>
-                                      </div>
-                                    </td>
-                                    <td className="px-3 py-2.5 border-r border-outline-variant text-on-surface-variant text-[11px]">
-                                      {locRow.subDeptStr || '-'}
-                                    </td>
-                                    <td className="px-4 py-2.5 border-r border-outline-variant text-on-surface text-[11px] max-w-sm truncate" title={locRow.summary}>
-                                      <span className="font-medium text-on-surface">{locRow.summary}</span>
-                                    </td>
+                                  {/* BATCH LOCATION ROWS */}
+                                  {batch.locationRows.map((locRow, idx) => (
+                                    <tr key={locRow.location || idx} className="hover:bg-surface-container-high/40 transition-colors">
+                                      <td className="px-2.5 py-2.5 border-r border-outline-variant text-center font-mono text-on-surface-variant text-[11px]">
+                                        {idx + 1}
+                                      </td>
+                                      <td className="px-3.5 py-2.5 border-r border-outline-variant font-mono text-[11px]">
+                                        <div className="flex flex-col gap-0.5 whitespace-nowrap font-semibold text-primary">
+                                          {locRow.ticketLines && locRow.ticketLines.length > 0 ? (
+                                            locRow.ticketLines.map((line, lIdx) => (
+                                              <span key={lIdx}>{line}</span>
+                                            ))
+                                          ) : (
+                                            <span>{locRow.expNoStr || '-'}</span>
+                                          )}
+                                        </div>
+                                      </td>
+                                      <td className="px-4 py-2.5 border-r border-outline-variant font-bold text-on-surface">
+                                        <div className="flex items-center gap-1.5">
+                                          <Building2 className="w-3.5 h-3.5 text-primary shrink-0" />
+                                          <span>{locRow.location}</span>
+                                        </div>
+                                      </td>
+                                      <td className="px-3 py-2.5 border-r border-outline-variant text-on-surface-variant text-[11px]">
+                                        {locRow.subDeptStr || '-'}
+                                      </td>
+                                      <td className="px-4 py-2.5 border-r border-outline-variant text-on-surface text-[11px] max-w-sm truncate" title={locRow.summary}>
+                                        <span className="font-medium text-on-surface">{locRow.summary}</span>
+                                      </td>
 
+                                      {allChildExpenseColumns.map(colName => {
+                                        const amt = locRow.amountsByType[colName];
+                                        return (
+                                          <td
+                                            key={colName}
+                                            className="px-2.5 py-2.5 text-right border-r border-outline-variant font-mono text-[11px] text-on-surface"
+                                          >
+                                            {amt !== undefined && amt > 0 ? (
+                                              <span className="font-semibold">{amt.toFixed(3)}</span>
+                                            ) : (
+                                              <span className="text-on-surface-variant/40">-</span>
+                                            )}
+                                          </td>
+                                        );
+                                      })}
+
+                                      <td className="px-3.5 py-2.5 text-right font-bold text-emerald-600 dark:text-emerald-400 font-mono text-[11px] bg-emerald-500/5">
+                                        {locRow.total.toFixed(3)}
+                                      </td>
+                                    </tr>
+                                  ))}
+
+                                  {/* BATCH SUBTOTAL ROW */}
+                                  <tr className="bg-surface-container-high/60 font-bold border-t border-b border-outline-variant text-[11px]">
+                                    <td colSpan={5} className="px-4 py-2 text-right text-on-surface font-semibold uppercase">
+                                      Batch Subtotal ({batch.batchName}):
+                                    </td>
                                     {allChildExpenseColumns.map(colName => {
-                                      const amt = locRow.amountsByType[colName];
+                                      const sum = batch.subtotalByType[colName] || 0;
                                       return (
                                         <td
                                           key={colName}
-                                          className="px-2.5 py-2.5 text-right border-r border-outline-variant font-mono text-[11px] text-on-surface"
+                                          className="px-2.5 py-2 text-right border-r border-outline-variant font-mono text-on-surface"
                                         >
-                                          {amt !== undefined && amt > 0 ? (
-                                            <span className="font-semibold">{amt.toFixed(3)}</span>
+                                          {sum > 0 ? (
+                                            <span className="font-semibold">{sum.toFixed(3)}</span>
                                           ) : (
                                             <span className="text-on-surface-variant/40">-</span>
                                           )}
                                         </td>
                                       );
                                     })}
-
-                                    <td className="px-3.5 py-2.5 text-right font-bold text-emerald-600 dark:text-emerald-400 font-mono text-[11px] bg-emerald-500/5">
-                                      {locRow.total.toFixed(3)}
+                                    <td className="px-3.5 py-2 text-right font-bold text-emerald-600 dark:text-emerald-400 font-mono bg-emerald-500/10">
+                                      KD {batch.batchTotal.toFixed(3)}
                                     </td>
                                   </tr>
-                                ))}
-
-                                {/* BATCH SUBTOTAL ROW */}
-                                <tr className="bg-surface-container-high/60 font-bold border-t border-b border-outline-variant text-[11px]">
-                                  <td colSpan={5} className="px-4 py-2 text-right text-on-surface font-semibold uppercase">
-                                    Batch Subtotal ({batch.batchName}):
-                                  </td>
-                                  {allChildExpenseColumns.map(colName => {
-                                    const sum = batch.subtotalByType[colName] || 0;
-                                    return (
-                                      <td
-                                        key={colName}
-                                        className="px-2.5 py-2 text-right border-r border-outline-variant font-mono text-on-surface"
-                                      >
-                                        {sum > 0 ? (
-                                          <span className="font-semibold">{sum.toFixed(3)}</span>
-                                        ) : (
-                                          <span className="text-on-surface-variant/40">-</span>
-                                        )}
-                                      </td>
-                                    );
-                                  })}
-                                  <td className="px-3.5 py-2 text-right font-bold text-emerald-600 dark:text-emerald-400 font-mono bg-emerald-500/10">
-                                    KD {batch.batchTotal.toFixed(3)}
-                                  </td>
-                                </tr>
-                              </React.Fragment>
-                            ))
-                          )
-                        ) : (
-                          storewiseFilteredByBatch.length === 0 ? (
-                            <tr>
-                              <td colSpan={8 + allChildExpenseColumns.length} className="p-8 text-center text-on-surface-variant">
-                                No records found for the selected ledger batch.
-                              </td>
-                            </tr>
+                                </React.Fragment>
+                              ))
+                            )
                           ) : (
-                            storewiseFilteredByBatch.map(batch => (
-                              <React.Fragment key={batch.batchName}>
-                                {/* BATCH HEADER ROW */}
-                                <tr className="bg-primary/10 border-y border-primary/25 font-bold text-primary print:break-before-page">
-                                  <td
-                                    colSpan={7 + allChildExpenseColumns.length + 1}
-                                    className="px-4 py-2 text-xs tracking-wide"
-                                  >
-                                    <div className="flex items-center justify-between">
-                                      <div className="flex items-center gap-2">
-                                        <Boxes className="w-4 h-4 text-primary" />
-                                        <span className="font-bold">🔹 LEDGER BATCH: {batch.batchName}</span>
-                                        <span className="text-[11px] font-normal text-on-surface-variant">
-                                          — {batch.rows.length} Tickets
+                            storewiseFilteredByBatch.length === 0 ? (
+                              <tr>
+                                <td colSpan={8 + allChildExpenseColumns.length} className="p-8 text-center text-on-surface-variant">
+                                  No records found for the selected ledger batch.
+                                </td>
+                              </tr>
+                            ) : (
+                              storewiseFilteredByBatch.map(batch => (
+                                <React.Fragment key={batch.batchName}>
+                                  {/* BATCH HEADER ROW */}
+                                  <tr className="bg-primary/10 border-y border-primary/25 font-bold text-primary print:break-before-page">
+                                    <td
+                                      colSpan={7 + allChildExpenseColumns.length + 1}
+                                      className="px-4 py-2 text-xs tracking-wide"
+                                    >
+                                      <div className="flex items-center justify-between">
+                                        <div className="flex items-center gap-2">
+                                          <Boxes className="w-4 h-4 text-primary" />
+                                          <span className="font-bold">🔹 LEDGER BATCH: {batch.batchName}</span>
+                                          <span className="text-[11px] font-normal text-on-surface-variant">
+                                            — {batch.rows.length} Tickets
+                                          </span>
+                                        </div>
+                                        <span className="text-xs font-bold text-emerald-600 dark:text-emerald-400 font-mono">
+                                          Subtotal: KD {batch.batchTotal.toFixed(3)}
                                         </span>
                                       </div>
-                                      <span className="text-xs font-bold text-emerald-600 dark:text-emerald-400 font-mono">
-                                        Subtotal: KD {batch.batchTotal.toFixed(3)}
-                                      </span>
-                                    </div>
-                                  </td>
-                                </tr>
+                                    </td>
+                                  </tr>
 
-                                {/* BATCH ROWS */}
-                                {batch.rows.map((row, idx) => (
-                                  <tr key={row.uniqueKey || idx} className="hover:bg-surface-container-high/40 transition-colors">
-                                    <td className="px-2.5 py-2 border-r border-outline-variant text-center font-mono text-on-surface-variant text-[11px]">
-                                      {idx + 1}
-                                    </td>
-                                    <td className="px-3 py-2 border-r border-outline-variant text-center font-mono text-primary font-semibold text-[11px]">
-                                      #{row.bundleId}
-                                    </td>
-                                    <td className="px-3 py-2 border-r border-outline-variant font-mono font-medium text-[11px]">
-                                      {row.ticketObj && setSelectedTicketForModal ? (
-                                        <button
-                                          type="button"
-                                          onClick={() => setSelectedTicketForModal(row.ticketObj)}
-                                          className="text-primary hover:underline cursor-pointer font-bold"
-                                        >
-                                          {row.expNo}
-                                        </button>
-                                      ) : (
-                                        <span>{row.expNo}</span>
-                                      )}
-                                    </td>
-                                    <td className="px-3 py-2 border-r border-outline-variant font-medium text-on-surface">
-                                      {row.location}
-                                    </td>
-                                    <td className="px-3 py-2 border-r border-outline-variant text-on-surface-variant text-[11px]">
-                                      {row.subDepartment}
-                                    </td>
-                                    <td className="px-4 py-2 border-r border-outline-variant font-normal text-on-surface truncate max-w-xs" title={row.issueTitle}>
-                                      {row.issueTitle}
-                                    </td>
-                                    <td className="px-3 py-2 border-r border-outline-variant text-on-surface-variant text-[11px]">
-                                      <span className="px-1.5 py-0.5 rounded bg-surface-container-high text-[10px] border border-outline-variant/60 font-medium">
-                                        {row.ledgerBatch}
-                                      </span>
-                                    </td>
+                                  {/* BATCH ROWS */}
+                                  {batch.rows.map((row, idx) => (
+                                    <tr key={row.uniqueKey || idx} className="hover:bg-surface-container-high/40 transition-colors">
+                                      <td className="px-2.5 py-2 border-r border-outline-variant text-center font-mono text-on-surface-variant text-[11px]">
+                                        {idx + 1}
+                                      </td>
+                                      <td className="px-3 py-2 border-r border-outline-variant text-center font-mono text-primary font-semibold text-[11px]">
+                                        #{row.bundleId}
+                                      </td>
+                                      <td className="px-3 py-2 border-r border-outline-variant font-mono font-medium text-[11px]">
+                                        {row.ticketObj && setSelectedTicketForModal ? (
+                                          <button
+                                            type="button"
+                                            onClick={() => setSelectedTicketForModal(row.ticketObj)}
+                                            className="text-primary hover:underline cursor-pointer font-bold"
+                                          >
+                                            {row.expNo}
+                                          </button>
+                                        ) : (
+                                          <span>{row.expNo}</span>
+                                        )}
+                                      </td>
+                                      <td className="px-3 py-2 border-r border-outline-variant font-medium text-on-surface">
+                                        {row.location}
+                                      </td>
+                                      <td className="px-3 py-2 border-r border-outline-variant text-on-surface-variant text-[11px]">
+                                        {row.subDepartment}
+                                      </td>
+                                      <td className="px-4 py-2 border-r border-outline-variant font-normal text-on-surface truncate max-w-xs" title={row.issueTitle}>
+                                        {row.issueTitle}
+                                      </td>
+                                      <td className="px-3 py-2 border-r border-outline-variant text-on-surface-variant text-[11px]">
+                                        <span className="px-1.5 py-0.5 rounded bg-surface-container-high text-[10px] border border-outline-variant/60 font-medium">
+                                          {row.ledgerBatch}
+                                        </span>
+                                      </td>
 
+                                      {allChildExpenseColumns.map(colName => {
+                                        const amt = row.amountsByType[colName];
+                                        return (
+                                          <td
+                                            key={colName}
+                                            className="px-2.5 py-2 text-right border-r border-outline-variant font-mono text-[11px] text-on-surface"
+                                          >
+                                            {amt !== undefined && amt > 0 ? (
+                                              <span className="font-semibold">{amt.toFixed(3)}</span>
+                                            ) : (
+                                              <span className="text-on-surface-variant/40">-</span>
+                                            )}
+                                          </td>
+                                        );
+                                      })}
+
+                                      <td className="px-3.5 py-2 text-right font-bold text-emerald-600 dark:text-emerald-400 font-mono text-[11px] bg-emerald-500/5">
+                                        {row.total.toFixed(3)}
+                                      </td>
+                                    </tr>
+                                  ))}
+
+                                  {/* BATCH SUBTOTAL ROW */}
+                                  <tr className="bg-surface-container-high/60 font-bold border-t border-b border-outline-variant text-[11px]">
+                                    <td colSpan={7} className="px-4 py-2 text-right text-on-surface font-semibold uppercase">
+                                      Batch Subtotal ({batch.batchName}):
+                                    </td>
                                     {allChildExpenseColumns.map(colName => {
-                                      const amt = row.amountsByType[colName];
+                                      const sum = batch.subtotalByType[colName] || 0;
                                       return (
                                         <td
                                           key={colName}
-                                          className="px-2.5 py-2 text-right border-r border-outline-variant font-mono text-[11px] text-on-surface"
+                                          className="px-2.5 py-2 text-right border-r border-outline-variant font-mono text-on-surface"
                                         >
-                                          {amt !== undefined && amt > 0 ? (
-                                            <span className="font-semibold">{amt.toFixed(3)}</span>
+                                          {sum > 0 ? (
+                                            <span className="font-semibold">{sum.toFixed(3)}</span>
                                           ) : (
                                             <span className="text-on-surface-variant/40">-</span>
                                           )}
                                         </td>
                                       );
                                     })}
-
-                                    <td className="px-3.5 py-2 text-right font-bold text-emerald-600 dark:text-emerald-400 font-mono text-[11px] bg-emerald-500/5">
-                                      {row.total.toFixed(3)}
+                                    <td className="px-3.5 py-2 text-right font-bold text-emerald-600 dark:text-emerald-400 font-mono bg-emerald-500/10">
+                                      KD {batch.batchTotal.toFixed(3)}
                                     </td>
                                   </tr>
-                                ))}
+                                </React.Fragment>
+                              ))
+                            )
+                          )}
+                        </tbody>
 
-                                {/* BATCH SUBTOTAL ROW */}
-                                <tr className="bg-surface-container-high/60 font-bold border-t border-b border-outline-variant text-[11px]">
-                                  <td colSpan={7} className="px-4 py-2 text-right text-on-surface font-semibold uppercase">
-                                    Batch Subtotal ({batch.batchName}):
-                                  </td>
-                                  {allChildExpenseColumns.map(colName => {
-                                    const sum = batch.subtotalByType[colName] || 0;
-                                    return (
-                                      <td
-                                        key={colName}
-                                        className="px-2.5 py-2 text-right border-r border-outline-variant font-mono text-on-surface"
-                                      >
-                                        {sum > 0 ? (
-                                          <span className="font-semibold">{sum.toFixed(3)}</span>
-                                        ) : (
-                                          <span className="text-on-surface-variant/40">-</span>
-                                        )}
-                                      </td>
-                                    );
-                                  })}
-                                  <td className="px-3.5 py-2 text-right font-bold text-emerald-600 dark:text-emerald-400 font-mono bg-emerald-500/10">
-                                    KD {batch.batchTotal.toFixed(3)}
-                                  </td>
-                                </tr>
-                              </React.Fragment>
-                            ))
-                          )
-                        )}
-                      </tbody>
+                        <tfoot className="bg-surface-container-high font-bold border-t-2 border-outline-variant text-xs sticky bottom-0 z-10 shadow-lg">
+                          <tr>
+                            <td colSpan={groupByLocation ? 5 : 7} className="px-4 py-3 text-on-surface font-extrabold uppercase">
+                              {groupByLocation ? `Total (${locationGroupedRows.length} Locations)` : 'Total'}
+                            </td>
 
-                      <tfoot className="bg-surface-container-high font-bold border-t-2 border-outline-variant text-xs sticky bottom-0 z-10 shadow-lg">
-                        <tr>
-                          <td colSpan={groupByLocation ? 5 : 7} className="px-4 py-3 text-on-surface font-extrabold uppercase">
-                            {groupByLocation ? `Total (${locationGroupedRows.length} Locations)` : 'Total'}
-                          </td>
+                            {allChildExpenseColumns.map(colName => {
+                              const amt = storewiseTotals.colTotals[colName] || 0;
+                              return (
+                                <td
+                                  key={`store_total_${colName}`}
+                                  className="px-2.5 py-3 text-right border-r border-outline-variant font-extrabold font-mono text-on-surface"
+                                >
+                                  {amt > 0 ? amt.toFixed(3) : '-'}
+                                </td>
+                              );
+                            })}
 
-                          {allChildExpenseColumns.map(colName => {
-                            const amt = storewiseTotals.colTotals[colName] || 0;
-                            return (
-                              <td
-                                key={`store_total_${colName}`}
-                                className="px-2.5 py-3 text-right border-r border-outline-variant font-extrabold font-mono text-on-surface"
-                              >
-                                {amt > 0 ? amt.toFixed(3) : '-'}
-                              </td>
-                            );
-                          })}
-
-                          <td className="px-3.5 py-3 text-right font-extrabold text-emerald-600 dark:text-emerald-400 font-mono text-sm bg-emerald-500/15">
-                            KD {storewiseTotals.total.toFixed(3)}
-                          </td>
-                        </tr>
-                      </tfoot>
-                    </table>
+                            <td className="px-3.5 py-3 text-right font-extrabold text-emerald-600 dark:text-emerald-400 font-mono text-sm bg-emerald-500/15">
+                              KD {storewiseTotals.total.toFixed(3)}
+                            </td>
+                          </tr>
+                        </tfoot>
+                      </table>
+                    </div>
                   </div>
-                </div>
+                )}
               </div>
             )}
 

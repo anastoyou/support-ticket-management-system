@@ -12,6 +12,7 @@ import { Pagination } from './Pagination';
 import { SearchableSelect, type SelectOption } from '../../components/SearchableSelect';
 import { ApprovalsSubpage, type ApprovalsSubpageProps } from './ApprovalsSubpage';
 import { LedgerGroupReportModal, type LedgerGroupCluster } from './LedgerGroupReportModal';
+import { MonthlyLocationReportModal } from './MonthlyLocationReportModal';
 import { AvatarCircle } from '../ticket/TicketsTypesAndComponents';
 import Can from '@/hooks/Can';
 import { usePermission } from '@/hooks/usePermission';
@@ -264,6 +265,7 @@ export const LedgersSubpage: React.FC<LedgersSubpageProps> = ({
 
   // Report Modal State for Ledger Group
   const [selectedGroupForReport, setSelectedGroupForReport] = useState<LedgerGroupCluster | null>(null);
+  const [showMonthlyLocationReportModal, setShowMonthlyLocationReportModal] = useState(false);
   const [selectedGroupForAction, setSelectedGroupForAction] = useState<LedgerGroupCluster | null>(null);
   const [actionComments, setActionComments] = useState('');
   const [actionCommentError, setActionCommentError] = useState('');
@@ -2516,6 +2518,18 @@ export const LedgersSubpage: React.FC<LedgersSubpageProps> = ({
                 <span>{isRefreshing ? 'Refreshing...' : 'Refresh'}</span>
               </button>
             )}
+
+            <Can permission={['finance.view_ledger_report', 'reports.can_generate_report', 'finance.can_view_expenses'] as any}>
+              <button
+                type="button"
+                onClick={() => setShowMonthlyLocationReportModal(true)}
+                className="px-2.5 py-1.5 rounded border border-outline-variant bg-surface-container hover:bg-surface-container-high text-on-surface text-[11px] font-semibold flex items-center gap-1.5 transition-colors cursor-pointer shadow-2xs"
+                title="Generate Monthly Location Expense Report or Period Comparison Report"
+              >
+                <FileText className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+                <span>Monthly Location Report</span>
+              </button>
+            </Can>
             <Can permission="finance.add_ledger" >
 
               <button
@@ -4869,6 +4883,17 @@ export const LedgersSubpage: React.FC<LedgersSubpageProps> = ({
             </div>
           </div>
         </div>
+      )}
+
+      {/* POPUP MODAL: MONTHLY LOCATION EXPENSE REPORT & COMPARISON */}
+      {showMonthlyLocationReportModal && (
+        <MonthlyLocationReportModal
+          isOpen={showMonthlyLocationReportModal}
+          onClose={() => setShowMonthlyLocationReportModal(false)}
+          token={token}
+          API_URL={API_URL}
+          currentUser={currentUser}
+        />
       )}
 
       {/* POPUP MODAL: LEDGER  SETTLEMENT REPORT */}
