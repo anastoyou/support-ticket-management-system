@@ -907,3 +907,118 @@ class LocationApprovalThrottleTestCase(TestCase):
 
 
 
+
+
+
+class TimeSheetLoggingTestCase(TestCase):
+    def setUp(self):
+        from apps.accounts.models import Role, CustomUser
+        from apps.stores.models import Store, Department
+        from apps.maintenance.models import Priority, Status, WorkNature, Ticket, WorkLog
+        from apps.finance.models import EmployeeRate
+        from rest_framework.test import APIClient
+        from datetime import time
+        from decimal import Decimal
+        from django.utils import timezone
+
+        self.client = APIClient()
+        self.role_tech = Role.objects.create(role_name="Technician")
+        self.worker = CustomUser.objects.create_user(
+            username="tech_worker_ts", password="ts_password", role=self.role_tech,
+            employee_no="EMP-TS-01"
+        )
+        EmployeeRate.objects.create(
+            worker=self.worker, hourly_rate=Decimal("15.00"), effective_from=timezone.now().date()
+        )
+        self.store1 = Store.objects.create(store_id="TS-S01", store_name="Downtown Branch", short_code="DTB")
+        self.store2 = Store.objects.create(store_id="TS-S02", store_name="North Warehouse", short_code="NWH")
+
+        self.dept = Department.objects.create(department_name="TS Maintenance")
+        self.priority = Priority.objects.create(priority_name="TS Normal", department=self.dept, level=1)
+        self.status = Status.objects.create(status_name="Open")
+        from apps.stores.models import SubDepartment
+        self.subdept = SubDepartment.objects.create(sub_department_name="TS Subdept", department=self.dept)
+        self.nature = WorkNature.objects.create(nature_name="TS General Repair", sub_department=self.subdept, default_priority=self.priority)
+        self.ticket = Ticket.objects.create(
+            work_order_no="WO-TS-001", store=self.store1, department=self.dept,
+            nature=self.nature, priority=self.priority, status=self.status,
+            title="Fix AC Unit", created_by=self.worker
+        )
+
+        self.client.force_authenticate(user=self.worker)
+
+    def test_timesheet_integration_ticket_and_manual_logs(self):
+        from apps.maintenance.models import WorkLog
+        from datetime import time, date
+        from decimal import Decimal
+
+        today = date(2026, 11, 8)
+
+        # 1. Ticket work log: 09:00 - 12:00 (3.0 hours)
+        WorkLog.objects.create(
+            ticket=self.ticket,
+            worker=self.worker,
+            work_date=today,
+            from_time=time(9, 0),
+            to_time=time(12, 0),
+            hours=Decimal("3.00"),
+            hourly_rate=Decimal("15.00"),
+            labour_amount=Decimal("45.00"),
+            work_done="Repaired compressor coil",
+            log_type='ticket'
+        )
+
+        # 2. Manual timesheet log: 13:00 - 16:30 (3.5 hours) for store2
+        resp_post = self.client.post("/api/maintenance/worklog/", {
+            "work_date": "2026-11-08",
+            "from_time": "13:00:00",
+            "to_time": "16:30:00",
+            "hours": "3.50",
+            "stores": [self.store2.store_id],
+            "work_done": "Routine store inspection and inventory check",
+            "log_type": "timesheet"
+        }, format="json")
+        self.assertEqual(resp_post.status_code, 201)
+        self.assertEqual(resp_post.data['log_type'], 'timesheet')
+
+        # 3. Fetch timesheet for today
+        resp = self.client.get("/api/maintenance/worklog/timesheet/?date=2026-11-08")
+        self.assertEqual(resp.status_code, 200)
+        data = resp.data
+
+        # Total hours should be 3.0 + 3.5 = 6.5 hours
+        self.assertEqual(data['total_booked_hours'], 6.5)
+        # Daily goal is 10 hours -> 65% completion
+        self.assertEqual(data['completion_percentage'], 65)
+        self.assertEqual(len(data['sessions']), 2)
+
+        # Ticket session is locked and has ticket info
+        ticket_session = next(s for s in data['sessions'] if s['is_ticket'])
+        self.assertTrue(ticket_session['is_locked'])
+        self.assertEqual(ticket_session['ticket_id'], self.ticket.ticket_id)
+        self.assertEqual(ticket_session['hours'], 3.0)
+
+        # Manual session is not locked and has store2
+        manual_session = next(s for s in data['sessions'] if not s['is_ticket'])
+        self.assertFalse(manual_session['is_locked'])
+        self.assertIn(self.store2.store_id, manual_session['locationIds'])
+        self.assertEqual(manual_session['hours'], 3.5)
+
+        # 4. Fetch timesheet calendar
+        resp_cal = self.client.get("/api/maintenance/worklog/timesheet_calendar/?year=2026&month=11")
+        self.assertEqual(resp_cal.status_code, 200)
+        self.assertIn("2026-11-08", resp_cal.data['days'])
+        self.assertEqual(resp_cal.data['days']['2026-11-08']['total_hours'], 6.5)
+        self.assertEqual(resp_cal.data['days']['2026-11-08']['completion_percentage'], 65)
+
+        # 5. Timesheet reset for manual entries
+        resp_reset = self.client.post("/api/maintenance/worklog/timesheet_reset/", {
+            "date": "2026-11-08"
+        }, format="json")
+        self.assertEqual(resp_reset.status_code, 200)
+        self.assertEqual(resp_reset.data['deleted_count'], 1)
+
+        # Ticket log remains intact!
+        resp_after = self.client.get("/api/maintenance/worklog/timesheet/?date=2026-11-08")
+        self.assertEqual(len(resp_after.data['sessions']), 1)
+        self.assertTrue(resp_after.data['sessions'][0]['is_ticket'])

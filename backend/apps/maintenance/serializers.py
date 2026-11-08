@@ -3,6 +3,7 @@ from .models import Priority, Status, WorkNature, NatureWorker, Ticket, Allocati
 from apps.finance.models import EmployeeRate
 from decimal import Decimal
 from apps.stores.serializers import StoreSerializer, DepartmentSerializer, SubDepartmentSerializer
+from apps.stores.models import Store
 from apps.accounts.models import CustomUser
 
 
@@ -290,26 +291,40 @@ class AllocationWriteSerializer(serializers.ModelSerializer):
         fields = '__all__'
 
 
+class WorkLogStoreSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Store
+        fields = ['store_id', 'store_name', 'short_code']
+
+
 class WorkLogSerializer(serializers.ModelSerializer):
     worker = TicketUserSerializer(read_only=True)
     ticket = AllocationTicketSerializer(read_only=True)
     allocation = AllocationSerializer(read_only=True)
+    stores = WorkLogStoreSerializer(many=True, read_only=True)
 
     class Meta:
         model = WorkLog
         fields = '__all__'
 
 class WorkLogWriteSerializer(serializers.ModelSerializer):
+    stores = serializers.PrimaryKeyRelatedField(
+        many=True, queryset=Store.objects.all(), required=False
+    )
     class Meta:
         model = WorkLog
         fields = '__all__'
         # hourly_rate and labour_amount are auto-computed; mark them optional on input
         extra_kwargs = {
+            'ticket': {'required': False, 'allow_null': True},
+            'worker': {'required': False},
             'hourly_rate': {'required': False},
             'labour_amount': {'required': False},
             'hours': {'required': False},
-            'from_time': {'required': False},
-            'to_time': {'required': False},
+            'from_time': {'required': False, 'allow_null': True},
+            'to_time': {'required': False, 'allow_null': True},
+            'work_done': {'required': False, 'allow_blank': True},
+            'log_type': {'required': False},
         }
 
     def _get_rate(self, worker):
@@ -323,6 +338,8 @@ class WorkLogWriteSerializer(serializers.ModelSerializer):
         return rate
 
     def validate(self, data):
+        if 'log_type' not in data:
+            data['log_type'] = 'ticket' if (data.get('ticket') or getattr(self.instance, 'ticket', None)) else 'timesheet'
         from_time = data.get('from_time') if 'from_time' in data else getattr(self.instance, 'from_time', None)
         to_time = data.get('to_time') if 'to_time' in data else getattr(self.instance, 'to_time', None)
         hours = data.get('hours') if 'hours' in data else getattr(self.instance, 'hours', None)
@@ -348,7 +365,8 @@ class WorkLogWriteSerializer(serializers.ModelSerializer):
         if Decimal(str(hours)) > 20:
             raise serializers.ValidationError({"hours": "Logged work hours cannot exceed 20 hours."})
 
-        worker = data.get('worker') or getattr(self.instance, 'worker', None)
+        req_user = self.context.get('request').user if getattr(self, 'context', None) and self.context.get('request') and not self.context.get('request').user.is_anonymous else None
+        worker = data.get('worker') or req_user or getattr(self.instance, 'worker', None)
         if worker and hours is not None:
             rate = self._get_rate(worker)
             hourly_rate = rate.hourly_rate if rate else Decimal('0.00')

@@ -556,7 +556,7 @@ class AllocationViewSet(viewsets.ModelViewSet):
 
 
 class WorkLogViewSet(viewsets.ModelViewSet):
-    queryset = WorkLog.objects.all().select_related('ticket', 'worker', 'allocation')
+    queryset = WorkLog.objects.all().select_related('ticket', 'worker', 'allocation').prefetch_related('stores')
     serializer_class = WorkLogSerializer
 
     def get_serializer_class(self):
@@ -573,17 +573,31 @@ class WorkLogViewSet(viewsets.ModelViewSet):
         role_name = (user.role.role_name.lower() if hasattr(user, 'role') and user.role else '')
         user_groups_lower = [g.lower().strip() for g in user.groups.values_list('name', flat=True)]
         is_management = role_name in ('management', 'management team') or 'management' in user_groups_lower
+        is_admin = user.is_superuser or any(x in role_name for x in ['admin', 'administrator', 'office']) or any(x in ' '.join(user_groups_lower) for x in ['admin', 'office'])
 
-        if not user.is_superuser and not is_management:
+        if not is_admin and not is_management:
             accessible_store_ids = list(
                 user.accessible_stores.values_list('store_id', flat=True))
+            cond = Q(worker=user)
             if accessible_store_ids:
-                queryset = queryset.filter(
-                    ticket__store_id__in=accessible_store_ids)
+                cond |= Q(ticket__store_id__in=accessible_store_ids) | Q(stores__store_id__in=accessible_store_ids)
+            queryset = queryset.filter(cond).distinct()
 
         ticket = self.request.query_params.get("ticket")
         if ticket:
             queryset = queryset.filter(ticket_id=ticket)
+
+        worker = self.request.query_params.get("worker")
+        if worker:
+            queryset = queryset.filter(worker_id=worker)
+
+        work_date = self.request.query_params.get("date") or self.request.query_params.get("work_date")
+        if work_date:
+            queryset = queryset.filter(work_date=work_date)
+
+        log_type = self.request.query_params.get("log_type")
+        if log_type:
+            queryset = queryset.filter(log_type=log_type)
 
         return queryset
 
@@ -593,7 +607,21 @@ class WorkLogViewSet(viewsets.ModelViewSet):
         user_groups_lower = [g.lower().strip() for g in user.groups.values_list('name', flat=True)] if user else []
         if role_name in ('management', 'management team') or 'management' in user_groups_lower:
             raise exceptions.PermissionDenied({'detail': 'Management role is read-only.'})
-        serializer.save()
+        from decimal import Decimal
+        worker = serializer.validated_data.get('worker') or user
+        if serializer.validated_data.get('hourly_rate') is None:
+            rate = serializer._get_rate(worker) if hasattr(serializer, '_get_rate') else None
+            hourly_rate = rate.hourly_rate if rate else Decimal('0.00')
+            serializer.validated_data['hourly_rate'] = hourly_rate
+            hours = serializer.validated_data.get('hours') or Decimal('0.00')
+            serializer.validated_data['labour_amount'] = Decimal(str(hours)) * hourly_rate
+        if 'worker' not in serializer.validated_data and user and not user.is_anonymous:
+            instance = serializer.save(worker=user)
+        else:
+            instance = serializer.save()
+        if instance.worker and instance.stores.exists():
+            for st in instance.stores.all():
+                instance.worker.accessible_stores.add(st)
 
     def perform_update(self, serializer):
         user = self.request.user
@@ -603,7 +631,10 @@ class WorkLogViewSet(viewsets.ModelViewSet):
             raise exceptions.PermissionDenied({'detail': 'Management role is read-only.'})
         if serializer.instance.is_claimed:
             raise exceptions.PermissionDenied({'detail': 'This work log has been claimed and cannot be modified.'})
-        serializer.save()
+        instance = serializer.save()
+        if instance.worker and instance.stores.exists():
+            for st in instance.stores.all():
+                instance.worker.accessible_stores.add(st)
 
     def perform_destroy(self, instance):
         user = self.request.user
@@ -615,6 +646,183 @@ class WorkLogViewSet(viewsets.ModelViewSet):
             raise exceptions.PermissionDenied({'detail': 'This work log has been claimed and cannot be deleted.'})
         instance.delete()
 
+    @action(detail=False, methods=['get'])
+    def timesheet(self, request):
+        user = request.user
+        if not user or user.is_anonymous:
+            return Response({'error': 'Authentication required.'}, status=401)
+
+        worker_id = request.query_params.get('worker')
+        role_name = (user.role.role_name.lower() if hasattr(user, 'role') and user.role else '')
+        user_groups_lower = [g.lower().strip() for g in user.groups.values_list('name', flat=True)]
+        is_admin_or_mgmt = user.is_superuser or any(x in role_name for x in ['admin', 'office', 'management']) or any(x in ' '.join(user_groups_lower) for x in ['admin', 'office', 'management'])
+
+        if worker_id and is_admin_or_mgmt:
+            from apps.accounts.models import CustomUser
+            worker = CustomUser.objects.filter(pk=worker_id).first() or user
+        else:
+            worker = user
+
+        date_str = request.query_params.get('date')
+        if date_str:
+            try:
+                from datetime import datetime
+                target_date = datetime.strptime(date_str, '%Y-%m-%d').date()
+            except ValueError:
+                target_date = timezone.localdate()
+        else:
+            target_date = timezone.localdate()
+
+        logs = WorkLog.objects.filter(
+            worker=worker,
+            work_date=target_date
+        ).select_related('ticket', 'ticket__store', 'worker').prefetch_related('stores').order_by('from_time', 'created_date')
+
+        daily_goal_hours = 10.0
+        total_hours = sum([float(log.hours or 0) for log in logs])
+        total_minutes = int(round(total_hours * 60))
+        completion_pct = min(100, int(round((total_hours / daily_goal_hours) * 100)))
+
+        sessions = []
+        for log in logs:
+            is_ticket = bool(log.ticket_id)
+            start_mins = None
+            end_mins = None
+            if log.from_time and log.to_time:
+                start_mins = log.from_time.hour * 60 + log.from_time.minute
+                raw_end = log.to_time.hour * 60 + log.to_time.minute
+                if raw_end <= start_mins and (log.hours or 0) > 0:
+                    raw_end += 1440
+                end_mins = raw_end
+
+            loc_list = []
+            if is_ticket and log.ticket and log.ticket.store:
+                loc_list.append({
+                    'id': log.ticket.store.store_id,
+                    'name': log.ticket.store.store_name,
+                    'short_code': log.ticket.store.short_code
+                })
+            else:
+                for st in log.stores.all():
+                    loc_list.append({
+                        'id': st.store_id,
+                        'name': st.store_name,
+                        'short_code': st.short_code
+                    })
+
+            sessions.append({
+                'id': log.worklog_id,
+                'worklog_id': log.worklog_id,
+                'log_type': log.log_type or ('ticket' if is_ticket else 'timesheet'),
+                'is_ticket': is_ticket,
+                'ticket_id': log.ticket_id,
+                'ticket_work_order_no': log.ticket.work_order_no if log.ticket else None,
+                'ticket_title': log.ticket.title if log.ticket else None,
+                'dateKey': target_date.strftime('%Y-%m-%d'),
+                'work_date': target_date.strftime('%Y-%m-%d'),
+                'from_time': log.from_time.strftime('%H:%M') if log.from_time else None,
+                'to_time': log.to_time.strftime('%H:%M') if log.to_time else None,
+                'start': start_mins,
+                'end': end_mins,
+                'hours': float(log.hours or 0),
+                'work_done': log.work_done or '',
+                'remarks': log.work_done or '',
+                'locations': loc_list,
+                'locationIds': [l['id'] for l in loc_list],
+                'is_claimed': log.is_claimed,
+                'is_locked': bool(is_ticket or log.is_claimed)
+            })
+
+        return Response({
+            'date': target_date.strftime('%Y-%m-%d'),
+            'today': timezone.localdate().strftime('%Y-%m-%d'),
+            'worker_id': getattr(worker, 'user_id', worker.pk),
+            'worker_name': worker.get_full_name() or worker.username,
+            'daily_goal_hours': daily_goal_hours,
+            'total_booked_hours': round(total_hours, 2),
+            'total_booked_minutes': total_minutes,
+            'completion_percentage': completion_pct,
+            'sessions': sessions
+        })
+
+    @action(detail=False, methods=['get'])
+    def timesheet_calendar(self, request):
+        user = request.user
+        if not user or user.is_anonymous:
+            return Response({'error': 'Authentication required.'}, status=401)
+
+        worker_id = request.query_params.get('worker')
+        role_name = (user.role.role_name.lower() if hasattr(user, 'role') and user.role else '')
+        user_groups_lower = [g.lower().strip() for g in user.groups.values_list('name', flat=True)]
+        is_admin_or_mgmt = user.is_superuser or any(x in role_name for x in ['admin', 'office', 'management']) or any(x in ' '.join(user_groups_lower) for x in ['admin', 'office', 'management'])
+
+        if worker_id and is_admin_or_mgmt:
+            from apps.accounts.models import CustomUser
+            worker = CustomUser.objects.filter(pk=worker_id).first() or user
+        else:
+            worker = user
+
+        today = timezone.localdate()
+        try:
+            year = int(request.query_params.get('year', today.year))
+            month = int(request.query_params.get('month', today.month))
+        except (ValueError, TypeError):
+            year = today.year
+            month = today.month
+
+        from django.db.models import Sum
+
+        logs = WorkLog.objects.filter(
+            worker=worker,
+            work_date__year=year,
+            work_date__month=month
+        ).values('work_date').annotate(total_hours=Sum('hours'))
+
+        daily_goal = 10.0
+        days_map = {}
+        for entry in logs:
+            dt_key = entry['work_date'].strftime('%Y-%m-%d')
+            h = float(entry['total_hours'] or 0)
+            pct = min(100, int(round((h / daily_goal) * 100)))
+            days_map[dt_key] = {
+                'total_hours': round(h, 2),
+                'completion_percentage': pct
+            }
+
+        return Response({
+            'year': year,
+            'month': month,
+            'today': today.strftime('%Y-%m-%d'),
+            'days': days_map
+        })
+
+    @action(detail=False, methods=['post'])
+    def timesheet_reset(self, request):
+        user = request.user
+        if not user or user.is_anonymous:
+            return Response({'error': 'Authentication required.'}, status=401)
+
+        date_str = request.data.get('date')
+        if not date_str:
+            return Response({'error': 'Date is required.'}, status=400)
+
+        location_ids = request.data.get('location_ids', [])
+
+        qs = WorkLog.objects.filter(
+            worker=user,
+            work_date=date_str,
+            ticket__isnull=True,
+            is_claimed=False
+        )
+        if location_ids:
+            qs = qs.filter(stores__store_id__in=location_ids).distinct()
+
+        deleted_count = qs.count()
+        qs.delete()
+        return Response({
+            'message': f'Successfully reset {deleted_count} timesheet session(s).',
+            'deleted_count': deleted_count
+        })
 
 class TicketHistoryViewSet(viewsets.ModelViewSet):
     queryset = TicketHistory.objects.all().select_related('ticket', 'changed_by')

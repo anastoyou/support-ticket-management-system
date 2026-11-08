@@ -432,7 +432,7 @@ def add_store_to_worker_accessible_stores(sender, instance, **kwargs):
 class WorkLog(models.Model):
     worklog_id = models.AutoField(primary_key=True)
     ticket = models.ForeignKey(
-        Ticket, on_delete=models.CASCADE, related_name='work_logs')
+        Ticket, on_delete=models.CASCADE, null=True, blank=True, related_name='work_logs')
     worker = models.ForeignKey(
         'accounts.CustomUser', on_delete=models.CASCADE, related_name='work_logs')
     allocation = models.ForeignKey(
@@ -443,11 +443,17 @@ class WorkLog(models.Model):
     hours = models.DecimalField(max_digits=5, decimal_places=2)
     hourly_rate = models.DecimalField(max_digits=10, decimal_places=2)
     labour_amount = models.DecimalField(max_digits=10, decimal_places=2)
-    work_done = models.TextField()
+    work_done = models.TextField(blank=True, default='')
     created_date = models.DateTimeField(auto_now_add=True)
     is_claimed = models.BooleanField(default=False)
     claim = models.ForeignKey(
         'finance.WorkerClaim', on_delete=models.SET_NULL, null=True, blank=True, related_name='work_logs')
+    stores = models.ManyToManyField(
+        'stores.Store', blank=True, related_name='work_logs')
+    log_type = models.CharField(
+        max_length=20,
+        choices=[('ticket', 'Ticket Log'), ('timesheet', 'Timesheet Log')],
+        default='ticket')
 
     class Meta:
         permissions = [
