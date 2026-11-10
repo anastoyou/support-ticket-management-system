@@ -1,5 +1,54 @@
 from django.db import models
 from django.dispatch import receiver
+from django.db import models
+from django.utils import timezone
+from apps.accounts.models import Role
+
+
+class DashboardUpdate(models.Model):
+
+    title = models.CharField(max_length=255)
+
+    description = models.TextField(blank=True, null=True)
+
+    roles = models.ManyToManyField(
+        Role,
+        related_name='dashboard_updates',
+        blank=True
+    )
+
+    video_url = models.URLField(
+        max_length=500,
+        blank=True,
+        null=True
+    )
+
+    hide_after = models.DateTimeField(
+        blank=True,
+        null=True
+    )
+
+    is_active = models.BooleanField(default=True)
+
+    priority = models.PositiveIntegerField(default=0)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-priority', '-created_at']
+
+    def __str__(self):
+        return self.title
+
+    @property
+    def is_visible(self):
+        return (
+            self.is_active and
+            (
+                self.hide_after is None or
+                self.hide_after > timezone.now()
+            )
+        )
 
 
 class MediaCategory(models.Model):
@@ -57,7 +106,8 @@ class Media(models.Model):
     complaint = models.ForeignKey(
         'maintenance.Complaint', on_delete=models.CASCADE, null=True, blank=True, related_name='media_files')
     file_name = models.CharField(max_length=500)
-    file_url = models.FileField(upload_to=get_media_upload_path, max_length=500)
+    file_url = models.FileField(
+        upload_to=get_media_upload_path, max_length=500)
     rotation = models.IntegerField(default=0)
     uploaded_date = models.DateTimeField(auto_now_add=True)
 

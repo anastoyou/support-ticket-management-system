@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { useLocation } from 'react-router-dom';
 import { useSelector } from 'react-redux';
 import type { RootState } from '../store';
 import { DateFilterToolbar } from './dashboard/components/DateFilterToolbar';
@@ -8,11 +9,14 @@ import { OfficeAdminDashboard } from './dashboard/components/OfficeAdminDashboar
 import { StoreManagerDashboard } from './dashboard/components/StoreManagerDashboard';
 import { TechnicianDashboard } from './dashboard/components/TechnicianDashboard';
 import { AreaManagerDashboard } from './dashboard/components/AreaManagerDashboard';
+import { TimeSheetModal } from '../components/timesheet/TimeSheetModal';
+import DashboardUpdates from '@/components/DashboardUpdates';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api';
 
 export const DashboardView: React.FC = () => {
     const { token, user } = useSelector((state: RootState) => state.auth);
+    const location = useLocation();
 
     // Compute initial month range
     const getCurrentMonthRange = () => {
@@ -128,6 +132,33 @@ export const DashboardView: React.FC = () => {
         ? (user.role as any).role_name
         : user.role) || '';
     const roleLower = String(roleStr).toLowerCase().trim();
+    const isTechRole = roleLower.includes('technician') || roleLower.includes('worker');
+
+    const [dashLogId, setDashLogId] = useState<number | undefined>(() => {
+        const urlParams = new URLSearchParams(window.location.search);
+        const l = urlParams.get('log');
+        return l ? Number(l) : undefined;
+    });
+    const [dashDate, setDashDate] = useState<string | undefined>(() => {
+        const urlParams = new URLSearchParams(window.location.search);
+        return urlParams.get('date') || undefined;
+    });
+    const [isDashTimeSheetOpen, setIsDashTimeSheetOpen] = useState(() => {
+        const urlParams = new URLSearchParams(window.location.search);
+        return Boolean(!isTechRole && (urlParams.get('log') || urlParams.get('timesheet')));
+    });
+
+    useEffect(() => {
+        if (isTechRole) return;
+        const urlParams = new URLSearchParams(location.search);
+        const l = urlParams.get('log');
+        const ts = urlParams.get('timesheet');
+        if (l || ts) {
+            if (l) setDashLogId(Number(l));
+            if (urlParams.get('date')) setDashDate(urlParams.get('date') || undefined);
+            setIsDashTimeSheetOpen(true);
+        }
+    }, [isTechRole, location.search]);
 
 
     // Select dashboard component based on role
@@ -168,9 +199,32 @@ export const DashboardView: React.FC = () => {
                 loading={loading}
                 onRefresh={fetchMetrics}
             />
+            <DashboardUpdates
+            />
 
             {/* Dynamic Role Dashboard View */}
             {renderRoleDashboard()}
+
+            {!isTechRole && isDashTimeSheetOpen && (
+                <TimeSheetModal
+                    isOpen={isDashTimeSheetOpen}
+                    initialEditingWorklogId={dashLogId}
+                    initialDate={dashDate}
+                    onClose={() => {
+                        setIsDashTimeSheetOpen(false);
+                        setDashLogId(undefined);
+                        const urlParams = new URLSearchParams(window.location.search);
+                        if (urlParams.has('log') || urlParams.has('timesheet') || urlParams.has('date')) {
+                            urlParams.delete('log');
+                            urlParams.delete('timesheet');
+                            urlParams.delete('date');
+                            const nextQuery = urlParams.toString();
+                            const newUrl = nextQuery ? `${window.location.pathname}?${nextQuery}` : window.location.pathname;
+                            window.history.replaceState(null, '', newUrl);
+                        }
+                    }}
+                />
+            )}
         </div>
     );
 };

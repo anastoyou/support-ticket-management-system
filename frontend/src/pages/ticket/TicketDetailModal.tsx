@@ -4,11 +4,11 @@ import { motion, AnimatePresence } from 'framer-motion';
 
 
 import {
-    X, Loader2, Camera, CheckCircle2, Clock,
+    X, Loader2, Camera, CheckCircle2, Clock, Lock,
     Building2, Wrench, AlertCircle, AlertTriangle, User, Edit2, Settings, Plus, DollarSign, Trash2, FileText,
     UserPlus, Image, XCircle, Menu, Download, History as HistoryIcon, MessageCircle, Video, Upload, Phone, PhoneCall, UserCheck, ChevronDown, Headphones, Smartphone, Monitor, RotateCcw, RotateCw, RefreshCw, Save, Search, Receipt, Printer
 } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { TicketChatPanel } from './TicketChatPanel';
 import { ComplaintModal } from './ComplaintModal';
 import { printTicketDetailsReport, buildTicketPrintPreviewHtmlSync, DEFAULT_PRINT_SECTIONS, type TicketPrintSectionsConfig } from './ticketPrintReport';
@@ -23,6 +23,7 @@ import { LiveCameraModal } from '@/components/LiveCameraModal';
 import { SearchableSelect, type SelectOption } from '@/components/SearchableSelect';
 import { confirmPopup } from '@/components/tailgrids/core/ConfirmationPopup';
 import { ZoomableImage } from '@/components/ZoomableImage';
+import { TimeSheetModal } from '@/components/timesheet/TimeSheetModal';
 
 const EMPTY_LIST: any[] = [];
 
@@ -82,6 +83,7 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
     if (!selectedTicket) return null;
 
     // Local Details State
+    const location = useLocation();
     const [ticketDetails, setTicketDetails] = useState<Ticket>(selectedTicket);
     const [allocations, setAllocations] = useState<Allocation[]>([]);
     const [workLogs, setWorkLogs] = useState<WorkLog[]>([]);
@@ -657,6 +659,24 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
     const [editingWorkLog, setEditingWorkLog] = useState<WorkLog | null>(null);
     const [editingExpense, setEditingExpense] = useState<Expense | null>(null);
 
+    // Auto-open work log edit modal if ?log=ID is present in URL
+    useEffect(() => {
+        const urlParams = new URLSearchParams(window.location.search);
+        const queryLogId = urlParams.get('log');
+        if (!queryLogId) return;
+
+        if (editingWorkLog && String(editingWorkLog.worklog_id) === String(queryLogId)) {
+            return;
+        }
+
+        if (workLogs.length > 0) {
+            const foundLog = workLogs.find(wl => String(wl.worklog_id) === String(queryLogId));
+            if (foundLog) {
+                setEditingWorkLog(foundLog);
+            }
+        }
+    }, [workLogs, editingWorkLog, location.search]);
+
     // Form states
     const [newAllocation, setNewAllocation] = useState({ worker_id: '', planned_hours: '4.0', remarks: '' });
     const [selectedWorkerIds, setSelectedWorkerIds] = useState<string[]>([]);
@@ -1069,6 +1089,13 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
     };
 
     const handleClose = () => {
+        const urlParams = new URLSearchParams(window.location.search);
+        if (urlParams.has('log')) {
+            urlParams.delete('log');
+            const nextQuery = urlParams.toString();
+            const newUrl = nextQuery ? `${window.location.pathname}?${nextQuery}` : window.location.pathname;
+            window.history.replaceState(null, '', newUrl);
+        }
         uploadAbortRef.current?.abort();
         uploadAbortRef.current = null;
         document.body.style.overflow = '';
@@ -2112,9 +2139,8 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
                         ]}>
                             <button
                                 onClick={() => setIsComplaintModalOpen(true)}
-                                className={`flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded border border-outline-variant hover:bg-surface-container-high text-xs font-semibold transition-all cursor-pointer active:scale-95 touch-manipulation relative ${
-                                    complaintCount > 0 ? 'text-red-600 dark:text-red-400 bg-red-500/10 border-red-500/30 font-bold' : 'text-on-surface dark:text-dark-on-surface hover:text-red-500'
-                                }`}
+                                className={`flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded border border-outline-variant hover:bg-surface-container-high text-xs font-semibold transition-all cursor-pointer active:scale-95 touch-manipulation relative ${complaintCount > 0 ? 'text-red-600 dark:text-red-400 bg-red-500/10 border-red-500/30 font-bold' : 'text-on-surface dark:text-dark-on-surface hover:text-red-500'
+                                    }`}
                                 title="Register or View Complaints on Ticket"
                                 type="button"
                             >
@@ -2728,10 +2754,26 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
                                                                             <div>
                                                                                 <p className="font-medium text-on-surface dark:text-dark-on-surface">{wl.work_done}</p>
                                                                                 <div className="flex items-center gap-2 text-[10px] text-outline mt-0.5">
-                                                                                    <span>{new Date(wl.work_date).toLocaleDateString()}</span>
+                                                                                    <span>
+                                                                                        {new Date(wl.work_date).toLocaleDateString('en-GB', {
+                                                                                            day: '2-digit',
+                                                                                            month: '2-digit',
+                                                                                            year: '2-digit'
+                                                                                        }).replace(/\//g, '-')}
+                                                                                    </span>
                                                                                     {wl.from_time && wl.to_time && (
-                                                                                        <span className="px-1.5 py-0.2 bg-surface-container-high rounded text-[10px] font-medium text-on-surface/80 dark:text-dark-on-surface/80">
-                                                                                            {wl.from_time.slice(0, 5)} - {wl.to_time.slice(0, 5)}
+                                                                                        <span className="px-1.5 py-0.5 bg-surface-container-high rounded text-[10px] font-medium text-on-surface/80 dark:text-dark-on-surface/80">
+                                                                                            {new Date(`2000-01-01T${wl.from_time}`).toLocaleTimeString('en-US', {
+                                                                                                hour: '2-digit',
+                                                                                                minute: '2-digit',
+                                                                                                hour12: true
+                                                                                            })}
+                                                                                            {' - '}
+                                                                                            {new Date(`2000-01-01T${wl.to_time}`).toLocaleTimeString('en-US', {
+                                                                                                hour: '2-digit',
+                                                                                                minute: '2-digit',
+                                                                                                hour12: true
+                                                                                            })}
                                                                                         </span>
                                                                                     )}
                                                                                 </div>
@@ -2739,18 +2781,15 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
                                                                             <div className="text-right flex flex-col items-end gap-1">
                                                                                 <div className="flex items-center gap-2">
                                                                                     <span className="font-bold text-primary">{wl.hours}h</span>
-                                                                                    {!readOnly && (
+                                                                                    {!readOnly && !wl.is_claimed ? (
                                                                                         <Can permission={isMyWorker ? 'maintenance.can_change_my_log_time' : 'maintenance.can_change_others_log_time'}>
                                                                                             <button
                                                                                                 onClick={() => {
                                                                                                     setEditingWorkLog(wl);
-                                                                                                    setEditWorkLogForm({
-                                                                                                        work_date: wl.work_date || '',
-                                                                                                        from_time: wl.from_time ? wl.from_time.slice(0, 5) : '',
-                                                                                                        to_time: wl.to_time ? wl.to_time.slice(0, 5) : '',
-                                                                                                        hours: wl.hours || '',
-                                                                                                        work_done: wl.work_done || ''
-                                                                                                    });
+                                                                                                    const urlParams = new URLSearchParams(window.location.search);
+                                                                                                    urlParams.set('log', String(wl.worklog_id));
+                                                                                                    const newUrl = `${window.location.pathname}?${urlParams.toString()}`;
+                                                                                                    window.history.replaceState(null, '', newUrl);
                                                                                                 }}
                                                                                                 className="p-1 rounded text-outline hover:text-primary cursor-pointer active:scale-95"
                                                                                                 aria-label="Edit Work Log"
@@ -2758,6 +2797,13 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
                                                                                                 <Edit2 className="w-4 h-4" />
                                                                                             </button>
                                                                                         </Can>
+                                                                                    ) : (
+                                                                                        <span
+                                                                                            title={wl.is_claimed ? 'Claimed work log (locked)' : 'Read-only log'}
+                                                                                            className="p-1 text-outline/60 flex items-center"
+                                                                                        >
+                                                                                            <Lock className="w-4 h-4" />
+                                                                                        </span>
                                                                                     )}
                                                                                 </div>
                                                                                 <div className="flex items-center gap-1.5">
@@ -3921,155 +3967,27 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
                 }
 
                 {/* 2. LOG WORK HOURS MODAL */}
+                {/* 2. LOG WORK HOURS MODAL (TimeSheetModal) */}
                 {
-                    isLogHoursModalOpen && activeWorkerId && (() => {
-                        const targetWorkerAlloc = allocations.find(a => a.worker.user_id === activeWorkerId);
-                        const timeCalc = computeHoursFromTimes(logWorkHoursForm.from_time, logWorkHoursForm.to_time);
-                        const isHoursValid = !isNaN(parseFloat(logWorkHoursForm.hours)) && parseFloat(logWorkHoursForm.hours) >= 0 && parseFloat(logWorkHoursForm.hours) <= 20;
-
-                        return (
-                            <div className="fixed inset-0 z-[60] flex items-end sm:items-center justify-center p-0 sm:p-4">
-                                <motion.div initial={{ opacity: 0 }} animate={{ opacity: 0.65 }} exit={{ opacity: 0 }} onClick={() => setIsLogHoursModalOpen(false)} className="absolute inset-0 bg-black touch-manipulation" />
-                                <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }} className="relative bg-surface-container dark:bg-dark-surface-container border border-outline-variant dark:border-dark-outline-variant w-full max-w-md sm:max-w-lg max-h-[92vh] sm:max-h-[88vh] p-4 sm:p-6 rounded-t-xl sm:rounded shadow-2xl overflow-y-auto">
-                                    <div className="flex items-center justify-between mb-4">
-                                        <div className="flex items-center gap-2">
-                                            <div className="w-8 h-8 rounded bg-primary/10 flex items-center justify-center text-primary">
-                                                <Clock className="w-4 h-4" />
-                                            </div>
-                                            <div>
-                                                <h3 className="text-sm font-bold text-on-surface dark:text-dark-on-surface uppercase tracking-wider">Log Work Hours</h3>
-                                                <p className="text-xs text-outline">
-                                                    Worker: <span className="font-bold text-on-surface dark:text-dark-on-surface">{targetWorkerAlloc?.worker.full_name}</span>
-                                                </p>
-                                            </div>
-                                        </div>
-                                        <button onClick={() => setIsLogHoursModalOpen(false)} className="rounded text-outline hover:bg-surface-container-high min-h-[15px] .min-w-[44px] flex items-center justify-center cursor-pointer"><X className="w-4 h-4" /></button>
-                                    </div>
-
-                                    <form onSubmit={e => handleAddWorkLog(e, activeWorkerId)} className="space-y-4">
-                                        <div>
-                                            <label className="block text-xs font-semibold text-outline mb-1.5">Work Date</label>
-                                            <input
-                                                type="date"
-                                                required
-                                                disabled={actionLoading}
-                                                value={logWorkHoursForm.work_date}
-                                                onChange={e => setLogWorkHoursForm({ ...logWorkHoursForm, work_date: e.target.value })}
-                                                className="w-full text-xs sm:text-sm bg-surface dark:bg-dark-surface border border-outline-variant dark:border-dark-outline-variant rounded p-2.5 text-on-surface dark:text-dark-on-surface focus:ring-2 focus:ring-primary/30"
-                                            />
-                                        </div>
-
-                                        <div className="grid grid-cols-2 gap-3">
-                                            <div>
-                                                <label className="block text-xs font-semibold text-outline mb-1.5">From Time</label>
-                                                <input
-                                                    type="time"
-                                                    disabled={actionLoading}
-                                                    value={logWorkHoursForm.from_time}
-                                                    onChange={e => {
-                                                        const nextFrom = e.target.value;
-                                                        const res = computeHoursFromTimes(nextFrom, logWorkHoursForm.to_time);
-                                                        setLogWorkHoursForm(prev => ({
-                                                            ...prev,
-                                                            from_time: nextFrom,
-                                                            hours: res.hours !== '' ? res.hours : prev.hours
-                                                        }));
-                                                    }}
-                                                    className="w-full text-xs sm:text-sm bg-surface dark:bg-dark-surface border border-outline-variant dark:border-dark-outline-variant rounded p-2.5 text-on-surface dark:text-dark-on-surface focus:ring-2 focus:ring-primary/30"
-                                                />
-                                            </div>
-                                            <div>
-                                                <label className="block text-xs font-semibold text-outline mb-1.5">To Time</label>
-                                                <input
-                                                    type="time"
-                                                    disabled={actionLoading}
-                                                    value={logWorkHoursForm.to_time}
-                                                    onChange={e => {
-                                                        const nextTo = e.target.value;
-                                                        const res = computeHoursFromTimes(logWorkHoursForm.from_time, nextTo);
-                                                        setLogWorkHoursForm(prev => ({
-                                                            ...prev,
-                                                            to_time: nextTo,
-                                                            hours: res.hours !== '' ? res.hours : prev.hours
-                                                        }));
-                                                    }}
-                                                    className="w-full text-xs sm:text-sm bg-surface dark:bg-dark-surface border border-outline-variant dark:border-dark-outline-variant rounded p-2.5 text-on-surface dark:text-dark-on-surface focus:ring-2 focus:ring-primary/30"
-                                                />
-                                            </div>
-                                        </div>
-
-                                        {/* Dynamic Hours Calculation Live Display */}
-                                        {timeCalc.error ? (
-                                            <div className="p-2.5 bg-red-500/10 border border-red-500/20 rounded text-red-600 dark:text-red-400 text-xs font-medium flex items-center gap-2">
-                                                <AlertCircle className="w-4 h-4 shrink-0" />
-                                                <span>{timeCalc.error}</span>
-                                            </div>
-                                        ) : timeCalc.hours !== '' ? (
-                                            <div className="p-3 bg-emerald-500/10 border border-emerald-500/20 rounded flex items-center justify-between">
-                                                <div className="flex items-center gap-2 text-emerald-700 dark:text-emerald-300 font-semibold text-xs">
-                                                    <Clock className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
-                                                    <span>Calculated Work Duration: {timeCalc.formattedDuration}</span>
-                                                </div>
-                                                <span className="text-xs font-bold px-2 py-0.5 bg-emerald-600 text-white rounded">
-                                                    {timeCalc.hours} hrs
-                                                </span>
-                                            </div>
-                                        ) : null}
-
-                                        <div>
-                                            <div className="flex items-center justify-between mb-1.5">
-                                                <label className="block text-xs font-semibold text-outline">Total Hours Worked (hours)</label>
-                                                <span className="text-[10px] text-outline italic">0.00 allowed if did not work</span>
-                                            </div>
-                                            <input
-                                                required
-                                                type="number"
-                                                step="0.01"
-                                                min="0"
-                                                inputMode="decimal"
-                                                placeholder="e.g. 4.00 or 0.00"
-                                                // disabled={actionLoading}
-                                                disabled={true}
-                                                value={logWorkHoursForm.hours}
-                                                onChange={e => setLogWorkHoursForm({ ...logWorkHoursForm, hours: e.target.value })}
-                                                className="w-full text-xs sm:text-sm bg-surface dark:bg-dark-surface border border-outline-variant dark:border-dark-outline-variant rounded p-2.5 text-on-surface dark:text-dark-on-surface focus:ring-2 focus:ring-primary/30 font-semibold"
-                                            />
-                                        </div>
-
-                                        <div>
-                                            <label className="block text-xs font-semibold text-outline mb-1.5">Work Description</label>
-                                            <textarea
-                                                required
-                                                rows={3}
-                                                placeholder="Describe tasks completed..."
-                                                disabled={actionLoading}
-                                                value={logWorkHoursForm.work_done}
-                                                onChange={e => setLogWorkHoursForm({ ...logWorkHoursForm, work_done: e.target.value })}
-                                                className="w-full text-xs sm:text-sm bg-surface dark:bg-dark-surface border border-outline-variant dark:border-dark-outline-variant rounded p-2.5 text-on-surface dark:text-dark-on-surface focus:ring-2 focus:ring-primary/30"
-                                            />
-                                        </div>
-
-                                        <div className="flex justify-end gap-2 pt-2">
-                                            <button
-                                                type="button"
-                                                onClick={() => setIsLogHoursModalOpen(false)}
-                                                className="min-h-[36px] px-4 py-2 border border-outline-variant dark:border-dark-outline-variant rounded text-xs font-semibold text-on-surface dark:text-dark-on-surface hover:bg-surface-container-high active:scale-95 transition-all"
-                                            >
-                                                Cancel
-                                            </button>
-                                            <button
-                                                type="submit"
-                                                disabled={actionLoading || !isHoursValid || !!timeCalc.error}
-                                                className="min-h-[36px] px-5 py-2 bg-primary text-white rounded text-xs font-semibold flex items-center justify-center gap-2 hover:bg-primary-hover active:scale-95 transition-all disabled:opacity-50 cursor-pointer"
-                                            >
-                                                {actionLoading && <Loader2 className="w-4 h-4 animate-spin text-current" />} Submit Log
-                                            </button>
-                                        </div>
-                                    </form>
-                                </motion.div>
-                            </div>
-                        );
-                    })()
+                    isLogHoursModalOpen && activeWorkerId && (
+                        <TimeSheetModal
+                            isOpen={isLogHoursModalOpen}
+                            onClose={() => setIsLogHoursModalOpen(false)}
+                            onSessionsUpdated={refreshTicketData}
+                            initialDate={new Date().toISOString().split('T')[0]}
+                            ticketId={ticketDetails.ticket_id}
+                            workerId={activeWorkerId}
+                            fixedLocationId={ticketDetails.store?.store_id ? String(ticketDetails.store.store_id) : (typeof ticketDetails.store === 'string' ? ticketDetails.store : undefined)}
+                            fixedLocationName={(ticketDetails.store as any)?.short_code || ticketDetails.store?.store_name || (typeof ticketDetails.store === 'string' ? ticketDetails.store : undefined)}
+                            lockLocation={true}
+                            minDateKey={
+                                ticketDetails.approved_date
+                                    ? ticketDetails.approved_date.split('T')[0]
+                                    : (ticketDetails.created_date ? ticketDetails.created_date.split('T')[0] : undefined)
+                            }
+                            initialCalendarOpen={true}
+                        />
+                    )
                 }
 
                 {/* 3. ADD EXPENSE MODAL */}
@@ -4360,177 +4278,40 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
                     )
                 }
 
-                {/* 5. EDIT WORK LOG MODAL */}
+                {/* 5. EDIT WORK LOG MODAL (TimeSheetModal) */}
                 {
-                    editingWorkLog && (() => {
-                        const editTimeCalc = computeHoursFromTimes(editWorkLogForm.from_time, editWorkLogForm.to_time);
-                        const isEditHoursValid = !isNaN(parseFloat(editWorkLogForm.hours)) && parseFloat(editWorkLogForm.hours) >= 0 && parseFloat(editWorkLogForm.hours) <= 20;
-
-                        return (
-                            <div className="fixed inset-0 z-[60] flex items-end sm:items-center justify-center p-0 sm:p-4">
-                                <motion.div initial={{ opacity: 0 }} animate={{ opacity: 0.65 }} exit={{ opacity: 0 }} onClick={() => setEditingWorkLog(null)} className="absolute inset-0 bg-black touch-manipulation" />
-                                <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }} className="relative bg-surface-container dark:bg-dark-surface-container border border-outline-variant dark:border-dark-outline-variant w-full max-w-md sm:max-w-lg p-4 sm:p-5 rounded-t-xl sm:rounded shadow-2xl overflow-y-auto max-h-[92vh]">
-                                    <div className="flex items-center justify-between mb-4">
-                                        <div className="flex items-center gap-2">
-                                            <div className="w-8 h-8 rounded bg-primary/10 flex items-center justify-center text-primary">
-                                                <Clock className="w-4 h-4" />
-                                            </div>
-                                            <h3 className="text-sm font-bold text-on-surface dark:text-dark-on-surface uppercase tracking-wider">
-                                                {editingWorkLog.is_claimed ? 'Work Log Details' : 'Edit Work Log'}
-                                            </h3>
-                                        </div>
-                                        <button onClick={() => setEditingWorkLog(null)} className="rounded text-outline hover:bg-surface-container-high min-h-[15px] .min-w-[44px] flex items-center justify-center cursor-pointer"><X className="w-4 h-4" /></button>
-                                    </div>
-
-                                    {editingWorkLog.is_claimed ? (
-                                        <div className="space-y-4">
-                                            <div className="p-3 bg-purple-500/10 border border-purple-500/20 rounded text-purple-600 dark:text-purple-400 text-xs font-semibold flex items-center gap-2">
-                                                <span>🔒 This work log has been claimed and cannot be edited or deleted.</span>
-                                            </div>
-                                            <div className="text-xs space-y-2 text-on-surface dark:text-dark-on-surface p-3 bg-surface dark:bg-dark-surface rounded border border-outline-variant/50">
-                                                <p><strong>Hours Worked:</strong> {editingWorkLog.hours}h</p>
-                                                {editingWorkLog.from_time && editingWorkLog.to_time && (
-                                                    <p><strong>Time Range:</strong> {editingWorkLog.from_time.slice(0, 5)} - {editingWorkLog.to_time.slice(0, 5)}</p>
-                                                )}
-                                                <p><strong>Labour Amount:</strong> {editingWorkLog.labour_amount} KWD</p>
-                                                <p><strong>Work Done:</strong> {editingWorkLog.work_done}</p>
-                                                <p><strong>Work Date:</strong> {editingWorkLog.work_date}</p>
-                                            </div>
-                                            <div className="flex justify-end pt-2">
-                                                <button type="button" onClick={() => setEditingWorkLog(null)} className="min-h-[36px] px-4 py-2 bg-surface-container-high border border-outline-variant rounded text-xs font-semibold text-on-surface dark:text-dark-on-surface hover:bg-surface-container-highest">Close</button>
-                                            </div>
-                                        </div>
-                                    ) : (
-                                        <form onSubmit={handleUpdateWorkLog} className="space-y-4">
-                                            <div>
-                                                <label className="block text-xs font-semibold text-outline mb-1.5">Work Date</label>
-                                                <input
-                                                    type="date"
-                                                    required
-                                                    disabled={actionLoading}
-                                                    value={editWorkLogForm.work_date}
-                                                    onChange={e => setEditWorkLogForm({ ...editWorkLogForm, work_date: e.target.value })}
-                                                    className="w-full text-xs sm:text-sm bg-surface dark:bg-dark-surface border border-outline-variant dark:border-dark-outline-variant rounded p-2.5 text-on-surface dark:text-dark-on-surface focus:ring-2 focus:ring-primary/30"
-                                                />
-                                            </div>
-
-                                            <div className="grid grid-cols-2 gap-3">
-                                                <div>
-                                                    <label className="block text-xs font-semibold text-outline mb-1.5">From Time</label>
-                                                    <input
-                                                        type="time"
-                                                        disabled={actionLoading}
-                                                        value={editWorkLogForm.from_time}
-                                                        onChange={e => {
-                                                            const nextFrom = e.target.value;
-                                                            const res = computeHoursFromTimes(nextFrom, editWorkLogForm.to_time);
-                                                            setEditWorkLogForm(prev => ({
-                                                                ...prev,
-                                                                from_time: nextFrom,
-                                                                hours: res.hours !== '' ? res.hours : prev.hours
-                                                            }));
-                                                        }}
-                                                        className="w-full text-xs sm:text-sm bg-surface dark:bg-dark-surface border border-outline-variant dark:border-dark-outline-variant rounded p-2.5 text-on-surface dark:text-dark-on-surface focus:ring-2 focus:ring-primary/30"
-                                                    />
-                                                </div>
-                                                <div>
-                                                    <label className="block text-xs font-semibold text-outline mb-1.5">To Time</label>
-                                                    <input
-                                                        type="time"
-                                                        disabled={actionLoading}
-                                                        value={editWorkLogForm.to_time}
-                                                        onChange={e => {
-                                                            const nextTo = e.target.value;
-                                                            const res = computeHoursFromTimes(editWorkLogForm.from_time, nextTo);
-                                                            setEditWorkLogForm(prev => ({
-                                                                ...prev,
-                                                                to_time: nextTo,
-                                                                hours: res.hours !== '' ? res.hours : prev.hours
-                                                            }));
-                                                        }}
-                                                        className="w-full text-xs sm:text-sm bg-surface dark:bg-dark-surface border border-outline-variant dark:border-dark-outline-variant rounded p-2.5 text-on-surface dark:text-dark-on-surface focus:ring-2 focus:ring-primary/30"
-                                                    />
-                                                </div>
-                                            </div>
-
-                                            {/* Dynamic Hours Calculation Live Display */}
-                                            {editTimeCalc.error ? (
-                                                <div className="p-2.5 bg-red-500/10 border border-red-500/20 rounded text-red-600 dark:text-red-400 text-xs font-medium flex items-center gap-2">
-                                                    <AlertCircle className="w-4 h-4 shrink-0" />
-                                                    <span>{editTimeCalc.error}</span>
-                                                </div>
-                                            ) : editTimeCalc.hours !== '' ? (
-                                                <div className="p-3 bg-emerald-500/10 border border-emerald-500/20 rounded flex items-center justify-between">
-                                                    <div className="flex items-center gap-2 text-emerald-700 dark:text-emerald-300 font-semibold text-xs">
-                                                        <Clock className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
-                                                        <span>Calculated Work Duration: {editTimeCalc.formattedDuration}</span>
-                                                    </div>
-                                                    <span className="text-xs font-bold px-2 py-0.5 bg-emerald-600 text-white rounded">
-                                                        {editTimeCalc.hours} hrs
-                                                    </span>
-                                                </div>
-                                            ) : null}
-
-                                            <div>
-                                                <div className="flex items-center justify-between mb-1.5">
-                                                    <label className="block text-xs font-semibold text-outline">Total Hours Worked (hours)</label>
-                                                    <span className="text-[10px] text-outline italic">0.00 allowed if did not work</span>
-                                                </div>
-                                                <input
-                                                    type="number"
-                                                    step="0.01"
-                                                    min="0"
-                                                    inputMode="decimal"
-                                                    required
-                                                    // disabled={actionLoading}
-                                                    disabled={true}
-                                                    className="w-full text-xs sm:text-sm bg-surface dark:bg-dark-surface border border-outline-variant dark:border-dark-outline-variant rounded p-2.5 min-h-[15px] text-on-surface dark:text-dark-on-surface focus:ring-2 focus:ring-primary/30 font-semibold"
-                                                    value={editWorkLogForm.hours}
-                                                    onChange={e => setEditWorkLogForm({ ...editWorkLogForm, hours: e.target.value })}
-                                                />
-                                            </div>
-
-                                            <div>
-                                                <label className="block text-xs font-semibold text-outline mb-1.5">Description</label>
-                                                <textarea
-                                                    required
-                                                    rows={3}
-                                                    disabled={actionLoading}
-                                                    className="w-full text-xs sm:text-sm bg-surface dark:bg-dark-surface border border-outline-variant dark:border-dark-outline-variant rounded p-2.5 text-on-surface dark:text-dark-on-surface focus:ring-2 focus:ring-primary/30"
-                                                    value={editWorkLogForm.work_done}
-                                                    onChange={e => setEditWorkLogForm({ ...editWorkLogForm, work_done: e.target.value })}
-                                                />
-                                            </div>
-
-                                            <div className="flex justify-end gap-2 pt-2">
-                                                <button
-                                                    type="button"
-                                                    onClick={() => { if (window.confirm('Are you sure you want to delete this work log?')) handleDeleteWorkLog(editingWorkLog.worklog_id); }}
-                                                    className="min-h-[36px] px-3 py-1.5 text-xs font-bold text-red-600 hover:bg-red-500/10 rounded mr-auto flex items-center gap-1.5 cursor-pointer"
-                                                >
-                                                    <Trash2 className="w-4 h-4" /> Delete Log
-                                                </button>
-                                                <button
-                                                    type="button"
-                                                    onClick={() => setEditingWorkLog(null)}
-                                                    className="min-h-[36px] px-4 py-2 border border-outline-variant dark:border-dark-outline-variant rounded text-xs font-semibold text-on-surface dark:text-dark-on-surface hover:bg-surface-container-high active:scale-95 transition-all"
-                                                >
-                                                    Cancel
-                                                </button>
-                                                <button
-                                                    type="submit"
-                                                    disabled={actionLoading || !isEditHoursValid || !!editTimeCalc.error}
-                                                    className="min-h-[36px] px-5 py-2 bg-primary text-white rounded text-xs font-semibold hover:bg-primary-hover active:scale-95 transition-all disabled:opacity-50 flex items-center justify-center gap-2 cursor-pointer"
-                                                >
-                                                    {actionLoading && <Loader2 className="w-4 h-4 animate-spin text-current" />} Save
-                                                </button>
-                                            </div>
-                                        </form>
-                                    )}
-                                </motion.div>
-                            </div>
-                        );
-                    })()
+                    editingWorkLog && (
+                        <TimeSheetModal
+                            isOpen={Boolean(editingWorkLog)}
+                            onClose={() => {
+                                setEditingWorkLog(null);
+                                const urlParams = new URLSearchParams(window.location.search);
+                                if (urlParams.has('log')) {
+                                    urlParams.delete('log');
+                                    const nextQuery = urlParams.toString();
+                                    const newUrl = nextQuery ? `${window.location.pathname}?${nextQuery}` : window.location.pathname;
+                                    window.history.replaceState(null, '', newUrl);
+                                }
+                            }}
+                            onSessionsUpdated={() => {
+                                setEditingWorkLog(null);
+                                refreshTicketData();
+                            }}
+                            initialDate={editingWorkLog.work_date || new Date().toISOString().split('T')[0]}
+                            initialEditingWorklogId={editingWorkLog.worklog_id}
+                            ticketId={ticketDetails.ticket_id}
+                            workerId={editingWorkLog.worker?.user_id || activeWorkerId || undefined}
+                            fixedLocationId={ticketDetails.store?.store_id ? String(ticketDetails.store.store_id) : (typeof ticketDetails.store === 'string' ? ticketDetails.store : undefined)}
+                            fixedLocationName={(ticketDetails.store as any)?.short_code || ticketDetails.store?.store_name || (typeof ticketDetails.store === 'string' ? ticketDetails.store : undefined)}
+                            lockLocation={true}
+                            minDateKey={
+                                ticketDetails.approved_date
+                                    ? ticketDetails.approved_date.split('T')[0]
+                                    : (ticketDetails.created_date ? ticketDetails.created_date.split('T')[0] : undefined)
+                            }
+                            initialCalendarOpen={false}
+                        />
+                    )
                 }
 
                 {/* 6. EDIT EXPENSE MODAL */}

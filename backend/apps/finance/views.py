@@ -617,16 +617,6 @@ class ExpenseViewSet(viewsets.ModelViewSet):
             user.has_perm('finance.change_expense')
         )
 
-        # Move any pending approval instances to Rework so the edit is permitted and tracked
-        pending_insts = expense.approval_instances.filter(status='Pending')
-        if pending_insts.exists():
-            for p_inst in pending_insts:
-                p_inst.status = 'Rework'
-                p_inst.comments = 'Moved to rework for modification'
-                p_inst.action_by = user
-                p_inst.actioned_at = timezone.now()
-                p_inst.save()
-
         updated_expense = serializer.save()
 
         # Handle approval state after update
@@ -635,15 +625,22 @@ class ExpenseViewSet(viewsets.ModelViewSet):
             updated_expense.approved_by = user
             updated_expense.save(update_fields=['approved', 'approved_by'])
         elif updated_expense.expense_type and updated_expense.expense_type.approve_required:
-            # Keep unapproved and in Rework status so it remains in Unapproved section
             updated_expense.approved = False
             updated_expense.approved_by = None
             if hasattr(updated_expense, 'status'):
-                updated_expense.status = 'Rework'
+                updated_expense.status = 'In Review'
             updated_expense.save(update_fields=['approved', 'approved_by'] + (
                 ['status'] if hasattr(updated_expense, 'status') else []))
-            create_audit_event('Expense', updated_expense.pk, 'EXPENSE_REWORK_EDIT', actor=user, payload={
-                               'comments': 'Moved to rework during edit'}, ip_address=self.request.META.get('REMOTE_ADDR'))
+            
+            # Start/restart approval workflow so a fresh Pending instance is created at Step 1
+            wf = ApprovalWorkflow.objects.filter(
+                entity_type='Expense', is_active=True).first()
+            if wf:
+                ApprovalService.start_workflow(
+                    updated_expense, user, ip_address=self.request.META.get('REMOTE_ADDR'))
+            
+            create_audit_event('Expense', updated_expense.pk, 'EXPENSE_RESUBMITTED_AFTER_EDIT', actor=user, payload={
+                               'comments': 'Resubmitted to approval after edit'}, ip_address=self.request.META.get('REMOTE_ADDR'))
         else:
             updated_expense.approved = True
             updated_expense.approved_by = user
@@ -662,6 +659,59 @@ class ExpenseViewSet(viewsets.ModelViewSet):
     def partial_update(self, request, *args, **kwargs):
         kwargs['partial'] = True
         return self.update(request, *args, **kwargs)
+
+    @action(detail=True, methods=['post'], url_path='submit')
+    def submit_expense(self, request, pk=None):
+        expense = self.get_object()
+        user = request.user
+
+        if expense.is_claimed or expense.claim:
+            raise exceptions.ValidationError(
+                {'detail': 'This expense is attached to a claim bundle and cannot be submitted individually.'})
+
+        if expense.approved:
+            raise exceptions.ValidationError(
+                {'detail': 'This expense is already approved.'})
+
+        role_name = (user.role.role_name.lower().strip() if hasattr(
+            user, 'role') and user.role else '') if user else ''
+        expense_worker_id = getattr(expense.worker, 'pk', expense.worker_id)
+        expense_added_by_id = getattr(expense.added_by, 'pk', expense.added_by_id)
+        is_owner = user.pk in (expense_worker_id, expense_added_by_id)
+        is_admin = (
+            user.is_superuser or
+            getattr(user, 'is_staff', False) or
+            role_name in ('administrator', 'admin', 'office administrator', 'office admin', 'finance', 'accountant', 'accounts') or
+            user.has_perm('finance.change_expense') or
+            user.has_perm('finance.add_expense')
+        )
+        if not (is_owner or is_admin):
+            raise exceptions.PermissionDenied(
+                {'detail': 'You do not have permission to submit this expense for approval.'})
+
+        if expense.expense_type and not expense.expense_type.approve_required:
+            expense.approved = True
+            expense.approved_by = user
+            expense.save(update_fields=['approved', 'approved_by'])
+            create_audit_event('Expense', expense.pk, 'AUTO_APPROVED', actor=user, payload={
+                               'reason': 'Expense type does not require approval'}, ip_address=request.META.get('REMOTE_ADDR'))
+            return Response({'status': 'success', 'message': 'Expense does not require approval and was auto-approved.', 'expense': ExpenseSerializer(expense, context={'request': request}).data}, status=status.HTTP_200_OK)
+
+        wf = ApprovalWorkflow.objects.filter(
+            entity_type='Expense', is_active=True).first()
+        if wf:
+            ApprovalService.start_workflow(
+                expense, user, ip_address=request.META.get('REMOTE_ADDR'))
+        else:
+            expense.approved = True
+            expense.approved_by = user
+            expense.save(update_fields=['approved', 'approved_by'])
+
+        create_audit_event('Expense', expense.pk, 'EXPENSE_SUBMITTED_FOR_APPROVAL', actor=user, payload={
+                           'comments': 'Submitted for approval'}, ip_address=request.META.get('REMOTE_ADDR'))
+
+        expense.refresh_from_db()
+        return Response({'status': 'success', 'message': 'Expense submitted for approval.', 'expense': ExpenseSerializer(expense, context={'request': request}).data}, status=status.HTTP_200_OK)
 
     @action(detail=True, methods=['post'], url_path='action')
     def action_expense(self, request, pk=None):

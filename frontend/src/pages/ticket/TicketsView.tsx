@@ -623,6 +623,7 @@ export const TicketsView: React.FC = () => {
         } else {
             if (modalWasOpen.current && queryTicketId) {
                 urlParams.delete('ticket_id');
+                urlParams.delete('log');
                 const nextQuery = urlParams.toString();
                 const newUrl = nextQuery ? `${window.location.pathname}?${nextQuery}` : window.location.pathname;
                 window.history.replaceState(null, '', newUrl);

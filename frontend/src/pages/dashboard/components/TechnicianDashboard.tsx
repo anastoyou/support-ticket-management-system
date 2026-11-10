@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { useLocation } from 'react-router-dom';
 import { useSelector } from 'react-redux';
 import type { RootState } from '../../../store';
 import { StatCard } from './StatCard';
@@ -14,6 +15,7 @@ interface TechnicianDashboardProps {
 
 export const TechnicianDashboard: React.FC<TechnicianDashboardProps> = ({ data, loading }) => {
     const { token } = useSelector((state: RootState) => state.auth);
+    const location = useLocation();
 
     const summary = data?.summary || {};
     const financials = data?.financials || {};
@@ -22,7 +24,31 @@ export const TechnicianDashboard: React.FC<TechnicianDashboardProps> = ({ data, 
     const myPerf = myPerfList.length > 0 ? myPerfList[0] : null;
 
     // Time Sheet modal and today's summary state
-    const [isTimeSheetOpen, setIsTimeSheetOpen] = useState(false);
+    const [initialLogId, setInitialLogId] = useState<number | undefined>(() => {
+        const urlParams = new URLSearchParams(window.location.search);
+        const logId = urlParams.get('log');
+        return logId ? Number(logId) : undefined;
+    });
+    const [initialDate, setInitialDate] = useState<string | undefined>(() => {
+        const urlParams = new URLSearchParams(window.location.search);
+        return urlParams.get('date') || undefined;
+    });
+    const [isTimeSheetOpen, setIsTimeSheetOpen] = useState(() => {
+        const urlParams = new URLSearchParams(window.location.search);
+        return Boolean(urlParams.get('log') || urlParams.get('timesheet'));
+    });
+
+    useEffect(() => {
+        const urlParams = new URLSearchParams(location.search);
+        const logId = urlParams.get('log');
+        const timesheet = urlParams.get('timesheet');
+        if (logId || timesheet) {
+            if (logId) setInitialLogId(Number(logId));
+            if (urlParams.get('date')) setInitialDate(urlParams.get('date') || undefined);
+            setIsTimeSheetOpen(true);
+        }
+    }, [location.search]);
+
     const [todayHours, setTodayHours] = useState<number>(0);
     const [todayPct, setTodayPct] = useState<number>(0);
 
@@ -160,7 +186,11 @@ export const TechnicianDashboard: React.FC<TechnicianDashboardProps> = ({ data, 
             <div className="sm:hidden fixed bottom-7 right-6 z-40 flex flex-col items-center gap-2 select-none">
                 <button
                     type="button"
-                    onClick={() => setIsTimeSheetOpen(true)}
+                    onClick={() => {
+                        setInitialLogId(undefined);
+                        setInitialDate(undefined);
+                        setIsTimeSheetOpen(true);
+                    }}
                     className="
             group relative w-[76px] h-[76px]
             rounded-full overflow-visible
@@ -262,8 +292,21 @@ export const TechnicianDashboard: React.FC<TechnicianDashboardProps> = ({ data, 
 
             <TimeSheetModal
                 isOpen={isTimeSheetOpen}
+                initialEditingWorklogId={initialLogId}
+                initialDate={initialDate}
+                initialCalendarOpen={!initialLogId}
                 onClose={() => {
                     setIsTimeSheetOpen(false);
+                    setInitialLogId(undefined);
+                    const urlParams = new URLSearchParams(window.location.search);
+                    if (urlParams.has('log') || urlParams.has('timesheet') || urlParams.has('date')) {
+                        urlParams.delete('log');
+                        urlParams.delete('timesheet');
+                        urlParams.delete('date');
+                        const nextQuery = urlParams.toString();
+                        const newUrl = nextQuery ? `${window.location.pathname}?${nextQuery}` : window.location.pathname;
+                        window.history.replaceState(null, '', newUrl);
+                    }
                     fetchTodayTimesheet();
                 }}
                 onSessionsUpdated={fetchTodayTimesheet}

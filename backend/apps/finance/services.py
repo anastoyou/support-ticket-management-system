@@ -125,18 +125,7 @@ class ApprovalService:
         if actor.is_superuser:
             return True
 
-        # 1. User-wise: If specific users are assigned to the step, ONLY those assigned users can action it
-        if step.assigned_users.exists():
-            return step.assigned_users.filter(pk=actor.pk).exists()
-
-        # 2. Role-wise: If a specific role is assigned to the step, ONLY users with that role can action it
-        if step.assigned_role:
-            actor_role = getattr(actor, 'role', None)
-            if actor_role:
-                return actor_role == step.assigned_role or getattr(actor_role, 'pk', None) == step.assigned_role_id
-            return False
-
-        # 3. Fallback only if step has NEITHER assigned_users NOR assigned_role
+        # Check Guardian object-level permission on target instance
         target_entity = None
         perm_name = None
         if instance:
@@ -150,9 +139,22 @@ class ApprovalService:
                 target_entity = instance.ledger
                 perm_name = 'finance.approve_ledger'
 
+        if perm_name and target_entity and actor.has_perm(perm_name, target_entity):
+            return True
+
+        # 1. User-wise: If specific users are assigned to the step, ONLY those assigned users can action it
+        if step.assigned_users.exists():
+            return step.assigned_users.filter(pk=actor.pk).exists()
+
+        # 2. Role-wise: If a specific role is assigned to the step, ONLY users with that role can action it
+        if step.assigned_role:
+            actor_role = getattr(actor, 'role', None)
+            if actor_role:
+                return actor_role == step.assigned_role or getattr(actor_role, 'pk', None) == step.assigned_role_id
+            return False
+
+        # 3. Fallback only if step has NEITHER assigned_users NOR assigned_role
         if perm_name:
-            if target_entity and actor.has_perm(perm_name, target_entity):
-                return True
             if actor.has_perm(perm_name):
                 return True
 

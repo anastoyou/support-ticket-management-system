@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
-  Receipt, PlusCircle, Trash2, X, AlertCircle, Loader2, FileText, Eye, CheckCircle2, Building2, Calendar, DollarSign, User, Paperclip, Upload, RotateCcw, RotateCw, Image as ImageIcon, ShieldCheck, Headphones, Video, Check, ChevronDown, ChevronRight, MessageSquare, Ticket, ExternalLink, Pencil, SlidersHorizontal, Rows3, ChevronsUp, RefreshCw, Plus, ArrowUpDown, ArrowUp, ArrowDown
+  Receipt, PlusCircle, Trash2, X, AlertCircle, Loader2, FileText, Eye, CheckCircle2, Building2, Calendar, DollarSign, User, Paperclip, Upload, RotateCcw, RotateCw, Image as ImageIcon, ShieldCheck, Headphones, Video, Check, ChevronDown, ChevronRight, MessageSquare, Ticket, ExternalLink, Pencil, SlidersHorizontal, Rows3, ChevronsUp, RefreshCw, Plus, ArrowUpDown, ArrowUp, ArrowDown, Send
 } from 'lucide-react';
 import type { ExpenseItem, ApprovalInstanceItem, ApprovalStepInfo } from './types';
 import { ApprovalsSubpage, type ApprovalsSubpageProps } from './ApprovalsSubpage';
@@ -210,6 +210,7 @@ export const ExpensesSubpage: React.FC<ExpensesSubpageProps> = ({
   const [actioningExpenseId, setActioningExpenseId] = useState<number | null>(null);
   const [actioningActionType, setActioningActionType] = useState<'APPROVED' | 'REWORK' | null>(null);
   const [updatingExpenseId, setUpdatingExpenseId] = useState<number | null>(null);
+  const [submittingExpenseId, setSubmittingExpenseId] = useState<number | null>(null);
 
   // Multi-line View Toggle State
   const [isMultiLineView, setIsMultiLineView] = useState<boolean>(false);
@@ -831,6 +832,38 @@ export const ExpensesSubpage: React.FC<ExpensesSubpageProps> = ({
       ...(exp.receipt && !exp.receipts?.some((r: any) => r.media_id === exp.receipt?.media_id) ? [exp.receipt] : [])
     ];
     setExistingReceipts(modalMedia);
+  };
+
+  // Submit an expense in Rework or Draft for approval
+  const handleSendToApproval = async (exp: ExpenseItem) => {
+    setSubmittingExpenseId(exp.expense_id);
+    try {
+      const res = await fetch(`${API_URL}/finance/expense/${exp.expense_id}/submit/`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Token ${token}`,
+          'Content-Type': 'application/json'
+        }
+      });
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData.detail || 'Failed to submit expense for approval');
+      }
+      if (onRefresh) {
+        setIsRefreshing(true);
+        try {
+          await onRefresh();
+        } finally {
+          setIsRefreshing(false);
+        }
+      } else {
+        window.location.reload();
+      }
+    } catch (err: any) {
+      alert(err.message || 'Failed to submit expense for approval');
+    } finally {
+      setSubmittingExpenseId(null);
+    }
   };
 
   const handleDeleteExistingReceipt = async (mediaId: number) => {
@@ -2381,21 +2414,46 @@ export const ExpensesSubpage: React.FC<ExpensesSubpageProps> = ({
                                 </span>
                               ) : !exp.claim ? (
                                 (isRejectedOrRework || isExpenseApproved) ? (
-                                  <Can permission={canEditExpense ? true : ["finance.add_expense", "finance.change_expense", "maintenance.change_my_expence", "accounts.change_others_expence"] as any}>
-                                    <button
-                                      type="button"
-                                      disabled={updatingExpenseId === exp.expense_id}
-                                      onClick={() => {
-                                        setLastActiveExpenseId(exp.expense_id);
-                                        openEditExpenseModal(exp);
-                                      }}
-                                      className="px-2.5 py-1 rounded border border-gray-500/20  hover:border-primary text-on-surface text-[11px] font-semibold hover:bg-surface-container-high transition-colors inline-flex items-center gap-1 cursor-pointer shadow-xs disabled:opacity-50"
-                                      title={isExpenseApproved ? "Edit (Will move back to Approval)" : "Edit & Resubmit"}
-                                    >
-                                      <Pencil className="w-3 h-3 text-primary" />
-                                      <span>Edit</span>
-                                    </button>
-                                  </Can>
+                                  <div className="flex items-center justify-end gap-1.5">
+                                    {isRejectedOrRework && (
+                                      <Can permission={canEditExpense ? true : ["maintenance.change_my_expence", "accounts.change_others_expence", "finance.change_expense", "finance.add_expense"] as any}>
+                                        <button
+                                          type="button"
+                                          disabled={submittingExpenseId === exp.expense_id}
+                                          onClick={() => handleSendToApproval(exp)}
+                                          className="px-2 py-1 rounded bg-blue-600 hover:bg-blue-700 text-white text-[11px] font-semibold transition-colors inline-flex items-center gap-1 cursor-pointer shadow-xs disabled:opacity-50"
+                                          title="Send to Approval"
+                                        >
+                                          {submittingExpenseId === exp.expense_id ? (
+                                            <>
+                                              <Loader2 className="w-3 h-3 animate-spin" />
+                                              <span>Submitting...</span>
+                                            </>
+                                          ) : (
+                                            <>
+                                              <Send className="w-3 h-3" />
+                                              <span>Submit</span>
+                                            </>
+                                          )}
+                                        </button>
+                                      </Can>
+                                    )}
+                                    <Can permission={canEditExpense ? true : ["finance.add_expense", "finance.change_expense", "maintenance.change_my_expence", "accounts.change_others_expence"] as any}>
+                                      <button
+                                        type="button"
+                                        disabled={updatingExpenseId === exp.expense_id}
+                                        onClick={() => {
+                                          setLastActiveExpenseId(exp.expense_id);
+                                          openEditExpenseModal(exp);
+                                        }}
+                                        className="px-2.5 py-1 rounded border border-gray-500/20  hover:border-primary text-on-surface text-[11px] font-semibold hover:bg-surface-container-high transition-colors inline-flex items-center gap-1 cursor-pointer shadow-xs disabled:opacity-50"
+                                        title={isExpenseApproved ? "Edit (Will move back to Approval)" : "Edit & Resubmit"}
+                                      >
+                                        <Pencil className="w-3 h-3 text-primary" />
+                                        <span>Edit</span>
+                                      </button>
+                                    </Can>
+                                  </div>
                                 ) : (
                                   <span className="text-[11px] text-amber-600 dark:text-amber-400 font-medium italic">In Review</span>
                                 )
@@ -2524,27 +2582,48 @@ export const ExpensesSubpage: React.FC<ExpensesSubpageProps> = ({
                                         )}
                                       </>
                                     ) : isRejectedOrRework ? (
-                                      <Can permission={canEditExpense ? true : ["maintenance.change_my_expence", "accounts.change_others_expence", "finance.change_expense", "finance.add_expense"] as any}>
-                                        <button
-                                          type="button"
-                                          disabled={updatingExpenseId === exp.expense_id}
-                                          onClick={() => openEditExpenseModal(exp)}
-                                          className={`px-3 py-1.5 rounded text-white text-xs font-semibold transition-colors flex items-center gap-1.5 cursor-pointer shadow-xs disabled:opacity-50 ${isRejected ? 'bg-rose-600 hover:bg-rose-700' : 'bg-purple-600 hover:bg-purple-700'
-                                            }`}
-                                        >
-                                          {updatingExpenseId === exp.expense_id ? (
-                                            <>
-                                              <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                                              <span>Updating...</span>
-                                            </>
-                                          ) : (
-                                            <>
-                                              <Pencil className="w-3.5 h-3.5" />
-                                              <span>Edit & Resubmit</span>
-                                            </>
-                                          )}
-                                        </button>
-                                      </Can>
+                                      <div className="flex items-center gap-1.5">
+                                        <Can permission={canEditExpense ? true : ["maintenance.change_my_expence", "accounts.change_others_expence", "finance.change_expense", "finance.add_expense"] as any}>
+                                          <button
+                                            type="button"
+                                            disabled={submittingExpenseId === exp.expense_id}
+                                            onClick={() => handleSendToApproval(exp)}
+                                            className="px-3 py-1.5 rounded bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold transition-colors flex items-center gap-1.5 cursor-pointer shadow-xs disabled:opacity-50"
+                                            title="Send to Approval"
+                                          >
+                                            {submittingExpenseId === exp.expense_id ? (
+                                              <>
+                                                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                                <span>Submitting...</span>
+                                              </>
+                                            ) : (
+                                              <>
+                                                <Send className="w-3.5 h-3.5" />
+                                                <span>Send to Approval</span>
+                                              </>
+                                            )}
+                                          </button>
+                                          <button
+                                            type="button"
+                                            disabled={updatingExpenseId === exp.expense_id}
+                                            onClick={() => openEditExpenseModal(exp)}
+                                            className={`px-3 py-1.5 rounded text-white text-xs font-semibold transition-colors flex items-center gap-1.5 cursor-pointer shadow-xs disabled:opacity-50 ${isRejected ? 'bg-rose-600 hover:bg-rose-700' : 'bg-purple-600 hover:bg-purple-700'
+                                              }`}
+                                          >
+                                            {updatingExpenseId === exp.expense_id ? (
+                                              <>
+                                                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                                <span>Updating...</span>
+                                              </>
+                                            ) : (
+                                              <>
+                                                <Pencil className="w-3.5 h-3.5" />
+                                                <span>Edit & Resubmit</span>
+                                              </>
+                                            )}
+                                          </button>
+                                        </Can>
+                                      </div>
                                     ) : isExpenseApproved ? (
                                       <div className="flex items-center gap-2">
                                         <span className="px-2.5 py-1 rounded text-[11px] font-semibold bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 flex items-center gap-1">

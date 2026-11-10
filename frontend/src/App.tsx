@@ -126,7 +126,7 @@ const App: React.FC = () => {
       <Router>
         <PageTitle />
         <WebSocketListener />
-        <PushNotificationPrompt />
+        {/* <PushNotificationPrompt /> */}
         <ProfileCompletionModal />
         <StoreCompletionModal />
         <ThemeToggleOverlay isDark={isDark} setIsDark={setIsDark} />
@@ -138,6 +138,14 @@ const App: React.FC = () => {
 
           {/* Dashboard and Subpage Routes wrapped with DashboardLayout */}
           <Route path="/" element={
+            <ProtectedRoute>
+              <DashboardLayout>
+                <DashboardView />
+              </DashboardLayout>
+            </ProtectedRoute>
+          } />
+
+          <Route path="/dashboard" element={
             <ProtectedRoute>
               <DashboardLayout>
                 <DashboardView />
