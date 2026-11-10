@@ -678,6 +678,14 @@ class WorkLogViewSet(viewsets.ModelViewSet):
             work_date=target_date
         ).select_related('ticket', 'ticket__store', 'worker').prefetch_related('stores').order_by('from_time', 'created_date')
 
+        from datetime import timedelta, time
+        next_date = target_date + timedelta(days=1)
+        next_day_logs = WorkLog.objects.filter(
+            worker=worker,
+            work_date=next_date,
+            from_time__lt=time(8, 0)
+        ).select_related('ticket', 'ticket__store', 'worker').prefetch_related('stores').order_by('from_time', 'created_date')
+
         daily_goal_hours = 10.0
         total_hours = sum([float(log.hours or 0) for log in logs])
         total_minutes = int(round(total_hours * 60))
@@ -720,6 +728,55 @@ class WorkLogViewSet(viewsets.ModelViewSet):
                 'ticket_title': log.ticket.title if log.ticket else None,
                 'dateKey': target_date.strftime('%Y-%m-%d'),
                 'work_date': target_date.strftime('%Y-%m-%d'),
+                'from_time': log.from_time.strftime('%H:%M') if log.from_time else None,
+                'to_time': log.to_time.strftime('%H:%M') if log.to_time else None,
+                'start': start_mins,
+                'end': end_mins,
+                'hours': float(log.hours or 0),
+                'work_done': log.work_done or '',
+                'remarks': log.work_done or '',
+                'locations': loc_list,
+                'locationIds': [l['id'] for l in loc_list],
+                'is_claimed': log.is_claimed,
+                'is_locked': bool(is_ticket or log.is_claimed)
+            })
+
+        for log in next_day_logs:
+            is_ticket = bool(log.ticket_id)
+            start_mins = None
+            end_mins = None
+            if log.from_time and log.to_time:
+                start_mins = 1440 + log.from_time.hour * 60 + log.from_time.minute
+                raw_end = 1440 + log.to_time.hour * 60 + log.to_time.minute
+                if raw_end <= start_mins and (log.hours or 0) > 0:
+                    raw_end += 1440
+                end_mins = raw_end
+
+            loc_list = []
+            if is_ticket and log.ticket and log.ticket.store:
+                loc_list.append({
+                    'id': log.ticket.store.store_id,
+                    'name': log.ticket.store.store_name,
+                    'short_code': log.ticket.store.short_code
+                })
+            else:
+                for st in log.stores.all():
+                    loc_list.append({
+                        'id': st.store_id,
+                        'name': st.store_name,
+                        'short_code': st.short_code
+                    })
+
+            sessions.append({
+                'id': log.worklog_id,
+                'worklog_id': log.worklog_id,
+                'log_type': log.log_type or ('ticket' if is_ticket else 'timesheet'),
+                'is_ticket': is_ticket,
+                'ticket_id': log.ticket_id,
+                'ticket_work_order_no': log.ticket.work_order_no if log.ticket else None,
+                'ticket_title': log.ticket.title if log.ticket else None,
+                'dateKey': next_date.strftime('%Y-%m-%d'),
+                'work_date': next_date.strftime('%Y-%m-%d'),
                 'from_time': log.from_time.strftime('%H:%M') if log.from_time else None,
                 'to_time': log.to_time.strftime('%H:%M') if log.to_time else None,
                 'start': start_mins,

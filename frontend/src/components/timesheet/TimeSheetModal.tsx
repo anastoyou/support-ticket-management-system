@@ -11,10 +11,12 @@ const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api';
 
 const HOUR = 60;
 const DAY = 1440;
-const WINDOW_HOURS = 12;
+const WINDOW_HOURS = 8;
 const WINDOW_MINUTES = WINDOW_HOURS * HOUR;
-const DAY_WINDOW_START = 8 * 60; // 08:00 AM (08:00 AM – 08:00 PM)
-const NIGHT_WINDOW_START = 20 * 60; // 08:00 PM (08:00 PM – 08:00 AM)
+const EARLY_MORNING_WINDOW_START = 0 * 60; // 12:00 AM (12:00 AM – 08:00 AM: Early Morning)
+const DAYTIME_WINDOW_START = 8 * 60; // 08:00 AM (08:00 AM – 04:00 PM: Daytime - Default)
+const NIGHT_WINDOW_START = 16 * 60; // 04:00 PM (04:00 PM – 12:00 AM: Night)
+const DAY_WINDOW_START = DAYTIME_WINDOW_START;
 const STEP = 30; // Standard 30-minute interval
 const PARTS_COUNT = 2; // 2 half-hour segments per slot
 
@@ -67,6 +69,7 @@ export interface BookedSession {
 }
 
 interface LockedConflictInfo {
+    id?: number;
     start: number;
     end: number;
     is_ticket: boolean;
@@ -76,6 +79,246 @@ interface LockedConflictInfo {
     remarks?: string;
     work_done?: string;
 }
+
+interface PastelColor {
+    bg: string;
+    border: string;
+    text: string;
+    subtext: string;
+    linkText: string;
+    badgeBg: string;
+    dotBg: string;
+    cardBg: string;
+    cardBorder: string;
+    bannerBg: string;
+}
+
+
+const TICKET_PERMANENT_COLOR: PastelColor = {
+    bg: 'bg-slate-300 dark:bg-slate-700',
+    border: 'border-slate-500 dark:border-slate-400 animate-pulse',
+    text: 'text-slate-950 dark:text-white',
+    subtext: 'text-slate-800 dark:text-slate-200',
+    linkText: 'text-blue-800 dark:text-blue-300 hover:text-blue-950 dark:hover:text-blue-100',
+    badgeBg: 'bg-slate-400/80 dark:bg-slate-600 text-slate-950 dark:text-white border-slate-500',
+    dotBg: 'bg-slate-700 dark:bg-slate-200',
+    cardBg: 'bg-slate-200/90 dark:bg-slate-800',
+    cardBorder: 'border-slate-400 dark:border-slate-500',
+    bannerBg: 'bg-slate-200 dark:bg-slate-800 border-slate-400 dark:border-slate-500 text-slate-950 dark:text-white',
+};
+
+// 16 Saturated, distinct pastel session palettes (used in strict order without repeating until all are used)
+const PASTEL_SESSION_COLORS: PastelColor[] = [
+    // 0: Golden Amber
+    {
+        bg: 'bg-amber-200 dark:bg-amber-900/60',
+        border: 'border-amber-400 dark:border-amber-600',
+        text: 'text-amber-950 dark:text-amber-50',
+        subtext: 'text-amber-900 dark:text-amber-200',
+        linkText: 'text-amber-900 dark:text-amber-300 hover:text-amber-950 dark:hover:text-amber-100',
+        badgeBg: 'bg-amber-300 dark:bg-amber-800 text-amber-950 dark:text-amber-100 border-amber-500',
+        dotBg: 'bg-amber-500 dark:bg-amber-400',
+        cardBg: 'bg-amber-100 dark:bg-amber-950/40',
+        cardBorder: 'border-amber-300 dark:border-amber-700',
+        bannerBg: 'bg-amber-200 dark:bg-amber-950/60 border-amber-400 dark:border-amber-700 text-amber-950 dark:text-amber-100',
+    },
+    // 1: Vibrant Sky Blue
+    {
+        bg: 'bg-sky-200 dark:bg-sky-900/60',
+        border: 'border-sky-400 dark:border-sky-600',
+        text: 'text-sky-950 dark:text-sky-50',
+        subtext: 'text-sky-900 dark:text-sky-200',
+        linkText: 'text-sky-900 dark:text-sky-300 hover:text-sky-950 dark:hover:text-sky-100',
+        badgeBg: 'bg-sky-300 dark:bg-sky-800 text-sky-950 dark:text-sky-100 border-sky-500',
+        dotBg: 'bg-sky-500 dark:bg-sky-400',
+        cardBg: 'bg-sky-100 dark:bg-sky-950/40',
+        cardBorder: 'border-sky-300 dark:border-sky-700',
+        bannerBg: 'bg-sky-200 dark:bg-sky-950/60 border-sky-400 dark:border-sky-700 text-sky-950 dark:text-sky-100',
+    },
+    // 2: Vibrant Emerald Green
+    {
+        bg: 'bg-emerald-200 dark:bg-emerald-900/60',
+        border: 'border-emerald-400 dark:border-emerald-600',
+        text: 'text-emerald-950 dark:text-emerald-50',
+        subtext: 'text-emerald-900 dark:text-emerald-200',
+        linkText: 'text-emerald-900 dark:text-emerald-300 hover:text-emerald-950 dark:hover:text-emerald-100',
+        badgeBg: 'bg-emerald-300 dark:bg-emerald-800 text-emerald-950 dark:text-emerald-100 border-emerald-500',
+        dotBg: 'bg-emerald-500 dark:bg-emerald-400',
+        cardBg: 'bg-emerald-100 dark:bg-emerald-950/40',
+        cardBorder: 'border-emerald-300 dark:border-emerald-700',
+        bannerBg: 'bg-emerald-200 dark:bg-emerald-950/60 border-emerald-400 dark:border-emerald-700 text-emerald-950 dark:text-emerald-100',
+    },
+    // 3: Rich Lavender / Purple
+    {
+        bg: 'bg-purple-200 dark:bg-purple-900/60',
+        border: 'border-purple-400 dark:border-purple-600',
+        text: 'text-purple-950 dark:text-purple-50',
+        subtext: 'text-purple-900 dark:text-purple-200',
+        linkText: 'text-purple-900 dark:text-purple-300 hover:text-purple-950 dark:hover:text-purple-100',
+        badgeBg: 'bg-purple-300 dark:bg-purple-800 text-purple-950 dark:text-purple-100 border-purple-500',
+        dotBg: 'bg-purple-500 dark:bg-purple-400',
+        cardBg: 'bg-purple-100 dark:bg-purple-950/40',
+        cardBorder: 'border-purple-300 dark:border-purple-700',
+        bannerBg: 'bg-purple-200 dark:bg-purple-950/60 border-purple-400 dark:border-purple-700 text-purple-950 dark:text-purple-100',
+    },
+    // 4: Vibrant Rose
+    {
+        bg: 'bg-rose-200 dark:bg-rose-900/60',
+        border: 'border-rose-400 dark:border-rose-600',
+        text: 'text-rose-950 dark:text-rose-50',
+        subtext: 'text-rose-900 dark:text-rose-200',
+        linkText: 'text-rose-900 dark:text-rose-300 hover:text-rose-950 dark:hover:text-rose-100',
+        badgeBg: 'bg-rose-300 dark:bg-rose-800 text-rose-950 dark:text-rose-100 border-rose-500',
+        dotBg: 'bg-rose-500 dark:bg-rose-400',
+        cardBg: 'bg-rose-100 dark:bg-rose-950/40',
+        cardBorder: 'border-rose-300 dark:border-rose-700',
+        bannerBg: 'bg-rose-200 dark:bg-rose-950/60 border-rose-400 dark:border-rose-700 text-rose-950 dark:text-rose-100',
+    },
+    // 5: Cool Teal
+    {
+        bg: 'bg-teal-200 dark:bg-teal-900/60',
+        border: 'border-teal-400 dark:border-teal-600',
+        text: 'text-teal-950 dark:text-teal-50',
+        subtext: 'text-teal-900 dark:text-teal-200',
+        linkText: 'text-teal-900 dark:text-teal-300 hover:text-teal-950 dark:hover:text-teal-100',
+        badgeBg: 'bg-teal-300 dark:bg-teal-800 text-teal-950 dark:text-teal-100 border-teal-500',
+        dotBg: 'bg-teal-500 dark:bg-teal-400',
+        cardBg: 'bg-teal-100 dark:bg-teal-950/40',
+        cardBorder: 'border-teal-300 dark:border-teal-700',
+        bannerBg: 'bg-teal-200 dark:bg-teal-950/60 border-teal-400 dark:border-teal-700 text-teal-950 dark:text-teal-100',
+    },
+    // 6: Warm Orange
+    {
+        bg: 'bg-orange-200 dark:bg-orange-900/60',
+        border: 'border-orange-400 dark:border-orange-600',
+        text: 'text-orange-950 dark:text-orange-50',
+        subtext: 'text-orange-900 dark:text-orange-200',
+        linkText: 'text-orange-900 dark:text-orange-300 hover:text-orange-950 dark:hover:text-orange-100',
+        badgeBg: 'bg-orange-300 dark:bg-orange-800 text-orange-950 dark:text-orange-100 border-orange-500',
+        dotBg: 'bg-orange-500 dark:bg-orange-400',
+        cardBg: 'bg-orange-100 dark:bg-orange-950/40',
+        cardBorder: 'border-orange-300 dark:border-orange-700',
+        bannerBg: 'bg-orange-200 dark:bg-orange-950/60 border-orange-400 dark:border-orange-700 text-orange-950 dark:text-orange-100',
+    },
+    // 7: Deep Indigo
+    {
+        bg: 'bg-indigo-200 dark:bg-indigo-900/60',
+        border: 'border-indigo-400 dark:border-indigo-600',
+        text: 'text-indigo-950 dark:text-indigo-50',
+        subtext: 'text-indigo-900 dark:text-indigo-200',
+        linkText: 'text-indigo-900 dark:text-indigo-300 hover:text-indigo-950 dark:hover:text-indigo-100',
+        badgeBg: 'bg-indigo-300 dark:bg-indigo-800 text-indigo-950 dark:text-indigo-100 border-indigo-500',
+        dotBg: 'bg-indigo-500 dark:bg-indigo-400',
+        cardBg: 'bg-indigo-100 dark:bg-indigo-950/40',
+        cardBorder: 'border-indigo-300 dark:border-indigo-700',
+        bannerBg: 'bg-indigo-200 dark:bg-indigo-950/60 border-indigo-400 dark:border-indigo-700 text-indigo-950 dark:text-indigo-100',
+    },
+    // 8: Fresh Lime
+    {
+        bg: 'bg-lime-200 dark:bg-lime-900/60',
+        border: 'border-lime-400 dark:border-lime-600',
+        text: 'text-lime-950 dark:text-lime-50',
+        subtext: 'text-lime-900 dark:text-lime-200',
+        linkText: 'text-lime-900 dark:text-lime-300 hover:text-lime-950 dark:hover:text-lime-100',
+        badgeBg: 'bg-lime-300 dark:bg-lime-800 text-lime-950 dark:text-lime-100 border-lime-500',
+        dotBg: 'bg-lime-500 dark:bg-lime-400',
+        cardBg: 'bg-lime-100 dark:bg-lime-950/40',
+        cardBorder: 'border-lime-300 dark:border-lime-700',
+        bannerBg: 'bg-lime-200 dark:bg-lime-950/60 border-lime-400 dark:border-lime-700 text-lime-950 dark:text-lime-100',
+    },
+    // 9: Bright Fuchsia
+    {
+        bg: 'bg-fuchsia-200 dark:bg-fuchsia-900/60',
+        border: 'border-fuchsia-400 dark:border-fuchsia-600',
+        text: 'text-fuchsia-950 dark:text-fuchsia-50',
+        subtext: 'text-fuchsia-900 dark:text-fuchsia-200',
+        linkText: 'text-fuchsia-900 dark:text-fuchsia-300 hover:text-fuchsia-950 dark:hover:text-fuchsia-100',
+        badgeBg: 'bg-fuchsia-300 dark:bg-fuchsia-800 text-fuchsia-950 dark:text-fuchsia-100 border-fuchsia-500',
+        dotBg: 'bg-fuchsia-500 dark:bg-fuchsia-400',
+        cardBg: 'bg-fuchsia-100 dark:bg-fuchsia-950/40',
+        cardBorder: 'border-fuchsia-300 dark:border-fuchsia-700',
+        bannerBg: 'bg-fuchsia-200 dark:bg-fuchsia-950/60 border-fuchsia-400 dark:border-fuchsia-700 text-fuchsia-950 dark:text-fuchsia-100',
+    },
+    // 10: Bright Cyan
+    {
+        bg: 'bg-cyan-200 dark:bg-cyan-900/60',
+        border: 'border-cyan-400 dark:border-cyan-600',
+        text: 'text-cyan-950 dark:text-cyan-50',
+        subtext: 'text-cyan-900 dark:text-cyan-200',
+        linkText: 'text-cyan-900 dark:text-cyan-300 hover:text-cyan-950 dark:hover:text-cyan-100',
+        badgeBg: 'bg-cyan-300 dark:bg-cyan-800 text-cyan-950 dark:text-cyan-100 border-cyan-500',
+        dotBg: 'bg-cyan-500 dark:bg-cyan-400',
+        cardBg: 'bg-cyan-100 dark:bg-cyan-950/40',
+        cardBorder: 'border-cyan-300 dark:border-cyan-700',
+        bannerBg: 'bg-cyan-200 dark:bg-cyan-950/60 border-cyan-400 dark:border-cyan-700 text-cyan-950 dark:text-cyan-100',
+    },
+    // 11: Vibrant Violet
+    {
+        bg: 'bg-violet-200 dark:bg-violet-900/60',
+        border: 'border-violet-400 dark:border-violet-600',
+        text: 'text-violet-950 dark:text-violet-50',
+        subtext: 'text-violet-900 dark:text-violet-200',
+        linkText: 'text-violet-900 dark:text-violet-300 hover:text-violet-950 dark:hover:text-violet-100',
+        badgeBg: 'bg-violet-300 dark:bg-violet-800 text-violet-950 dark:text-violet-100 border-violet-500',
+        dotBg: 'bg-violet-500 dark:bg-violet-400',
+        cardBg: 'bg-violet-100 dark:bg-violet-950/40',
+        cardBorder: 'border-violet-300 dark:border-violet-700',
+        bannerBg: 'bg-violet-200 dark:bg-violet-950/60 border-violet-400 dark:border-violet-700 text-violet-950 dark:text-violet-100',
+    },
+    // 12: Sunny Yellow
+    {
+        bg: 'bg-yellow-200 dark:bg-yellow-900/60',
+        border: 'border-yellow-400 dark:border-yellow-600',
+        text: 'text-yellow-950 dark:text-yellow-50',
+        subtext: 'text-yellow-900 dark:text-yellow-200',
+        linkText: 'text-yellow-900 dark:text-yellow-300 hover:text-yellow-950 dark:hover:text-yellow-100',
+        badgeBg: 'bg-yellow-300 dark:bg-yellow-800 text-yellow-950 dark:text-yellow-100 border-yellow-500',
+        dotBg: 'bg-yellow-500 dark:bg-yellow-400',
+        cardBg: 'bg-yellow-100 dark:bg-yellow-950/40',
+        cardBorder: 'border-yellow-300 dark:border-yellow-700',
+        bannerBg: 'bg-yellow-200 dark:bg-yellow-950/60 border-yellow-400 dark:border-yellow-700 text-yellow-950 dark:text-yellow-100',
+    },
+    // 13: Royal Blue
+    {
+        bg: 'bg-blue-200 dark:bg-blue-900/60',
+        border: 'border-blue-400 dark:border-blue-600',
+        text: 'text-blue-950 dark:text-blue-50',
+        subtext: 'text-blue-900 dark:text-blue-200',
+        linkText: 'text-blue-900 dark:text-blue-300 hover:text-blue-950 dark:hover:text-blue-100',
+        badgeBg: 'bg-blue-300 dark:bg-blue-800 text-blue-950 dark:text-blue-100 border-blue-500',
+        dotBg: 'bg-blue-500 dark:bg-blue-400',
+        cardBg: 'bg-blue-100 dark:bg-blue-950/40',
+        cardBorder: 'border-blue-300 dark:border-blue-700',
+        bannerBg: 'bg-blue-200 dark:bg-blue-950/60 border-blue-400 dark:border-blue-700 text-blue-950 dark:text-blue-100',
+    },
+    // 14: Soft Pink
+    {
+        bg: 'bg-pink-200 dark:bg-pink-900/60',
+        border: 'border-pink-400 dark:border-pink-600',
+        text: 'text-pink-950 dark:text-pink-50',
+        subtext: 'text-pink-900 dark:text-pink-200',
+        linkText: 'text-pink-900 dark:text-pink-300 hover:text-pink-950 dark:hover:text-pink-100',
+        badgeBg: 'bg-pink-300 dark:bg-pink-800 text-pink-950 dark:text-pink-100 border-pink-500',
+        dotBg: 'bg-pink-500 dark:bg-pink-400',
+        cardBg: 'bg-pink-100 dark:bg-pink-950/40',
+        cardBorder: 'border-pink-300 dark:border-pink-700',
+        bannerBg: 'bg-pink-200 dark:bg-pink-950/60 border-pink-400 dark:border-pink-700 text-pink-950 dark:text-pink-100',
+    },
+    // 15: Coral Red
+    {
+        bg: 'bg-red-200 dark:bg-red-900/60',
+        border: 'border-red-400 dark:border-red-600',
+        text: 'text-red-950 dark:text-red-50',
+        subtext: 'text-red-900 dark:text-red-200',
+        linkText: 'text-red-900 dark:text-red-300 hover:text-red-950 dark:hover:text-red-100',
+        badgeBg: 'bg-red-300 dark:bg-red-800 text-red-950 dark:text-red-100 border-red-500',
+        dotBg: 'bg-red-500 dark:bg-red-400',
+        cardBg: 'bg-red-100 dark:bg-red-950/40',
+        cardBorder: 'border-red-300 dark:border-red-700',
+        bannerBg: 'bg-red-200 dark:bg-red-950/60 border-red-400 dark:border-red-700 text-red-950 dark:text-red-100',
+    },
+];
+
 
 interface TimeSheetModalProps {
     isOpen: boolean;
@@ -226,10 +469,13 @@ export const TimeSheetModal: React.FC<TimeSheetModalProps> = ({
     // Active Booked Details Conflict (shows ticket link & remark)
     const [activeConflict, setActiveConflict] = useState<LockedConflictInfo | null>(null);
 
-    // Interactive Slots Grid & Window
-    const [windowStart, setWindowStart] = useState<number>(DAY_WINDOW_START); // 8:00 AM (Day) or 8:00 PM (Night)
-    const isNight = windowStart >= NIGHT_WINDOW_START;
+    // Interactive Slots Grid & Window (3 Shifts: Early Morning 12 AM – 8 AM, Daytime 8 AM – 4 PM [default], Night 4 PM – 12 AM)
+    const [windowStart, setWindowStart] = useState<number>(DAYTIME_WINDOW_START);
+    const isEarlyMorning = windowStart === EARLY_MORNING_WINDOW_START;
+    const isDaytime = windowStart === DAYTIME_WINDOW_START;
+    const isNight = windowStart === NIGHT_WINDOW_START;
     const [remarks, setRemarks] = useState('');
+    const [showManualSessions, setShowManualSessions] = useState(false);
     const [selection, setSelection] = useState<{
         anchorSlot: number;
         anchorStart: number;
@@ -241,12 +487,40 @@ export const TimeSheetModal: React.FC<TimeSheetModalProps> = ({
         end: number;
     } | null>(null);
 
-    // Edit Mode
+    // Edit Mode & Clicked Session Details Mode
     const [editingSessionId, setEditingSessionId] = useState<number | null>(null);
+    const [selectedSessionForView, setSelectedSessionForView] = useState<BookedSession | null>(null);
 
     // Mobile Virtual Keyboard Height Tracking (visualViewport)
     const [keyboardHeight, setKeyboardHeight] = useState<number>(0);
     const remarksInputRef = useRef<HTMLInputElement>(null);
+
+    // Every time modal closes and opens, reset to Daytime view (8 AM – 4 PM) and clear active selections
+    useEffect(() => {
+        if (isOpen) {
+            setWindowStart(DAYTIME_WINDOW_START);
+            if (initialDate && initialDate <= todayKey) {
+                setSelectedDateKey(initialDate);
+            } else {
+                setSelectedDateKey(todayKey);
+            }
+            setSelection(null);
+            setSelectedSessionForView(null);
+            setEditingSessionId(null);
+            setActiveConflict(null);
+            setRemarks('');
+            setSelectedStoreIds([]);
+        }
+    }, [isOpen, initialDate, todayKey]);
+
+    const handleCloseModal = () => {
+        setWindowStart(DAYTIME_WINDOW_START);
+        setSelection(null);
+        setSelectedSessionForView(null);
+        setEditingSessionId(null);
+        setActiveConflict(null);
+        onClose();
+    };
 
     useEffect(() => {
         if (!isOpen || typeof window === 'undefined' || !window.visualViewport) return;
@@ -343,6 +617,7 @@ export const TimeSheetModal: React.FC<TimeSheetModalProps> = ({
             if (s.id === editingSessionId) return;
             if (s.start !== null && s.end !== null) {
                 intervals.push({
+                    id: s.id,
                     start: s.start,
                     end: s.end,
                     is_ticket: s.is_ticket,
@@ -352,6 +627,33 @@ export const TimeSheetModal: React.FC<TimeSheetModalProps> = ({
                     remarks: s.remarks,
                     work_done: s.work_done,
                 });
+                // Wrap-around support for Part 2 night shift (12 AM - 1 AM is 1440 - 1500)
+                if (s.start < 180) {
+                    intervals.push({
+                        id: s.id,
+                        start: s.start + 1440,
+                        end: s.end + 1440,
+                        is_ticket: s.is_ticket,
+                        ticket_id: s.ticket_id,
+                        ticket_work_order_no: s.ticket_work_order_no,
+                        ticket_title: s.ticket_title,
+                        remarks: s.remarks,
+                        work_done: s.work_done,
+                    });
+                }
+                if (s.start >= 1440) {
+                    intervals.push({
+                        id: s.id,
+                        start: s.start - 1440,
+                        end: s.end - 1440,
+                        is_ticket: s.is_ticket,
+                        ticket_id: s.ticket_id,
+                        ticket_work_order_no: s.ticket_work_order_no,
+                        ticket_title: s.ticket_title,
+                        remarks: s.remarks,
+                        work_done: s.work_done,
+                    });
+                }
             }
         });
         return intervals;
@@ -364,6 +666,76 @@ export const TimeSheetModal: React.FC<TimeSheetModalProps> = ({
     const getLockedConflict = useCallback((start: number, end: number): LockedConflictInfo | null => {
         return effectiveLockedIntervals.find((iv) => intervalOverlap(start, end, iv.start, iv.end)) || null;
     }, [effectiveLockedIntervals]);
+
+    // Persistent color cache:
+    // 1) Assigns pastel colors strictly from order (0, 1, 2, 3...)
+    // 2) Never repeats a color until all 16 colors in PASTEL_SESSION_COLORS have been used
+    // 3) Existing sessions permanently retain their assigned color when new sessions are added
+    const sessionColorCache = useRef<Map<number, number>>(new Map());
+
+    useEffect(() => {
+        sessionColorCache.current.clear();
+    }, [selectedDateKey]);
+
+    const sessionColorMap = useMemo(() => {
+        const cache = sessionColorCache.current;
+        const currentManualSessions = sessions.filter((s) => !s.is_ticket && s.id !== undefined && s.id !== null);
+        const currentManualIds = new Set(currentManualSessions.map((s) => s.id));
+
+        // Purge deleted session IDs
+        for (const id of Array.from(cache.keys())) {
+            if (!currentManualIds.has(id)) {
+                cache.delete(id);
+            }
+        }
+
+        // Sort manual sessions by permanent ID ascending (creation order)
+        const sortedSessions = currentManualSessions.slice().sort((a, b) => (a.id ?? 0) - (b.id ?? 0));
+
+        // Assign colors in strict order (0, 1, 2...) without repeating until all colors are used
+        sortedSessions.forEach((s) => {
+            if (!cache.has(s.id)) {
+                const usedIndices = new Set(cache.values());
+                let nextIdx = -1;
+                for (let i = 0; i < PASTEL_SESSION_COLORS.length; i++) {
+                    if (!usedIndices.has(i)) {
+                        nextIdx = i;
+                        break;
+                    }
+                }
+                // If all 16 colors in the palette are in use, wrap around based on count
+                if (nextIdx === -1) {
+                    nextIdx = cache.size % PASTEL_SESSION_COLORS.length;
+                }
+                cache.set(s.id, nextIdx);
+            }
+        });
+
+        return new Map(cache);
+    }, [sessions]);
+
+    // Retrieve session color:
+    // 1) All tickets use a common permanent non-pastel color (TICKET_PERMANENT_COLOR)
+    // 2) Manual sessions use a stable pastel color assigned in strict order without repeating
+    const getSessionColor = useCallback((isTicket: boolean, sessionId?: number, ticketId?: number | null, startMinutes?: number): PastelColor => {
+        if (isTicket) {
+            return TICKET_PERMANENT_COLOR;
+        }
+
+        if (sessionId !== undefined && sessionId !== null && sessionColorMap.has(sessionId)) {
+            const colorIdx = sessionColorMap.get(sessionId)!;
+            return PASTEL_SESSION_COLORS[colorIdx];
+        }
+
+        if (sessionId !== undefined && sessionId !== null) {
+            const colorIdx = Math.abs(sessionId) % PASTEL_SESSION_COLORS.length;
+            return PASTEL_SESSION_COLORS[colorIdx];
+        }
+
+        const rawKey = ticketId ?? startMinutes ?? 0;
+        const colorIdx = Math.abs(typeof rawKey === 'number' ? rawKey : 0) % PASTEL_SESSION_COLORS.length;
+        return PASTEL_SESSION_COLORS[colorIdx];
+    }, [sessionColorMap]);
 
     /**
      * Generates all valid anchor states in xxdemo.html order:
@@ -413,6 +785,7 @@ export const TimeSheetModal: React.FC<TimeSheetModalProps> = ({
      * Starts a new selection with clean instructions matching xxdemo.html.
      */
     const startNewSelection = (slotStart: number, initialStart?: number, initialEnd?: number) => {
+        setSelectedSessionForView(null);
         const states = getValidAnchorStates(slotStart);
         if (!states.length) {
             const conflict = getLockedConflict(slotStart, slotStart + HOUR);
@@ -537,11 +910,6 @@ export const TimeSheetModal: React.FC<TimeSheetModalProps> = ({
      * Parent slot click handler strictly matching xxdemo.html.
      */
     const handleSlotClick = (index: number) => {
-        if (!selectedStoreIds.length) {
-            setMessage({ text: 'Please select a store first.', error: true });
-            return;
-        }
-
         const slotStart = windowStart + index * HOUR;
 
         if (!selection) {
@@ -604,17 +972,20 @@ export const TimeSheetModal: React.FC<TimeSheetModalProps> = ({
     const handleSegmentClick = (slotStart: number, pIndex: number, e: React.MouseEvent) => {
         e.stopPropagation();
 
-        if (!selectedStoreIds.length) {
-            setMessage({ text: 'Please select a store first.', error: true });
-            return;
-        }
-
         const segStart = slotStart + pIndex * STEP;
         const segEnd = segStart + STEP;
 
-        // If locked -> surface the ticket number, remark & clickable link!
+        // If locked -> surface the session in the bottom bar with an Edit button & hide the time sheet!
         const conflict = getLockedConflict(segStart, segEnd);
         if (conflict) {
+            const foundSess = sessions.find((s) => s.id === conflict.id || (conflict.ticket_id && s.ticket_id === conflict.ticket_id)) || null;
+            if (foundSess) {
+                setSelectedSessionForView(foundSess);
+                setActiveConflict(conflict);
+                setSelection(null);
+                setMessage({ text: '' });
+                return;
+            }
             setActiveConflict(conflict);
             setMessage({
                 text: `This time slot is already booked: Ticket #${conflict.ticket_id || 'N/A'} — ${conflict.remarks || conflict.work_done || conflict.ticket_title || 'Work log recorded'}`,
@@ -622,6 +993,10 @@ export const TimeSheetModal: React.FC<TimeSheetModalProps> = ({
             });
             return;
         }
+
+        // Available slot clicked -> clear viewed session
+        setSelectedSessionForView(null);
+        setActiveConflict(null);
 
         // Case 1: No active selection -> start new selection at clicked segment
         if (!selection) {
@@ -685,7 +1060,7 @@ export const TimeSheetModal: React.FC<TimeSheetModalProps> = ({
         if (isPeriodLocked(start, end)) {
             const conflict = getLockedConflict(start, end);
             if (conflict) setActiveConflict(conflict);
-            setMessage({ text: 'Selection overlaps an existing booked session.', error: true });
+            setMessage({ text: 'Selection overlaps an existing booked time sheet.', error: true });
             return;
         }
 
@@ -716,6 +1091,7 @@ export const TimeSheetModal: React.FC<TimeSheetModalProps> = ({
                     setMessage({ text: 'Session updated.' });
                     setEditingSessionId(null);
                     setSelection(null);
+                    setSelectedSessionForView(null);
                     setActiveConflict(null);
                     setRemarks('');
                     await fetchDayTimesheet();
@@ -742,8 +1118,9 @@ export const TimeSheetModal: React.FC<TimeSheetModalProps> = ({
                     }),
                 });
                 if (res.ok) {
-                    setMessage({ text: 'Session booked successfully.' });
+                    setMessage({ text: 'Time logged successfully.' });
                     setSelection(null);
+                    setSelectedSessionForView(null);
                     setActiveConflict(null);
                     setRemarks('');
                     await fetchDayTimesheet();
@@ -763,15 +1140,21 @@ export const TimeSheetModal: React.FC<TimeSheetModalProps> = ({
 
     const handleStartEdit = (session: BookedSession) => {
         if (session.is_locked || session.is_ticket) return;
+        setSelectedSessionForView(null);
         setEditingSessionId(session.id);
-        setRemarks(session.work_done || '');
+        setRemarks(session.remarks || session.work_done || '');
         if (session.locationIds.length > 0) {
             setSelectedStoreIds(session.locationIds);
         }
 
         if (session.start !== null && session.end !== null) {
-            const isNightSession = session.start >= NIGHT_WINDOW_START;
-            setWindowStart(isNightSession ? NIGHT_WINDOW_START : DAY_WINDOW_START);
+            let targetWindow = DAYTIME_WINDOW_START;
+            if (session.start < DAYTIME_WINDOW_START) {
+                targetWindow = EARLY_MORNING_WINDOW_START;
+            } else if (session.start >= NIGHT_WINDOW_START) {
+                targetWindow = NIGHT_WINDOW_START;
+            }
+            setWindowStart(targetWindow);
 
             const anchorSlot = Math.floor(session.start / HOUR) * HOUR;
             setSelection({
@@ -791,6 +1174,7 @@ export const TimeSheetModal: React.FC<TimeSheetModalProps> = ({
     const handleCancelEdit = () => {
         setEditingSessionId(null);
         setSelection(null);
+        setSelectedSessionForView(null);
         setActiveConflict(null);
         setRemarks('');
         setMessage({ text: 'Edit cancelled.' });
@@ -808,8 +1192,11 @@ export const TimeSheetModal: React.FC<TimeSheetModalProps> = ({
                 if (editingSessionId === worklogId) {
                     setEditingSessionId(null);
                     setSelection(null);
-                    setActiveConflict(null);
                 }
+                if (selectedSessionForView?.worklog_id === worklogId) {
+                    setSelectedSessionForView(null);
+                }
+                setActiveConflict(null);
                 await fetchDayTimesheet();
                 if (onSessionsUpdated) onSessionsUpdated();
             }
@@ -966,7 +1353,7 @@ export const TimeSheetModal: React.FC<TimeSheetModalProps> = ({
                         {/* Close button */}
                         <button
                             type="button"
-                            onClick={onClose}
+                            onClick={handleCloseModal}
                             aria-label="Close calendar"
                             className="w-8 h-8 flex-shrink-0 rounded-full
                                             flex items-center justify-center
@@ -980,69 +1367,6 @@ export const TimeSheetModal: React.FC<TimeSheetModalProps> = ({
                                             focus-visible:ring-slate-400"
                         >
                             <X className="w-4 h-4" />
-                        </button>
-                    </div>
-
-                    {/* Store Selector - Compact One-Line Bar */}
-                    <div className="px-3 py-2 bg-slate-50 dark:bg-surface-container-low border-b border-slate-100 dark:border-outline-variant flex items-center justify-between gap-2 text-xs min-h-[44px]">
-                        <div className="flex items-center gap-2 min-w-0 flex-1 overflow-hidden">
-                            <MapPin className="w-4 h-4 text-amber-600 shrink-0" />
-                            {selectedStoreIds.length === 0 ? (
-                                <span className="text-slate-400 font-medium truncate">
-                                    No location selected
-                                </span>
-                            ) : (
-                                <>
-
-                                    {/* One-line horizontal list of short codes in brackets */}
-                                    <div className="flex items-center gap-1.5 overflow-x-auto scrollbar-none py-0.5">
-                                        {selectedStoreIds.map((id) => {
-                                            const s = stores.find((st) => st.store_id === id);
-                                            if (!s) return null;
-                                            const code = s.short_code || s.store_id;
-                                            return (
-                                                <span
-                                                    key={id}
-                                                    title={s.store_name}
-                                                    className="h-7 inline-flex items-center gap-1.5 px-2.5 text-xs font-bold bg-white dark:bg-surface-container text-amber-900 dark:text-amber-200 border border-amber-200 dark:border-amber-800/60 rounded-lg shrink-0 shadow-xs"
-                                                >
-                                                    <span>{code}</span>
-                                                    <button
-                                                        type="button"
-                                                        onClick={(e) => {
-                                                            e.stopPropagation();
-                                                            setSelectedStoreIds(selectedStoreIds.filter((sid) => sid !== id));
-                                                        }}
-                                                        className="text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 font-bold ml-0.5 leading-none text-xs"
-                                                        title={`Remove ${s.store_name}`}
-                                                    >
-                                                        &times;
-                                                    </button>
-                                                </span>
-                                            );
-                                        })}
-                                    </div>
-                                </>
-                            )}
-                        </div>
-
-                        {/* Action button in the same line */}
-                        <button
-                            type="button"
-                            onClick={() => setIsStoreDropdownOpen(true)}
-                            className="h-7 inline-flex items-center gap-1 px-3 text-xs font-bold text-amber-800 dark:text-amber-300 bg-white hover:bg-amber-50 dark:bg-surface-container border border-slate-200 dark:border-outline-variant rounded-lg transition shadow-xs shrink-0"
-                            title={selectedStoreIds.length === 0 ? 'Select locations' : 'Edit locations'}
-                        >
-                            {selectedStoreIds.length === 0 ? (
-                                <>
-                                    <span>+ Select</span>
-                                </>
-                            ) : (
-                                <>
-                                    <Edit2 className="w-3 h-3 text-amber-700 dark:text-amber-400" />
-                                    <span>Edit</span>
-                                </>
-                            )}
                         </button>
                     </div>
 
@@ -1175,7 +1499,7 @@ export const TimeSheetModal: React.FC<TimeSheetModalProps> = ({
                                                         <span className="text-slate-800 dark:text-on-surface font-medium truncate">
                                                             {store.store_name}{' '}
                                                             <span className="font-bold text-amber-700 dark:text-amber-400">
-                                                                [{storeCode}]
+                                                                {storeCode}
                                                             </span>
                                                         </span>
                                                     </div>
@@ -1191,515 +1515,807 @@ export const TimeSheetModal: React.FC<TimeSheetModalProps> = ({
                                 </div>
 
                                 {/* Modal Footer with Done Button */}
-                                {/* <div className="px-4 py-2.5 border-t border-slate-100 dark:border-outline-variant flex items-center justify-between bg-slate-50 dark:bg-surface-container-low">
+                                <div className="px-4 py-2.5 border-t border-slate-100 dark:border-outline-variant flex items-center justify-between bg-slate-50 dark:bg-surface-container-low">
                                     <span className="text-xs text-slate-500 font-medium">
                                         {selectedStoreIds.length === 0 ? 'No locations selected' : `${selectedStoreIds.length} location(s) selected`}
                                     </span>
                                     <button
                                         type="button"
                                         onClick={() => setIsStoreDropdownOpen(false)}
-                                        className="px-4 py-1.5 bg-[#17191C] hover:bg-slate-800 text-white font-bold text-xs rounded-xl transition shadow-xs"
+                                        className="px-5 py-3 bg-[#17191C] hover:bg-slate-800 text-white font-bold text-xs rounded-xl transition shadow-xs"
                                     >
                                         Done
                                     </button>
-                                </div> */}
+                                </div>
                             </div>
                         </div>
                     )}
 
-                    {selectedStoreIds.length === 0 ? (
-                        <div className="flex flex-col items-center justify-center py-14 px-6 text-center bg-white dark:bg-surface-container">
-                            <div className="w-16 h-16 rounded-2xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200/80 dark:border-amber-800/40 flex items-center justify-center text-amber-600 dark:text-amber-400 mb-3 shadow-xs">
-                                <MapPin className="w-8 h-8" />
-                            </div>
-                            <h3 className="text-sm font-bold text-slate-800 dark:text-on-surface mb-1">
-                                No Location Selected
-                            </h3>
-                            <p className="text-xs text-slate-500 dark:text-on-surface-variant max-w-xs mb-4">
-                                Please select at least one location to view time slots and log your timesheet.
-                            </p>
-                            <button
-                                type="button"
-                                onClick={() => setIsStoreDropdownOpen(true)}
-                                className="inline-flex items-center gap-2 px-5 py-2.5 bg-[#17191C] hover:bg-slate-800 text-white font-bold text-xs rounded-xl shadow-md transition-all hover:scale-[1.02] active:scale-[0.98]"
-                            >
-                                <MapPin className="w-4 h-4 text-amber-400" />
-                                <span>Select Location</span>
-                            </button>
-                        </div>
-                    ) : (
-                        <>
-                            {/* Window Navigation Toolbar with Single-Direction Toggle */}
-                            <div className="flex items-center justify-between px-3 py-2 border-b bg-slate-50 dark:bg-surface-container-low border-slate-100 dark:border-outline-variant text-xs text-slate-800 dark:text-on-surface">
-                                {/* Left: Previous (<) button ONLY shown if currently in Night mode */}
-                                <div className="w-28 flex justify-start">
-                                    {isNight ? (
-                                        <button
-                                            type="button"
-                                            onClick={() => setWindowStart(DAY_WINDOW_START)}
-                                            title="Switch to Day Window (08:00 AM – 08:00 PM)"
-                                            className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border border-slate-200 dark:border-outline-variant bg-white dark:bg-surface-container hover:bg-slate-100 text-slate-700 dark:text-on-surface font-semibold text-xs transition shadow-xs"
-                                        >
-                                            <ChevronLeft className="w-3.5 h-3.5 text-slate-500" />
-                                            <span>Day</span>
-                                        </button>
-                                    ) : (
-                                        <></>
-                                    )}
-                                </div>
-
-                                {/* Center: Clean Range label (strictly 08:00 AM – 08:00 PM or 08:00 PM – 08:00 AM) */}
-                                <div className="text-center flex items-center justify-center">
-                                    <span className="text-xs font-bold px-1 text-slate-800 dark:text-on-surface">
-                                        {formatTime(windowStart)} – {formatTime(windowStart + WINDOW_MINUTES)}
-                                    </span>
-                                </div>
-
-                                {/* Right: Next (>) button ONLY shown if currently in Day mode */}
-                                <div className="w-28 flex justify-end">
-                                    {!isNight ? (
-                                        <button
-                                            type="button"
-                                            onClick={() => setWindowStart(NIGHT_WINDOW_START)}
-                                            title="Switch to Night Window (08:00 PM – 08:00 AM)"
-                                            className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border border-slate-200 dark:border-outline-variant bg-white dark:bg-surface-container hover:bg-slate-100 text-slate-700 dark:text-on-surface font-semibold text-xs transition shadow-xs"
-                                        >
-                                            <span>Night</span>
-                                            <ChevronRight className="w-3.5 h-3.5 text-slate-500" />
-                                        </button>
-                                    ) : (
-                                        <></>
-                                    )}
-                                </div>
-                            </div>
-
-                            {/* Slots Grid: rounded-xl slots with clean light styling (subtle warm amber for 6 AM–6 PM, subtle cool indigo for 6 PM–6 AM) */}
-                            <div className="p-3 transition-colors duration-200 bg-white dark:bg-surface-container">
-                                <div className="grid grid-cols-2 gap-2.5">
-                                    {Array.from({ length: WINDOW_HOURS }).map((_, index) => {
-                                        const start = windowStart + index * HOUR;
-                                        const end = start + HOUR;
-
-                                        const normalizedStartHour = Math.floor((((start % DAY) + DAY) % DAY) / 60);
-                                        const isDaySlot = normalizedStartHour >= 6 && normalizedStartHour < 18;
-
-                                        const segments: { segStart: number; segEnd: number; locked: boolean; selected: boolean }[] = [];
-                                        let lockedCount = 0;
-                                        let selectedCount = 0;
-
-                                        for (let p = 0; p < PARTS_COUNT; p++) {
-                                            const segStart = start + p * STEP;
-                                            const segEnd = segStart + STEP;
-                                            const locked = isPeriodLocked(segStart, segEnd);
-                                            const selected = selection
-                                                ? intervalOverlap(segStart, segEnd, selection.start, selection.end)
-                                                : false;
-
-                                            if (locked) lockedCount++;
-                                            if (selected) selectedCount++;
-                                            segments.push({ segStart, segEnd, locked, selected });
-                                        }
-
-                                        const fullHourSelected = selectedCount === PARTS_COUNT;
-                                        const partialSelected = selectedCount > 0 && !fullHourSelected;
-                                        const allLocked = lockedCount === PARTS_COUNT;
-                                        const slotConflict = getLockedConflict(start, end);
-
-                                        // Colors and classes strictly matching light color scheme with subtle Day vs Night tone
-                                        let borderClass = isDaySlot
-                                            ? 'border-amber-200/80 bg-amber-50/20 text-slate-700 hover:border-amber-400 dark:border-amber-900/30 dark:text-on-surface'
-                                            : 'border-indigo-200/80 bg-indigo-50/25 text-slate-700 hover:border-indigo-400 dark:border-indigo-900/30 dark:text-on-surface';
-                                        let statusText = 'Available';
-                                        let badgeColor = isDaySlot ? 'text-amber-800/70' : 'text-indigo-800/70';
-                                        let circleClass = isDaySlot
-                                            ? 'border-amber-200 bg-white/90 text-transparent'
-                                            : 'border-indigo-200 bg-white/90 text-transparent';
-                                        let circleIcon = '';
-
-                                        if (allLocked) {
-                                            borderClass = 'border-slate-300 text-slate-500 cursor-not-allowed opacity-85 dark:border-outline-variant bg-slate-50/60';
-                                            statusText = slotConflict?.is_ticket && slotConflict?.ticket_id
-                                                ? `Ticket #${slotConflict.ticket_id}`
-                                                : 'Locked / Booked';
-                                            badgeColor = 'text-slate-600 font-semibold';
-                                            circleClass = 'bg-slate-300 border-slate-300 text-slate-600';
-                                            circleIcon = '✕';
-                                        } else if (fullHourSelected) {
-                                            borderClass = 'border-yellow-400 text-yellow-950 font-semibold shadow-sm bg-yellow-50/40';
-                                            statusText = 'Selected (1h)';
-                                            badgeColor = 'text-yellow-900 font-bold';
-                                            circleClass = 'bg-yellow-950 border-yellow-950 text-white';
-                                            circleIcon = '✓';
-                                        } else if (partialSelected) {
-                                            borderClass = 'border-amber-400 text-amber-950 font-medium shadow-sm hover:border-amber-500 bg-amber-50/40';
-                                            statusText = 'Selected (30m)';
-                                            badgeColor = 'text-amber-800 font-semibold';
-                                            circleClass = 'bg-amber-500 border-amber-500 text-white';
-                                            circleIcon = '✓';
-                                        }
-
-                                        return (
-                                            <button
-                                                key={index}
-                                                type="button"
-                                                disabled={allLocked}
-                                                onClick={() => handleSlotClick(index)}
-                                                className={`group relative overflow-hidden h-16 p-2.5 rounded-xl border text-left flex flex-col justify-between transition-all duration-150 ${borderClass}`}
-                                            >
-                                                {/* Background Fill Segments matching xxdemo.html (yellow-300 / amber-200 / slate-200) */}
-                                                <div className="absolute inset-0 flex pointer-events-none">
-                                                    {segments.map((seg, idx) => {
-                                                        const bg = seg.locked
-                                                            ? 'bg-slate-200 dark:bg-slate-700'
-                                                            : seg.selected
-                                                                ? fullHourSelected ? 'bg-yellow-300 dark:bg-yellow-400' : 'bg-amber-200 dark:bg-amber-400/80'
-                                                                : isDaySlot ? 'bg-white dark:bg-surface-container' : 'bg-indigo-50/20 dark:bg-surface-container';
-                                                        const divider = idx > 0 ? (isDaySlot ? 'border-l border-amber-200/40' : 'border-l border-indigo-200/40') : '';
-                                                        return (
-                                                            <div
-                                                                key={idx}
-                                                                className={`flex-1 h-full transition-colors duration-150 ${divider} ${bg}`}
-                                                            />
-                                                        );
-                                                    })}
-                                                </div>
-
-                                                {/* Foreground Info */}
-                                                <div className="relative z-10 flex items-center justify-between text-xs font-semibold tracking-tight text-slate-800 dark:text-on-surface">
-                                                    <span>{formatTime(start)} – {formatTime(end)}</span>
-                                                    {isDaySlot ? (
-                                                        <Sun className="w-3 h-3 text-amber-500/70 shrink-0" />
-                                                    ) : (
-                                                        <Moon className="w-3 h-3 text-indigo-500/70 shrink-0" />
-                                                    )}
-                                                </div>
-
-                                                <div className="relative z-30 flex justify-between items-center gap-1.5">
-                                                    <div className="min-w-0 flex-1 flex items-center">
-                                                        {allLocked && slotConflict?.is_ticket && slotConflict?.ticket_id ? (
-                                                            <div className="min-w-0 flex items-center gap-1 truncate">
-                                                                <a
-                                                                    href={`/tickets/all?search=${slotConflict.ticket_id}`}
-                                                                    target="_blank"
-                                                                    rel="noopener noreferrer"
-                                                                    onClick={(e) => e.stopPropagation()}
-                                                                    className="inline-flex items-center gap-0.5 font-bold hover:underline text-[10px] shrink-0 text-amber-900 hover:text-amber-950 dark:text-amber-300"
-                                                                    title={`Open Ticket #${slotConflict.ticket_id} in new tab`}
-                                                                >
-                                                                    Ticket #{slotConflict.ticket_id}
-                                                                    <ExternalLink className="w-2.5 h-2.5 shrink-0 ml-0.5" />
-                                                                </a>
-                                                                {(slotConflict.remarks || slotConflict.work_done || slotConflict.ticket_title) && (
-                                                                    <span
-                                                                        className="text-[9px] truncate font-normal text-slate-500 dark:text-on-surface-variant"
-                                                                        title={(slotConflict.remarks || slotConflict.work_done || slotConflict.ticket_title) || undefined}
-                                                                    >
-                                                                        · {slotConflict.remarks || slotConflict.work_done || slotConflict.ticket_title}
-                                                                    </span>
-                                                                )}
-                                                            </div>
-                                                        ) : (
-                                                            <span className={`text-[10px] leading-tight truncate ${badgeColor}`}>
-                                                                {statusText}
-                                                            </span>
-                                                        )}
-                                                    </div>
-                                                    <div className={`w-4 h-4 rounded-full border flex-shrink-0 flex items-center justify-center text-[10px] font-bold ${circleClass}`}>
-                                                        {circleIcon}
-                                                    </div>
-                                                </div>
-
-                                                {/* 2-column hit targets: left half (:00–:30), right half (:30–:60) */}
-                                                <div className="absolute inset-0 grid grid-cols-2 z-20">
-                                                    {segments.map((seg, pIdx) => {
-                                                        const segConflict = getLockedConflict(seg.segStart, seg.segEnd);
-                                                        return (
-                                                            <div
-                                                                key={pIdx}
-                                                                onClick={(e) => handleSegmentClick(start, pIdx, e)}
-                                                                title={seg.locked
-                                                                    ? (segConflict?.is_ticket && segConflict?.ticket_id
-                                                                        ? `Booked: Ticket #${segConflict.ticket_id}${segConflict.ticket_work_order_no ? ` (${segConflict.ticket_work_order_no})` : ''} — Remarks: ${segConflict.remarks || segConflict.work_done || 'None'}`
-                                                                        : 'Booked')
-                                                                    : `${pIdx === 0 ? ':00 – :30' : ':30 – :00'} (${formatTime(seg.segStart)} – ${formatTime(seg.segEnd)})`}
-                                                                className={`h-full transition-colors ${seg.locked ? 'cursor-pointer hover:bg-slate-400/20' : 'hover:bg-amber-400/20 cursor-pointer'}`}
-                                                            />
-                                                        );
-                                                    })}
-                                                </div>
-                                            </button>
-                                        );
-                                    })}
-                                </div>
-
-                                {/* Interactive dynamic message & Clickable Ticket Conflict Banner (hidden during selection to prevent duplicate display) */}
-                                {(activeConflict || message.error || (!selection && message.text)) && (
-                                    <div className={`mt-3 p-2.5 rounded-xl border text-xs flex items-start justify-between gap-2 transition-all ${activeConflict
-                                        ? 'bg-amber-50 dark:bg-amber-950/20 border-amber-300 dark:border-amber-800/40 text-amber-950 dark:text-amber-200'
-                                        : message.error
-                                            ? 'bg-rose-50 border-rose-200 text-rose-700'
-                                            : 'bg-slate-50 dark:bg-surface-container-low border-slate-200 dark:border-outline-variant text-slate-600 dark:text-on-surface-variant'
-                                        }`}>
-                                        <div className="flex items-start gap-2 min-w-0 flex-1">
-                                            {!activeConflict && (message.error ? (
-                                                <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
-                                            ) : (
-                                                <Clock className="w-4 h-4 text-slate-400 shrink-0 mt-0.5" />
-                                            ))}
-                                            <div className="min-w-0 flex-1">
-                                                {activeConflict ? (
-                                                    <div>
-                                                        <span className="font-bold text-amber-900 dark:text-amber-300">
-                                                            This time slot is already booked:
-                                                        </span>{' '}
-                                                        {activeConflict.is_ticket && activeConflict.ticket_id ? (
-                                                            <a
-                                                                href={`/tickets/all?search=${activeConflict.ticket_id}`}
-                                                                target="_blank"
-                                                                rel="noopener noreferrer"
-                                                                className="inline-flex items-center gap-1 font-extrabold hover:underline ml-1 text-amber-800 dark:text-amber-300 hover:text-amber-950"
-                                                            >
-                                                                Ticket #{activeConflict.ticket_id}
-                                                                {activeConflict.ticket_work_order_no ? ` (${activeConflict.ticket_work_order_no})` : ''}
-                                                                <ExternalLink className="w-3 h-3" />
-                                                            </a>
-                                                        ) : (
-                                                            <span className="font-semibold ml-1 text-slate-700 dark:text-on-surface">
-                                                                Manual Timesheet Booking
-                                                            </span>
-                                                        )}
-                                                        <p className="text-[11px] mt-0.5 text-slate-600 dark:text-on-surface-variant">
-                                                            <span className="font-semibold">Remarks:</span>{' '}
-                                                            {activeConflict.remarks || activeConflict.work_done || activeConflict.ticket_title || 'Work log recorded on ticket.'}
-                                                            <span className="ml-1 text-slate-500">
-                                                                ({formatTime(activeConflict.start)} – {formatTime(activeConflict.end)})
-                                                            </span>
-                                                        </p>
-                                                    </div>
-                                                ) : (
-                                                    <span>{message.text}</span>
-                                                )}
-                                            </div>
-                                        </div>
-
-                                        {activeConflict && (
-                                            <button
-                                                type="button"
-                                                onClick={() => setActiveConflict(null)}
-                                                className="text-amber-800 hover:text-amber-950 text-xs font-bold px-1"
-                                                title="Dismiss"
-                                            >
-                                                &times;
-                                            </button>
-                                        )}
-                                    </div>
-                                )}
-                            </div>
-                        </>
-                    )}
-
-                    {/* Booked Sessions List */}
-                    <div className="p-3 bg-white dark:bg-surface-container">
-                        <div className="flex justify-between items-center mb-2">
-                            <h3 className="text-xs font-bold text-slate-800 dark:text-on-surface flex items-center gap-1.5">
-                                Booked Sessions ({sessions.length})
-                            </h3>
-                            {sessions.some((s) => !s.is_ticket && !s.is_claimed) && (
+                    {/* Window Navigation Toolbar with 3 Shifts: Early Morning (12 AM – 8 AM), Daytime (8 AM – 4 PM, default), Night (4 PM – 12 AM) */}
+                    <div className="flex items-center justify-between px-3 py-2 border-b bg-slate-50 dark:bg-surface-container-low border-slate-100 dark:border-outline-variant text-xs text-slate-800 dark:text-on-surface">
+                        {/* Left: Previous (<) button: Early Morning when in Daytime, Daytime when in Night */}
+                        <div className="w-36 flex justify-start">
+                            {isDaytime && (
                                 <button
                                     type="button"
-                                    onClick={handleResetAllManualSessions}
-                                    className="text-[10px] font-semibold text-rose-600 hover:bg-rose-50 px-2 py-0.5 rounded-lg border border-rose-200 transition"
+                                    onClick={() => setWindowStart(EARLY_MORNING_WINDOW_START)}
+                                    title="Switch to Early Morning (12 AM – 8 AM)"
+                                    className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border border-slate-200 dark:border-outline-variant bg-white dark:bg-surface-container hover:bg-slate-100 text-slate-700 dark:text-on-surface font-semibold text-xs transition shadow-xs"
                                 >
-                                    Reset Manual
+                                    <ChevronLeft className="w-3.5 h-3.5 text-slate-500" />
+                                    <span>Morning</span>
+                                </button>
+                            )}
+                            {isNight && (
+                                <button
+                                    type="button"
+                                    onClick={() => setWindowStart(DAYTIME_WINDOW_START)}
+                                    title="Switch to Daytime (8 AM – 4 PM)"
+                                    className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border border-slate-200 dark:border-outline-variant bg-white dark:bg-surface-container hover:bg-slate-100 text-slate-700 dark:text-on-surface font-semibold text-xs transition shadow-xs"
+                                >
+                                    <ChevronLeft className="w-3.5 h-3.5 text-slate-500" />
+                                    <span>Daytime</span>
                                 </button>
                             )}
                         </div>
 
-                        {loadingDay ? (
-                            <div className="py-3 text-center text-xs text-slate-400 animate-pulse">
-                                Loading...
-                            </div>
-                        ) : sessions.length === 0 ? (
-                            <div className="text-center py-3 text-xs text-slate-400 border border-dashed border-slate-200 dark:border-outline-variant rounded-xl">
-                                No sessions booked for this date.
-                            </div>
-                        ) : (
-                            <div className="space-y-1.5">
-                                {sessions.map((sess) => {
-                                    const isEditingThis = sess.id === editingSessionId;
-                                    const locNames = sess.locations.map((l) => `${l.name}${l.short_code ? ` [${l.short_code}]` : ''}`).join(', ');
+                        {/* Center: Shift Context & Active Range */}
+                        <div className="text-center flex items-center justify-center whitespace-nowrap">
+                            <span className="text-xs font-bold px-1 text-slate-800 dark:text-on-surface whitespace-nowrap">
+                                {isEarlyMorning && 'Morning (12 AM – 8 AM)'}
+                                {isDaytime && 'Daytime (8 AM – 4 PM)'}
+                                {isNight && 'Night (4 PM – 12 AM)'}
+                            </span>
+                        </div>
 
-                                    return (
-                                        <div
-                                            key={sess.id}
-                                            className={`border rounded-xl p-2.5 flex justify-between items-center gap-2 transition text-xs ${isEditingThis
-                                                ? 'border-yellow-400 bg-yellow-50/50'
-                                                : sess.is_ticket
-                                                    ? 'border-slate-200 dark:border-outline-variant bg-slate-50 dark:bg-surface-container-low'
-                                                    : 'border-slate-200 dark:border-outline-variant bg-white dark:bg-surface-container'
-                                                }`}
-                                        >
-                                            <div className="min-w-0 flex-1">
-                                                <div className="flex items-center gap-1.5 flex-wrap">
-                                                    <span className="font-bold text-slate-800 dark:text-on-surface">
-                                                        {sess.start !== null && sess.end !== null
-                                                            ? `${formatTime(sess.start)} – ${formatTime(sess.end)}`
-                                                            : `${sess.hours}h`}
-                                                    </span>
+                        {/* Right: Next (>) button: Daytime when in Early Morning, Night when in Daytime */}
+                        <div className="w-36 flex justify-end">
+                            {isEarlyMorning && (
+                                <button
+                                    type="button"
+                                    onClick={() => setWindowStart(DAYTIME_WINDOW_START)}
+                                    title="Switch to Daytime (8 AM – 4 PM)"
+                                    className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border border-slate-200 dark:border-outline-variant bg-white dark:bg-surface-container hover:bg-slate-100 text-slate-700 dark:text-on-surface font-semibold text-xs transition shadow-xs"
+                                >
+                                    <span>Daytime</span>
+                                    <ChevronRight className="w-3.5 h-3.5 text-slate-500" />
+                                </button>
+                            )}
+                            {isDaytime && (
+                                <button
+                                    type="button"
+                                    onClick={() => setWindowStart(NIGHT_WINDOW_START)}
+                                    title="Switch to Night (4 PM – 12 AM)"
+                                    className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border border-slate-200 dark:border-outline-variant bg-white dark:bg-surface-container hover:bg-slate-100 text-slate-700 dark:text-on-surface font-semibold text-xs transition shadow-xs"
+                                >
+                                    <span>Night</span>
+                                    <ChevronRight className="w-3.5 h-3.5 text-slate-500" />
+                                </button>
+                            )}
+                        </div>
+                    </div>
 
-                                                    <span className="text-[10px] font-bold text-slate-600 dark:text-on-surface-variant bg-slate-100 dark:bg-surface-container-high px-1.5 py-0.2 rounded">
-                                                        {sess.hours}h
-                                                    </span>
+                    {/* Slots Grid: Row-wise 2-column layout (4 hours per col, 8 hours window) with 30m Tetris-style session grouping */}
+                    <div className="p-3 transition-colors duration-200 bg-white dark:bg-surface-container">
+                        {(() => {
+                            // Helper to retrieve status & group identifier for any 30m block
+                            const getCellInfo = (colGroup: number, r: number, c: number) => {
+                                const hourIndex = colGroup === 0 ? r : r + 4;
+                                const cellStart = windowStart + hourIndex * HOUR + c * STEP;
+                                const cellEnd = cellStart + STEP;
 
-                                                    {sess.is_ticket ? (
-                                                        sess.ticket_id ? (
+                                const normalizedHour = Math.floor((((cellStart % DAY) + DAY) % DAY) / 60);
+                                const isDaySlot = normalizedHour >= 6 && normalizedHour < 18;
+
+                                const isSelected = selection ? intervalOverlap(cellStart, cellEnd, selection.start, selection.end) : false;
+                                const isLocked = isPeriodLocked(cellStart, cellEnd);
+                                const conflict = getLockedConflict(cellStart, cellEnd);
+
+                                let groupId = `free-${cellStart}`;
+                                let groupType: 'selection' | 'locked' | 'available' = 'available';
+
+                                if (isSelected) {
+                                    groupId = 'active-selection';
+                                    groupType = 'selection';
+                                } else if (isLocked && conflict) {
+                                    groupId = `sess-${conflict.id ?? (conflict.ticket_id ? `ticket-${conflict.ticket_id}` : `${conflict.start}-${conflict.end}`)}`;
+                                    groupType = 'locked';
+                                }
+
+                                return {
+                                    cellStart,
+                                    cellEnd,
+                                    hourIndex,
+                                    isDaySlot,
+                                    isSelected,
+                                    isLocked,
+                                    conflict,
+                                    groupId,
+                                    groupType,
+                                };
+                            };
+
+                            // Render a single 30m block with contour-aware borders & corner radiuses
+                            const render30mCell = (colGroup: number, r: number, c: number) => {
+                                const curr = getCellInfo(colGroup, r, c);
+                                const color = curr.groupType === 'locked'
+                                    ? getSessionColor(Boolean(curr.conflict?.is_ticket), curr.conflict?.id, curr.conflict?.ticket_id, curr.cellStart)
+                                    : null;
+
+                                let connectTop = false;
+                                let connectBottom = false;
+                                let connectLeft = false;
+                                let connectRight = false;
+
+                                if (curr.groupType !== 'available') {
+                                    // Top neighbor
+                                    if (r > 0) {
+                                        const top = getCellInfo(colGroup, r - 1, c);
+                                        if (top.groupId === curr.groupId) connectTop = true;
+                                    }
+                                    // Bottom neighbor (4 rows: 0, 1, 2, 3)
+                                    if (r < 3) {
+                                        const bot = getCellInfo(colGroup, r + 1, c);
+                                        if (bot.groupId === curr.groupId) connectBottom = true;
+                                    }
+                                    // Left neighbor
+                                    if (c === 1) {
+                                        const left = getCellInfo(colGroup, r, 0);
+                                        if (left.groupId === curr.groupId) connectLeft = true;
+                                    }
+                                    // Right neighbor
+                                    if (c === 0) {
+                                        const right = getCellInfo(colGroup, r, 1);
+                                        if (right.groupId === curr.groupId) connectRight = true;
+                                    }
+                                }
+
+                                // Borders only on outer contours of the shape
+                                const borderTop = connectTop ? 'border-t-0' : 'border-t';
+                                const borderBottom = connectBottom ? 'border-b-0' : 'border-b';
+                                const borderLeft = connectLeft ? 'border-l-0' : 'border-l';
+                                const borderRight = connectRight ? 'border-r-0' : 'border-r';
+
+                                // Corner radiuses only on exterior corners
+                                const roundedTL = (!connectTop && !connectLeft) ? 'rounded-tl-xl' : 'rounded-tl-none';
+                                const roundedTR = (!connectTop && !connectRight) ? 'rounded-tr-xl' : 'rounded-tr-none';
+                                const roundedBL = (!connectBottom && !connectLeft) ? 'rounded-bl-xl' : 'rounded-bl-none';
+                                const roundedBR = (!connectBottom && !connectRight) ? 'rounded-br-xl' : 'rounded-br-none';
+
+                                const collapseClass = `${r > 0 ? '-mt-px' : ''} ${c > 0 ? '-ml-px' : ''}`;
+
+                                let colorClass = '';
+                                if (curr.groupType === 'selection') {
+                                    colorClass = 'bg-yellow-300 dark:bg-yellow-400 border-yellow-500 text-yellow-950 font-semibold shadow-xs z-10';
+                                } else if (curr.groupType === 'locked' && color) {
+                                    const isThisViewed = Boolean(
+                                        selectedSessionForView &&
+                                        curr.conflict &&
+                                        (curr.conflict.id === selectedSessionForView.id ||
+                                            (curr.conflict.ticket_id && curr.conflict.ticket_id === selectedSessionForView.ticket_id))
+                                    );
+                                    const ringHighlight = isThisViewed ? 'ring-2 ring-amber-400 ring-offset-1 z-20 brightness-95 shadow-sm' : '';
+                                    colorClass = `${color.bg} ${color.border} ${color.text} opacity-95 cursor-pointer hover:brightness-95 transition-all ${ringHighlight}`;
+                                } else {
+                                    colorClass = curr.isDaySlot
+                                        ? 'bg-white hover:bg-amber-50/60 dark:bg-surface-container border-slate-200 dark:border-outline-variant text-slate-700 dark:text-on-surface'
+                                        : 'bg-white hover:bg-indigo-50/60 dark:bg-surface-container border-slate-200 dark:border-outline-variant text-slate-700 dark:text-on-surface';
+                                }
+
+                                return (
+                                    <button
+                                        key={`${r}-${c}`}
+                                        type="button"
+                                        onClick={(e) => handleSegmentClick(windowStart + curr.hourIndex * HOUR, c, e)}
+                                        className={`relative p-2 h-14 text-left flex flex-col justify-between transition-all duration-150 ${borderTop} ${borderBottom} ${borderLeft} ${borderRight} ${roundedTL} ${roundedTR} ${roundedBL} ${roundedBR} ${collapseClass} ${colorClass}`}
+                                    >
+                                        {/* Top Header Line: Time & Sun/Moon icon */}
+                                        <div className="flex items-center justify-between text-[11px] font-bold tracking-tight">
+                                            <span>{formatTime(curr.cellStart)}</span>
+                                            {curr.isDaySlot ? (
+                                                <Sun className="w-2.5 h-2.5 text-amber-500/70 shrink-0" />
+                                            ) : (
+                                                <Moon className="w-2.5 h-2.5 text-indigo-500/70 shrink-0" />
+                                            )}
+                                        </div>
+
+                                        {/* Bottom Status / Ticket Info Line */}
+                                        <div className="flex items-center justify-between gap-1 text-[10px]">
+                                            {curr.groupType === 'locked' && color ? (
+                                                <>
+                                                    <div className="min-w-0 flex-1 truncate">
+                                                        {curr.conflict?.is_ticket && curr.conflict?.ticket_id ? (
                                                             <a
-                                                                href={`/tickets/all?search=${sess.ticket_id}`}
+                                                                href={`/tickets/all?search=${curr.conflict.ticket_id}`}
                                                                 target="_blank"
                                                                 rel="noopener noreferrer"
-                                                                className="text-[10px] font-bold text-amber-800 bg-amber-100 hover:bg-amber-200 border border-amber-300 px-1.5 py-0.2 rounded flex items-center gap-1 hover:underline transition-colors"
-                                                                title="Open Ticket in new tab"
+                                                                onClick={(e) => e.stopPropagation()}
+                                                                className={`font-black ${color.linkText} inline-flex items-center gap-0.5 truncate`}
+                                                                title={`Ticket #${curr.conflict.ticket_id}`}
                                                             >
-                                                                <Lock className="w-2.5 h-2.5" />
-                                                                Ticket #{sess.ticket_id}
-                                                                <ExternalLink className="w-2.5 h-2.5 ml-0.5" />
+                                                                {/* <Lock className="w-2.5 h-2.5 shrink-0" /> */}
+                                                                {curr.conflict.ticket_id}
+                                                                <ExternalLink className="w-2.5 h-2.5 shrink-0" />
                                                             </a>
                                                         ) : (
-                                                            <span className="text-[10px] font-bold text-amber-800 bg-amber-100 border border-amber-300 px-1.5 py-0.2 rounded flex items-center gap-0.5">
-                                                                <Lock className="w-2.5 h-2.5" />
-                                                                Ticket
+                                                            <span className={`font-semibold ${color.subtext} truncate`}>
+                                                                {curr.conflict?.work_done || 'Booked'}
                                                             </span>
-                                                        )
+                                                        )}
+                                                    </div>
+                                                    {/* <span className={`text-[9px] font-bold ${color.subtext} shrink-0`}>✕</span> */}
+                                                </>
+                                            ) : curr.groupType === 'selection' ? (
+                                                <>
+                                                    <span className="font-black text-yellow-950 truncate">
+                                                        Selected
+                                                    </span>
+                                                    {/* <span className="font-bold text-yellow-950 text-[10px] shrink-0">✓</span> */}
+                                                </>
+                                            ) : (
+                                                <>
+                                                    <span className="text-[9px] text-slate-400 font-medium truncate">
+                                                        {c === 0 ? ':00–:30' : ':30–:00'}
+                                                    </span>
+                                                    {/* <div className="w-3 h-3 rounded-full border border-slate-300 dark:border-outline-variant shrink-0" /> */}
+                                                </>
+                                            )}
+                                        </div>
+                                    </button>
+                                );
+                            };
+
+                            let col1Shift = { name: 'Morning', range: '8 AM – 12 PM', isDay: true };
+                            let col2Shift = { name: 'Afternoon', range: '12 PM – 4 PM', isDay: true };
+
+                            if (isEarlyMorning) {
+                                col1Shift = { name: 'Midnight', range: '12 AM – 4 AM', isDay: false };
+                                col2Shift = { name: 'Early Morning', range: '4 AM – 8 AM', isDay: true };
+                            } else if (isNight) {
+                                col1Shift = { name: 'Evening', range: '4 PM – 8 PM', isDay: false };
+                                col2Shift = { name: 'Night', range: '8 PM – 12 AM', isDay: false };
+                            }
+
+                            return (
+                                <div className="grid grid-cols-2 gap-3 items-start">
+                                    {/* Column 1 */}
+                                    <div className="flex flex-col">
+                                        <div className="flex items-center justify-between px-1 mb-1.5 text-[11px] font-bold text-slate-700 dark:text-on-surface">
+                                            <span className="flex items-center gap-1 min-w-0">
+                                                {col1Shift.isDay ? (
+                                                    <Sun className="w-3 h-3 text-amber-500 shrink-0" />
+                                                ) : (
+                                                    <Moon className="w-3 h-3 text-indigo-500 shrink-0" />
+                                                )}
+                                                <span className="truncate">{col1Shift.name}</span>
+                                            </span>
+                                            <span className="text-[10px] font-semibold text-slate-500 dark:text-on-surface-variant bg-slate-100 dark:bg-surface-container-high px-1.5 py-0.5 rounded shrink-0">
+                                                {col1Shift.range}
+                                            </span>
+                                        </div>
+                                        <div className="grid grid-cols-2">
+                                            {[0, 1, 2, 3].map((r) => (
+                                                <React.Fragment key={r}>
+                                                    {render30mCell(0, r, 0)}
+                                                    {render30mCell(0, r, 1)}
+                                                </React.Fragment>
+                                            ))}
+                                        </div>
+                                    </div>
+
+                                    {/* Column 2 */}
+                                    <div className="flex flex-col">
+                                        <div className="flex items-center justify-between px-1 mb-1.5 text-[11px] font-bold text-slate-700 dark:text-on-surface">
+                                            <span className="flex items-center gap-1 min-w-0">
+                                                {col2Shift.isDay ? (
+                                                    <Sun className="w-3 h-3 text-amber-500 shrink-0" />
+                                                ) : (
+                                                    <Moon className="w-3 h-3 text-indigo-500 shrink-0" />
+                                                )}
+                                                <span className="truncate">{col2Shift.name}</span>
+                                            </span>
+                                            <span className="text-[10px] font-semibold text-slate-500 dark:text-on-surface-variant bg-slate-100 dark:bg-surface-container-high px-1.5 py-0.5 rounded shrink-0">
+                                                {col2Shift.range}
+                                            </span>
+                                        </div>
+                                        <div className="grid grid-cols-2">
+                                            {[0, 1, 2, 3].map((r) => (
+                                                <React.Fragment key={r}>
+                                                    {render30mCell(1, r, 0)}
+                                                    {render30mCell(1, r, 1)}
+                                                </React.Fragment>
+                                            ))}
+                                        </div>
+                                    </div>
+                                </div>
+                            );
+                        })()}
+
+                        {/* Interactive dynamic message & Clickable Ticket Conflict Banner (hidden during selection or when session is viewed or edited) */}
+                        {!selectedSessionForView && editingSessionId === null && (activeConflict || message.error || (!selection && message.text)) && (() => {
+                            const activeColor = activeConflict ? getSessionColor(Boolean(activeConflict.is_ticket), activeConflict.id, activeConflict.ticket_id, activeConflict.start) : null;
+                            return (
+                                <div className={`mt-3 p-2.5 rounded-xl border text-xs flex items-start justify-between gap-2 transition-all ${activeColor
+                                    ? activeColor.bannerBg
+                                    : message.error
+                                        ? 'bg-rose-50 border-rose-200 text-rose-700'
+                                        : 'bg-slate-50 dark:bg-surface-container-low border-slate-200 dark:border-outline-variant text-slate-600 dark:text-on-surface-variant'
+                                    }`}>
+                                    <div className="flex items-start gap-2 min-w-0 flex-1">
+                                        {!activeConflict && (message.error ? (
+                                            <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+                                        ) : (
+                                            <Clock className="w-4 h-4 text-slate-400 shrink-0 mt-0.5" />
+                                        ))}
+                                        {activeConflict && activeColor && (
+                                            <span className={`w-2.5 h-2.5 rounded-full ${activeColor.dotBg} shrink-0 mt-1 shadow-xs`} />
+                                        )}
+                                        <div className="min-w-0 flex-1">
+                                            {activeConflict ? (
+                                                <div>
+                                                    <span className="font-bold">
+                                                        This time slot is already booked:
+                                                    </span>{' '}
+                                                    {activeConflict.is_ticket && activeConflict.ticket_id ? (
+                                                        <a
+                                                            href={`/tickets/all?search=${activeConflict.ticket_id}`}
+                                                            target="_blank"
+                                                            rel="noopener noreferrer"
+                                                            className={`inline-flex items-center gap-1 font-extrabold hover:underline ml-1 ${activeColor ? activeColor.linkText : 'text-blue-700'}`}
+                                                        >
+                                                            <Lock className="w-3 h-3" />
+                                                            Ticket #{activeConflict.ticket_id}
+                                                            {activeConflict.ticket_work_order_no ? ` (${activeConflict.ticket_work_order_no})` : ''}
+                                                            <ExternalLink className="w-3 h-3" />
+                                                        </a>
                                                     ) : (
-                                                        <span className="text-[10px] font-bold text-slate-700 bg-slate-100 border border-slate-300 px-1.5 py-0.2 rounded">
-                                                            Manual
+                                                        <span className="font-semibold ml-1">
+                                                            Manual Timesheet Booking
+                                                        </span>
+                                                    )}
+                                                    <p className={`text-[11px] mt-0.5 ${activeColor ? activeColor.subtext : 'text-slate-600 dark:text-on-surface-variant'}`}>
+                                                        <span className="font-semibold">Remarks:</span>{' '}
+                                                        {activeConflict.remarks || activeConflict.work_done || activeConflict.ticket_title || 'Work log recorded on ticket.'}
+                                                        <span className="ml-1 opacity-75">
+                                                            ({formatTime(activeConflict.start)} – {formatTime(activeConflict.end)})
+                                                        </span>
+                                                    </p>
+                                                </div>
+                                            ) : (
+                                                <span>{message.text}</span>
+                                            )}
+                                        </div>
+                                    </div>
+
+                                    {activeConflict && (
+                                        <button
+                                            type="button"
+                                            onClick={() => setActiveConflict(null)}
+                                            className={`hover:opacity-75 text-xs font-bold px-1 ${activeColor ? activeColor.subtext : 'text-slate-600'}`}
+                                            title="Dismiss"
+                                        >
+                                            &times;
+                                        </button>
+                                    )}
+                                </div>
+                            );
+                        })()}
+                    </div>
+
+                    {/* Booked Sessions List (hidden when a session is selected from slot or being edited) */}
+                    {!selectedSessionForView && editingSessionId === null && !selection && showManualSessions && (
+                        <div className="p-3 bg-white dark:bg-surface-container">
+                            <div className="flex justify-between items-center mb-2">
+                                <h3 className="text-xs font-bold text-slate-800 dark:text-on-surface flex items-center gap-1.5">
+                                    Time Sheet ({sessions.length})
+                                </h3>
+                                <button
+                                    type="button"
+                                    onClick={() => setShowManualSessions(prev => !prev)}
+                                    className="text-[10px] font-semibold text-gray-500 hover:text-gray-800 px-2 py-1 rounded-md border border-gray-200 transition"
+                                >
+                                    {showManualSessions ? "Hide" : "Show"}
+                                </button>
+                            </div>
+
+                            {loadingDay ? (
+                                <div className="py-3 text-center text-xs text-slate-400 animate-pulse">
+                                    Loading...
+                                </div>
+                            ) : sessions.length === 0 ? (
+                                <div className="text-center py-3 text-xs text-slate-400 border border-dashed border-slate-200 dark:border-outline-variant rounded-xl">
+                                    No sessions booked for this date.
+                                </div>
+                            ) : (
+                                <div className="space-y-1.5">
+                                    {sessions.map((sess) => {
+                                        const isEditingThis = sess.id === editingSessionId;
+                                        // const locNames = sess.locations.map((l) => `${l.name}${l.short_code ? ` [${l.short_code}]` : ''}`).join(', ');
+                                        const locNames = sess.locations
+                                            .map((l) => `${l.short_code}`)
+                                            .join(', ');
+                                        const color = getSessionColor(sess.is_ticket, sess.id, sess.ticket_id, sess.start ?? undefined);
+
+                                        return (
+                                            <div
+                                                key={sess.id}
+                                                className={`border rounded-xl p-2.5 flex justify-between items-center gap-2 transition text-xs ${isEditingThis
+                                                    ? 'border-yellow-400 bg-yellow-50/50 dark:bg-yellow-950/20 shadow-xs'
+                                                    : `${color.cardBorder} ${color.cardBg}`
+                                                    }`}
+                                            >
+                                                <div className="min-w-0 flex-1">
+                                                    <div className="flex items-center gap-1.5 flex-wrap">
+                                                        {/* Color indicator dot matching the session's permanent color */}
+                                                        <span className={`w-2.5 h-2.5 rounded-full ${color.dotBg} shrink-0 shadow-xs`} />
+
+                                                        <span className="font-bold text-slate-800 dark:text-on-surface">
+                                                            {sess.start !== null && sess.end !== null
+                                                                ? `${formatTime(sess.start)} – ${formatTime(sess.end)}`
+                                                                : `${sess.hours}h`}
+                                                        </span>
+
+                                                        <span className="text-[10px] font-bold text-slate-600 dark:text-on-surface-variant bg-slate-100 dark:bg-surface-container-high px-1.5 py-0.2 rounded">
+                                                            {sess.hours}h
+                                                        </span>
+
+                                                        {sess.is_ticket ? (
+                                                            sess.ticket_id ? (
+                                                                <a
+                                                                    href={`/tickets/all?search=${sess.ticket_id}`}
+                                                                    target="_blank"
+                                                                    rel="noopener noreferrer"
+                                                                    className={`text-[10px] font-bold ${color.badgeBg} border px-1.5 py-0.2 rounded flex items-center gap-1 hover:underline transition-colors`}
+                                                                    title="Open Ticket in new tab"
+                                                                >
+                                                                    <Lock className="w-2.5 h-2.5" />
+                                                                    Ticket {sess.ticket_id}
+                                                                    <ExternalLink className="w-2.5 h-2.5 ml-0.5" />
+                                                                </a>
+                                                            ) : (
+                                                                <span className={`text-[10px] font-bold ${color.badgeBg} border px-1.5 py-0.2 rounded flex items-center gap-0.5`}>
+                                                                    <Lock className="w-2.5 h-2.5" />
+                                                                    Ticket
+                                                                </span>
+                                                            )
+                                                        ) : (
+                                                            <></>
+                                                        )}
+                                                    </div>
+
+                                                    <p className="text-[11px] text-slate-500 dark:text-on-surface-variant truncate mt-0.5">
+                                                        {locNames || 'Store'} {sess.remarks ? `· ${sess.remarks}` : ''}
+                                                    </p>
+                                                </div>
+
+                                                <div className="flex items-center gap-1 flex-shrink-0">
+                                                    {!sess.is_ticket && !sess.is_claimed && (
+                                                        <>
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => handleStartEdit(sess)}
+                                                                className="p-2 rounded-lg border border-slate-200 hover:bg-slate-100 text-slate-700 text-xs transition"
+                                                                title="Edit"
+                                                            >
+                                                                <Edit2 className="w-4 h-4" />
+                                                            </button>
+
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => handleDeleteSession(sess.worklog_id)}
+                                                                title="Delete"
+                                                                className="p-2 rounded-lg border border-slate-200 hover:border-rose-300 text-rose-600 text-xs transition"
+                                                            >
+                                                                <Trash2 className="w-4 h-4" />
+                                                            </button>
+                                                        </>
+                                                    )}
+
+                                                    {sess.is_ticket && (
+                                                        <span className="text-slate-400 p-1" title="Logged from Ticket">
+                                                            <Lock className="w-4 h-4" />
                                                         </span>
                                                     )}
                                                 </div>
-
-                                                <p className="text-[11px] text-slate-500 dark:text-on-surface-variant truncate mt-0.5">
-                                                    {locNames || 'Store'} {sess.remarks ? `· ${sess.remarks}` : ''}
-                                                </p>
                                             </div>
-
-                                            <div className="flex items-center gap-1 flex-shrink-0">
-                                                {!sess.is_ticket && !sess.is_claimed && (
-                                                    <>
-                                                        <button
-                                                            type="button"
-                                                            onClick={() => handleStartEdit(sess)}
-                                                            className="p-1 rounded-lg border border-slate-200 hover:bg-slate-100 text-slate-700 text-xs transition"
-                                                            title="Edit"
-                                                        >
-                                                            <Edit2 className="w-3 h-3" />
-                                                        </button>
-
-                                                        <button
-                                                            type="button"
-                                                            onClick={() => handleDeleteSession(sess.worklog_id)}
-                                                            title="Delete"
-                                                            className="p-1 rounded-lg border border-slate-200 hover:border-rose-300 text-rose-600 text-xs transition"
-                                                        >
-                                                            <Trash2 className="w-3 h-3" />
-                                                        </button>
-                                                    </>
-                                                )}
-
-                                                {sess.is_ticket && (
-                                                    <span className="text-slate-400 p-1" title="Logged from Ticket">
-                                                        <Lock className="w-3 h-3" />
-                                                    </span>
-                                                )}
-                                            </div>
-                                        </div>
-                                    );
-                                })}
-                            </div>
-                        )}
-                    </div>
+                                        );
+                                    })}
+                                </div>
+                            )}
+                        </div>
+                    )}
                 </div>
 
                 {/* Docked Full-Width Bottom Bar Tied with Modal UI */}
-                {selection && selectedStoreIds.length > 0 && (
+                {(selection || selectedSessionForView) && (
                     <div className="w-full shrink-0 border-t border-slate-800 bg-[#17191C] text-white p-3 space-y-2.5 animate-in slide-in-from-bottom-2 duration-150">
-                        {/* Current Selection Period, Duration, & X Button */}
-                        <div className="flex items-center justify-between gap-2">
-                            <div className="min-w-0 flex-1">
-                                <div className="flex items-center gap-2">
-                                    <span className="text-[10px] font-bold uppercase tracking-wider text-amber-400 leading-none">
-                                        Current Selection
-                                    </span>
-                                    <span className="text-[10px] font-bold text-amber-300 bg-amber-950/60 border border-amber-500/30 px-1.5 py-0.5 rounded">
-                                        {formatDuration(selection.end - selection.start)}
-                                    </span>
+                        {selectedSessionForView && editingSessionId === null ? (
+                            <>
+                                {/* Created Session Header: Time range, Duration, Ticket link (if any), & Close (X) button */}
+                                <div className="flex items-center justify-between gap-2">
+                                    <div className="min-w-0 flex-1">
+                                        <div className="flex items-center gap-2 flex-wrap">
+                                            <span className="text-[10px] font-bold uppercase tracking-wider text-amber-400 leading-none">
+                                                {selectedSessionForView.is_ticket ? 'Ticket Session' : 'Booked Session'}
+                                            </span>
+                                            <span className="text-[10px] font-bold text-amber-300 bg-amber-950/60 border border-amber-500/30 px-1.5 py-0.5 rounded">
+                                                {selectedSessionForView.start !== null && selectedSessionForView.end !== null
+                                                    ? formatDuration(selectedSessionForView.end - selectedSessionForView.start)
+                                                    : `${selectedSessionForView.hours}h`}
+                                            </span>
+                                            {selectedSessionForView.is_ticket && selectedSessionForView.ticket_id && (
+                                                <a
+                                                    href={`/tickets/all?search=${selectedSessionForView.ticket_id}`}
+                                                    target="_blank"
+                                                    rel="noopener noreferrer"
+                                                    className="text-[10px] font-bold bg-white/10 hover:bg-white/20 text-blue-300 border border-blue-400/30 px-1.5 py-0.5 rounded inline-flex items-center gap-1 transition"
+                                                    title="Open Ticket"
+                                                >
+                                                    <Lock className="w-2.5 h-2.5" />
+                                                    Ticket #{selectedSessionForView.ticket_id}
+                                                    <ExternalLink className="w-2.5 h-2.5" />
+                                                </a>
+                                            )}
+                                        </div>
+                                        <span className="font-extrabold text-sm text-white mt-1 block truncate">
+                                            {selectedSessionForView.start !== null && selectedSessionForView.end !== null
+                                                ? `${formatTime(selectedSessionForView.start)} – ${formatTime(selectedSessionForView.end)}`
+                                                : `${selectedSessionForView.hours}h`}
+                                        </span>
+                                    </div>
+
+                                    {/* X button for clear */}
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            setSelectedSessionForView(null);
+                                            setActiveConflict(null);
+                                        }}
+                                        className="w-7 h-7 flex items-center justify-center rounded-lg bg-white/10 hover:bg-rose-500/20 text-slate-300 hover:text-rose-400 transition"
+                                        title="Close"
+                                    >
+                                        <X className="w-4 h-4" />
+                                    </button>
                                 </div>
-                                <span className="font-extrabold text-sm text-white mt-1 block truncate">
-                                    {formatTime(selection.start)} – {formatTime(selection.end)}
-                                </span>
-                            </div>
 
-                            {/* X button for clear */}
-                            <button
-                                type="button"
-                                onClick={() => {
-                                    if (editingSessionId !== null) {
-                                        handleCancelEdit();
-                                    } else {
-                                        setSelection(null);
-                                        setActiveConflict(null);
-                                        setMessage({ text: 'Selection cleared.' });
-                                    }
-                                }}
-                                className="w-7 h-7 flex items-center justify-center rounded-lg bg-white/10 hover:bg-rose-500/20 text-slate-300 hover:text-rose-400 transition"
-                                title="Clear selection"
-                            >
-                                <X className="w-4 h-4" />
-                            </button>
-                        </div>
+                                {/* Location Details */}
+                                <div className="flex items-center justify-between gap-2 p-1.5 rounded-xl bg-white/5 border border-white/10 text-xs">
+                                    <div className="flex items-center gap-1.5 min-w-0 flex-1 overflow-x-auto scrollbar-none py-0.5">
+                                        <MapPin className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                                        {(() => {
+                                            const locs = (selectedSessionForView.locations && selectedSessionForView.locations.length > 0)
+                                                ? selectedSessionForView.locations
+                                                : (selectedSessionForView.locationIds || []).map((id) => {
+                                                    const s = stores.find((st) => st.store_id === id);
+                                                    return {
+                                                        id,
+                                                        name: s?.store_name || id,
+                                                        short_code: s?.short_code || id,
+                                                    };
+                                                });
+                                            if (locs.length === 0) {
+                                                return (
+                                                    <span className="text-[11px] font-medium text-slate-400 truncate">
+                                                        No locations specified
+                                                    </span>
+                                                );
+                                            }
+                                            return locs.map((loc) => (
+                                                <span
+                                                    key={loc.id}
+                                                    title={loc.name}
+                                                    className="h-6 inline-flex items-center gap-1 px-2 text-[11px] font-bold bg-amber-400/15 text-amber-300 border border-amber-400/30 rounded-md shrink-0 shadow-xs"
+                                                >
+                                                    <span>{loc.short_code || loc.name}</span>
+                                                </span>
+                                            ));
+                                        })()}
+                                    </div>
+                                </div>
 
-                        {/* Remarks input (required) + Add/Update Session button */}
-                        <div className="flex items-center gap-2">
-                            <input
-                                ref={remarksInputRef}
-                                type="text"
-                                required
-                                placeholder="Remarks (required)..."
-                                value={remarks}
-                                onChange={(e) => setRemarks(e.target.value)}
-                                onFocus={() => {
-                                    setTimeout(() => {
-                                        remarksInputRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-                                    }, 250);
-                                }}
-                                onClick={() => {
-                                    setTimeout(() => {
-                                        remarksInputRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-                                    }, 250);
-                                }}
-                                className="flex-1 bg-white/10 border border-white/20 focus:border-amber-400 focus:bg-white/15 text-white placeholder:text-slate-400 text-xs rounded-xl px-3 py-2 outline-none transition"
-                            />
-                            {editingSessionId !== null && (
-                                <button
-                                    type="button"
-                                    onClick={handleCancelEdit}
-                                    className="border border-white/20 bg-white/10 hover:bg-white/20 text-white text-xs font-semibold px-3 py-2 rounded-xl transition shrink-0"
-                                >
-                                    Cancel
-                                </button>
-                            )}
-                            <button
-                                type="button"
-                                disabled={saving || !remarks.trim()}
-                                onClick={handleSaveSession}
-                                className={`font-black text-xs px-4 py-2 rounded-xl transition shadow-xs flex items-center gap-1 shrink-0 ${!remarks.trim() || saving
-                                    ? 'bg-amber-400/40 text-slate-900/50 cursor-not-allowed'
-                                    : 'bg-amber-400 hover:bg-amber-300 text-slate-950 active:scale-95'
-                                    }`}
-                                title={!remarks.trim() ? 'Remarks are required to save session' : undefined}
-                            >
-                                {saving ? 'Saving...' : editingSessionId !== null ? '✓ Update & Lock' : '+ Add Session'}
-                            </button>
-                        </div>
+                                {/* Remarks & Action (Edit) button */}
+                                <div className="flex items-center gap-2">
+                                    <div className="flex-1 min-w-0 bg-white/10 border border-white/20 text-white text-xs rounded-xl px-3 py-2">
+                                        <span className="text-[10px] text-slate-400 font-bold block uppercase tracking-wider">
+                                            Remarks
+                                        </span>
+                                        <span className="font-semibold text-xs text-white block truncate mt-0.5">
+                                            {selectedSessionForView.remarks || selectedSessionForView.work_done || selectedSessionForView.ticket_title || 'No remarks recorded'}
+                                        </span>
+                                    </div>
+
+                                    {!selectedSessionForView.is_ticket && !selectedSessionForView.is_locked ? (
+                                        <div className="flex items-center gap-1.5 shrink-0">
+                                            <button
+                                                type="button"
+                                                onClick={() => {
+                                                    const sess = selectedSessionForView;
+                                                    setSelectedSessionForView(null);
+                                                    handleStartEdit(sess);
+                                                }}
+                                                className="h-9 px-4 bg-amber-400 hover:bg-amber-300 text-slate-950 font-black text-xs rounded-xl transition shadow-xs flex items-center gap-1.5 active:scale-95 shrink-0"
+                                                title="Edit Session"
+                                            >
+                                                <Edit2 className="w-3.5 h-3.5 text-slate-950 shrink-0" />
+                                                <span>Edit</span>
+                                            </button>
+                                            <button
+                                                type="button"
+                                                onClick={async () => {
+                                                    const sess = selectedSessionForView;
+                                                    setSelectedSessionForView(null);
+                                                    await handleDeleteSession(sess.worklog_id);
+                                                }}
+                                                className="h-9 w-9 flex items-center justify-center rounded-xl border border-white/20 bg-white/10 hover:bg-rose-500/20 text-rose-400 transition shrink-0"
+                                                title="Delete Session"
+                                            >
+                                                <Trash2 className="w-4 h-4" />
+                                            </button>
+                                        </div>
+                                    ) : (
+                                        selectedSessionForView.is_ticket && selectedSessionForView.ticket_id && (
+                                            <a
+                                                href={`/tickets/all?search=${selectedSessionForView.ticket_id}`}
+                                                target="_blank"
+                                                rel="noopener noreferrer"
+                                                className="h-9 px-3 bg-white/10 hover:bg-white/20 border border-white/20 text-white font-bold text-xs rounded-xl transition flex items-center gap-1.5 shrink-0"
+                                            >
+                                                <Lock className="w-3.5 h-3.5 text-amber-400" />
+                                                <span>View Ticket</span>
+                                                <ExternalLink className="w-3 h-3 text-slate-400" />
+                                            </a>
+                                        )
+                                    )}
+                                </div>
+                            </>
+                        ) : selection ? (
+                            <>
+                                {/* Current Selection Period, Duration, & X Button */}
+                                <div className="flex items-center justify-between gap-2">
+                                    <div className="min-w-0 flex-1">
+                                        <div className="flex items-center gap-2">
+                                            <span className="text-[10px] font-bold uppercase tracking-wider text-amber-400 leading-none">
+                                                {editingSessionId !== null ? 'Editing Session' : 'Current Selection'}
+                                            </span>
+                                            <span className="text-[10px] font-bold text-amber-300 bg-amber-950/60 border border-amber-500/30 px-1.5 py-0.5 rounded">
+                                                {formatDuration(selection.end - selection.start)}
+                                            </span>
+                                        </div>
+                                        <span className="font-extrabold text-sm text-white mt-1 block truncate">
+                                            {formatTime(selection.start)} – {formatTime(selection.end)}
+                                        </span>
+                                    </div>
+
+                                    {/* X button for clear */}
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            if (editingSessionId !== null) {
+                                                handleCancelEdit();
+                                            } else {
+                                                setSelection(null);
+                                                setActiveConflict(null);
+                                                setMessage({ text: 'Selection cleared.' });
+                                            }
+                                        }}
+                                        className="w-7 h-7 flex items-center justify-center rounded-lg bg-white/10 hover:bg-rose-500/20 text-slate-300 hover:text-rose-400 transition"
+                                        title={editingSessionId !== null ? 'Cancel edit' : 'Clear selection'}
+                                    >
+                                        <X className="w-4 h-4" />
+                                    </button>
+                                </div>
+
+                                {/* Location Selector Option with Select Location button & Selected short codes */}
+                                <div className="flex items-center justify-between gap-2 p-1.5 rounded-xl bg-white/5 border border-white/10 text-xs">
+                                    <div className="flex items-center gap-1.5 min-w-0 flex-1 overflow-x-auto scrollbar-none py-0.5">
+                                        <MapPin className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                                        {selectedStoreIds.length === 0 ? (
+                                            <span className="text-[11px] font-medium text-slate-400 truncate">
+                                                No location selected
+                                            </span>
+                                        ) : (
+                                            selectedStoreIds.map((id) => {
+                                                const s = stores.find((st) => st.store_id === id);
+                                                if (!s) return null;
+                                                const code = s.short_code || s.store_id;
+                                                return (
+                                                    <span
+                                                        key={id}
+                                                        title={s.store_name}
+                                                        className="h-6 inline-flex items-center gap-1 px-2 text-[11px] font-bold bg-amber-400/15 text-amber-300 border border-amber-400/30 rounded-md shrink-0 shadow-xs"
+                                                    >
+                                                        <span>{code}</span>
+                                                        <button
+                                                            type="button"
+                                                            onClick={(e) => {
+                                                                e.stopPropagation();
+                                                                setSelectedStoreIds(selectedStoreIds.filter((sid) => sid !== id));
+                                                            }}
+                                                            className="text-slate-400 hover:text-rose-400 font-bold ml-0.5 leading-none text-xs"
+                                                            title={`Remove ${s.store_name}`}
+                                                        >
+                                                            &times;
+                                                        </button>
+                                                    </span>
+                                                );
+                                            })
+                                        )}
+                                    </div>
+
+                                    <button
+                                        type="button"
+                                        onClick={() => setIsStoreDropdownOpen(true)}
+                                        className={`h-7 inline-flex items-center gap-1 px-3 text-xs font-bold rounded-lg transition active:scale-95 shrink-0 ${selectedStoreIds.length === 0
+                                            ? 'bg-amber-400 hover:bg-amber-300 text-slate-950 shadow-xs'
+                                            : 'text-amber-300 bg-white/10 hover:bg-white/15 border border-amber-400/40'
+                                            }`}
+                                        title={selectedStoreIds.length === 0 ? 'Select locations' : 'Edit locations'}
+                                    >
+                                        {selectedStoreIds.length === 0 ? (
+                                            <>
+                                                <MapPin className="w-3 h-3 text-slate-950 shrink-0" />
+                                                <span>Select Location</span>
+                                            </>
+                                        ) : (
+                                            <>
+                                                <Edit2 className="w-3 h-3 text-amber-400 shrink-0" />
+                                                <span>Edit</span>
+                                            </>
+                                        )}
+                                    </button>
+                                </div>
+
+                                {/* Remarks input (required) + Add/Update Session button */}
+                                <div className="flex items-center gap-2">
+                                    <input
+                                        ref={remarksInputRef}
+                                        type="text"
+                                        required
+                                        placeholder="Remarks (required)..."
+                                        value={remarks}
+                                        onChange={(e) => setRemarks(e.target.value)}
+                                        onFocus={() => {
+                                            setTimeout(() => {
+                                                remarksInputRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                                            }, 250);
+                                        }}
+                                        onClick={() => {
+                                            setTimeout(() => {
+                                                remarksInputRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                                            }, 250);
+                                        }}
+                                        className="flex-1 bg-white/10 border border-white/20 focus:border-amber-400 focus:bg-white/15 text-white placeholder:text-slate-400 text-xs rounded-xl px-3 py-2 outline-none transition"
+                                    />
+                                    {editingSessionId !== null && (
+                                        <button
+                                            type="button"
+                                            onClick={handleCancelEdit}
+                                            className="border border-white/20 bg-white/10 hover:bg-white/20 text-white text-xs font-semibold px-3 py-2 rounded-xl transition shrink-0"
+                                        >
+                                            Cancel
+                                        </button>
+                                    )}
+                                    <button
+                                        type="button"
+                                        disabled={saving || !remarks.trim() || selectedStoreIds.length === 0}
+                                        onClick={handleSaveSession}
+                                        className={`font-black text-xs px-4 py-2 rounded-xl transition shadow-xs flex items-center gap-1 shrink-0 ${!remarks.trim() || selectedStoreIds.length === 0 || saving
+                                            ? 'bg-amber-400/40 text-slate-900/50 cursor-not-allowed'
+                                            : 'bg-amber-400 hover:bg-amber-300 text-slate-950 active:scale-95'
+                                            }`}
+                                        title={
+                                            selectedStoreIds.length === 0
+                                                ? 'Location is required to save session'
+                                                : !remarks.trim()
+                                                    ? 'Remarks are required to save session'
+                                                    : undefined
+                                        }
+                                    >
+                                        {saving ? 'Saving...' : editingSessionId !== null ? '✓ Update & Lock' : '+ Add Session'}
+                                    </button>
+                                </div>
+                            </>
+                        ) : null}
                     </div>
                 )}
 
@@ -1740,7 +2356,14 @@ export const TimeSheetModal: React.FC<TimeSheetModalProps> = ({
                                 </span>
                                 <button
                                     type="button"
+                                    disabled={(() => {
+                                        const now = new Date();
+                                        return calendarViewYear > now.getFullYear() || (calendarViewYear === now.getFullYear() && calendarViewMonth >= now.getMonth());
+                                    })()}
                                     onClick={() => {
+                                        const now = new Date();
+                                        const isCurrentOrFuture = calendarViewYear > now.getFullYear() || (calendarViewYear === now.getFullYear() && calendarViewMonth >= now.getMonth());
+                                        if (isCurrentOrFuture) return;
                                         let newMonth = calendarViewMonth + 1;
                                         let newYear = calendarViewYear;
                                         if (newMonth > 11) {
@@ -1750,7 +2373,11 @@ export const TimeSheetModal: React.FC<TimeSheetModalProps> = ({
                                         setCalendarViewMonth(newMonth);
                                         setCalendarViewYear(newYear);
                                     }}
-                                    className="border border-slate-200 bg-white hover:bg-slate-100 rounded-lg p-1 text-slate-700 font-bold"
+                                    className={`border border-slate-200 bg-white rounded-lg p-1 font-bold ${(() => {
+                                        const now = new Date();
+                                        const isCurrentOrFuture = calendarViewYear > now.getFullYear() || (calendarViewYear === now.getFullYear() && calendarViewMonth >= now.getMonth());
+                                        return isCurrentOrFuture ? 'opacity-30 cursor-not-allowed text-slate-300' : 'hover:bg-slate-100 text-slate-700';
+                                    })()}`}
                                 >
                                     &gt;
                                 </button>
@@ -1775,6 +2402,13 @@ export const TimeSheetModal: React.FC<TimeSheetModalProps> = ({
                                     const day = i + 1;
                                     const cellDate = new Date(calendarViewYear, calendarViewMonth, day);
                                     const cellKey = toDateKey(cellDate);
+                                    const isFuture = cellKey > todayKey;
+
+                                    // Hide day selection of tomorrow and future days from the calendar option
+                                    if (isFuture) {
+                                        return <div key={cellKey} className="h-11" />;
+                                    }
+
                                     const isSelected = cellKey === selectedDateKey;
                                     const isToday = cellKey === todayKey;
                                     const dayStat = monthDaysStats[cellKey];
@@ -1789,6 +2423,7 @@ export const TimeSheetModal: React.FC<TimeSheetModalProps> = ({
                                                 setSelectedDateKey(cellKey);
                                                 setSelection(null);
                                                 setActiveConflict(null);
+                                                setSelectedSessionForView(null);
                                                 setEditingSessionId(null);
                                                 setWindowStart(DAY_WINDOW_START);
                                                 setIsCalendarOpen(false);
@@ -1823,6 +2458,7 @@ export const TimeSheetModal: React.FC<TimeSheetModalProps> = ({
                                         setCalendarViewMonth(new Date().getMonth());
                                         setSelection(null);
                                         setActiveConflict(null);
+                                        setSelectedSessionForView(null);
                                         setEditingSessionId(null);
                                         setWindowStart(DAY_WINDOW_START);
                                         setIsCalendarOpen(false);

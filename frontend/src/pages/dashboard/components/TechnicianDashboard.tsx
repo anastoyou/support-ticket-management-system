@@ -63,7 +63,7 @@ export const TechnicianDashboard: React.FC<TechnicianDashboardProps> = ({ data, 
 
                 <div className="flex items-center gap-2 flex-wrap">
                     {/* Time Sheet Button with current day time log */}
-                    <button
+                    {/* <button
                         type="button"
                         onClick={() => setIsTimeSheetOpen(true)}
                         className="border border-outline bg-surface-container hover:bg-surface-container-high text-on-surface text-xs font-medium px-3 py-1.5 rounded flex items-center gap-2 transition-colors cursor-pointer shadow-xs"
@@ -74,7 +74,7 @@ export const TechnicianDashboard: React.FC<TechnicianDashboardProps> = ({ data, 
                         <span className="text-[10px] font-medium px-1.5 py-0.2 rounded bg-primary/10 text-primary border border-primary/20">
                             {todayHours}h / 10h ({todayPct}% complete)
                         </span>
-                    </button>
+                    </button> */}
 
                     <a
                         href="/tickets/all"
@@ -156,49 +156,110 @@ export const TechnicianDashboard: React.FC<TechnicianDashboardProps> = ({ data, 
             )}
 
             {/* Mobile Device Floating Action Button (FAB) with Bottom-to-Top Fill (DESIGN.md tokens) */}
-            <div className="sm:hidden fixed bottom-6 right-6 z-40 flex flex-col items-end gap-1 select-none">
+
+            <div className="sm:hidden fixed bottom-7 right-6 z-40 flex flex-col items-center gap-2 select-none">
                 <button
                     type="button"
                     onClick={() => setIsTimeSheetOpen(true)}
-                    className="relative w-14 h-14 rounded-full bg-surface-container border border-outline shadow-xl overflow-hidden flex flex-col items-center justify-center cursor-pointer active:scale-95 transition-transform focus:outline-none"
-                    aria-label="Book Time Sheet"
-                    title="Book Time Sheet"
+                    className="
+            group relative w-[76px] h-[76px]
+            rounded-full overflow-visible
+            bg-surface-container
+            border border-outline-variant
+            shadow-xl shadow-black/20
+            flex items-center justify-center
+            transition-all duration-300 ease-out
+            hover:shadow-2xl hover:-translate-y-1
+            active:scale-90
+            focus-visible:outline-none
+            focus-visible:ring-2
+            focus-visible:ring-primary
+            focus-visible:ring-offset-2
+            animate-[bounce_2s_ease-in-out_3]
+        "
+                    aria-label={`Open time sheet. ${todayHours} hours logged, ${todayPct}% complete.`}
+                    title="Time Sheet"
                 >
-                    {/* Visual Fill from Bottom to Top */}
+                    {/* Circular progress track */}
+                    <svg
+                        className="absolute inset-0 w-full h-full -rotate-90"
+                        viewBox="0 0 76 76"
+                        fill="none"
+                    >
+                        <circle
+                            cx="38"
+                            cy="38"
+                            r="34"
+                            stroke="currentColor"
+                            strokeWidth="3"
+                            className="text-outline-variant/40"
+                        />
+
+                        {/* Progress indicator */}
+                        <circle
+                            cx="38"
+                            cy="38"
+                            r="34"
+                            stroke="currentColor"
+                            strokeWidth="3"
+                            strokeLinecap="round"
+                            strokeDasharray={2 * Math.PI * 34}
+                            strokeDashoffset={
+                                2 * Math.PI * 34 *
+                                (1 - Math.min(100, Math.max(0, todayPct)) / 100)
+                            }
+                            className="text-primary transition-all duration-700 ease-out"
+                        />
+                    </svg>
+
+                    {/* Background progress fill */}
                     <div
-                        className="absolute inset-x-0 bottom-0 bg-primary/20 dark:bg-primary/30 transition-all duration-500 ease-out"
-                        style={{ height: `${Math.min(100, Math.max(0, todayPct))}%` }}
+                        className="
+                absolute inset-1 rounded-full
+                pointer-events-none
+                transition-all duration-500
+            "
+                        style={{
+                            background: `linear-gradient(
+                    to top,
+                    color-mix(in srgb, var(--color-primary) 16%, transparent)
+                    ${Math.min(100, Math.max(0, todayPct))}%,
+                    transparent
+                    ${Math.min(100, Math.max(0, todayPct))}%
+                )`
+                        }}
                     />
 
-                    {/* Water Level Surface Highlight */}
-                    {todayPct > 0 && todayPct < 100 && (
-                        <div
-                            className="absolute inset-x-0 h-0.5 bg-primary shadow-xs transition-all duration-500 pointer-events-none"
-                            style={{ bottom: `${Math.min(100, Math.max(0, todayPct))}%` }}
-                        />
-                    )}
+                    {/* Main content */}
+                    <div className="relative z-10 flex flex-col items-center justify-center gap-1 pointer-events-none">
+                        <Clock className="w-6 h-6 text-primary transition-transform duration-300 group-hover:scale-110" />
 
-                    {/* Content Layer (Clock & Hours) */}
-                    <div className="relative z-10 flex flex-col items-center justify-center pointer-events-none">
-                        <Clock className="w-4 h-4 text-primary" />
-                        <span className="text-[10px] font-semibold text-on-surface leading-none mt-0.5">
+                        <span className="text-sm font-bold text-on-surface leading-none tabular-nums">
                             {todayHours}h
                         </span>
                     </div>
 
-                    {/* Corner Percentage Chip */}
-                    <span className="absolute -top-1 -right-1 z-20 text-[9px] font-semibold px-1.5 py-0.2 rounded-full border border-outline-variant bg-surface-container text-primary shadow-xs">
+                    {/* Percentage badge */}
+                    <span
+                        className="
+                absolute -top-1.5 -right-2
+                min-w-[36px] h-[23px]
+                px-2 rounded-full
+                flex items-center justify-center
+                bg-primary text-on-primary
+                border-2 border-surface-container
+                text-[10px] font-bold
+                shadow-md tabular-nums
+                z-20
+                transition-transform duration-300
+                group-hover:scale-110
+            "
+                    >
                         {todayPct >= 100 ? '100%' : `${todayPct}%`}
                     </span>
                 </button>
-
-                {/* Subtitle Label Pill */}
-                <span className="text-[10px] font-medium text-on-surface bg-surface-container border border-outline-variant px-2 py-0.5 rounded shadow-xs">
-                    Time Sheet
-                </span>
             </div>
 
-            {/* Interactive Time Sheet Popup Modal */}
             <TimeSheetModal
                 isOpen={isTimeSheetOpen}
                 onClose={() => {
