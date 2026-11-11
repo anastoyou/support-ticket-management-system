@@ -1025,11 +1025,206 @@ class ExpenseViewSet(viewsets.ModelViewSet):
                 b_entry['locations_map'][lid]['total_amount'] += amt
                 b_entry['locations_map'][lid]['expense_count'] += 1
 
+            # --- Working Hours Allocation & Labour Cost Calculation (Business Logic) ---
+            # Rule:
+            # 1. Minimum 10 working hours per employee per day.
+            # 2. If an employee works at multiple stores on the same day:
+            #    - If total daily hours < 10: increase total to 10 and distribute proportionally.
+            #    - If total daily hours >= 10: retain actual total and distribute proportionally.
+            # 3. Multiply allocated hours by worker's hourly rate from finance.EmployeeRate
+            #    (with fallback to WorkLog.hourly_rate).
+            from apps.maintenance.models import WorkLog
+            from apps.stores.models import Store
+            from apps.finance.models import EmployeeRate
+            from collections import defaultdict
+
+            # Preload employee rates sorted by latest effective_from
+            rates_by_worker = defaultdict(list)
+            for r in EmployeeRate.objects.order_by('-effective_from', '-rate_id'):
+                rates_by_worker[r.worker_id].append(r)
+
+            def get_worker_rate(worker_id, log_date, fallback_rate=None):
+                if worker_id in rates_by_worker:
+                    for r in rates_by_worker[worker_id]:
+                        if r.effective_from <= log_date and (r.effective_to is None or r.effective_to >= log_date):
+                            return float(r.hourly_rate)
+                    return float(rates_by_worker[worker_id][0].hourly_rate)
+                if fallback_rate is not None and float(fallback_rate) > 0:
+                    return float(fallback_rate)
+                return 0.0
+
+            work_logs_qs = WorkLog.objects.filter(
+                work_date__gte=from_date,
+                work_date__lte=to_date
+            ).select_related('ticket__store', 'ticket__nature', 'worker').prefetch_related('stores')
+
+            if store_filter and store_filter.lower() != 'all':
+                work_logs_qs = work_logs_qs.filter(
+                    Q(ticket__store_id=store_filter) |
+                    Q(stores__store_id=store_filter) |
+                    Q(ticket__store__store_name__icontains=store_filter) |
+                    Q(stores__store_name__icontains=store_filter)
+                )
+
+            if store_type_filter and store_type_filter != 'all':
+                work_logs_qs = work_logs_qs.filter(
+                    Q(ticket__store__type=store_type_filter) |
+                    Q(stores__type=store_type_filter)
+                )
+
+            if batch_filter and batch_filter.lower() != 'all' and batch_obj:
+                matching_subdepts = list(batch_obj.sub_departments.values_list('sub_department_id', flat=True))
+                work_logs_qs = work_logs_qs.filter(
+                    ticket__nature__sub_department_id__in=matching_subdepts
+                )
+
+            daily_worker_batch_stores = defaultdict(lambda: defaultdict(float))
+            worker_date_rates = {}
+            store_batch_map = {}
+
+            for log in work_logs_qs:
+                hrs = float(log.hours or 0)
+                if hrs <= 0:
+                    continue
+
+                target_stores = []
+                if log.ticket and log.ticket.store_id:
+                    target_stores.append(str(log.ticket.store_id))
+                elif log.stores.exists():
+                    target_stores.extend([str(s.store_id) for s in log.stores.all()])
+                else:
+                    target_stores.append('general')
+
+                split_hrs = hrs / len(target_stores)
+                w_id = log.worker_id or 0
+                d_str = str(log.work_date)
+
+                sub_id = log.ticket.nature.sub_department_id if log.ticket and log.ticket.nature else None
+                b_name = subdept_to_batch.get(sub_id, 'General Maintenance')
+
+                for st_id in target_stores:
+                    daily_worker_batch_stores[(w_id, d_str)][(b_name, st_id)] += split_hrs
+                    if st_id not in store_batch_map:
+                        store_batch_map[st_id] = b_name
+
+                if (w_id, d_str) not in worker_date_rates:
+                    worker_date_rates[(w_id, d_str)] = get_worker_rate(w_id, log.work_date, log.hourly_rate)
+
+            store_allocated_hours = defaultdict(float)
+            store_actual_hours = defaultdict(float)
+            store_allocated_labour = defaultdict(float)
+            store_actual_labour = defaultdict(float)
+
+            batch_store_allocated_hours = defaultdict(float)
+            batch_store_actual_hours = defaultdict(float)
+            batch_store_allocated_labour = defaultdict(float)
+            batch_store_actual_labour = defaultdict(float)
+
+            def _round_half(val):
+                return float(int(val * 2 + 0.5) / 2.0) if val > 0 else 0.0
+
+            def _distribute_day_hours(raw_alloc_map, target_total):
+                rounded_map = {k: _round_half(v) for k, v in raw_alloc_map.items()}
+                diff = round(target_total - sum(rounded_map.values()), 1)
+                if diff != 0 and rounded_map:
+                    max_k = max(raw_alloc_map.keys(), key=lambda k: raw_alloc_map[k])
+                    rounded_map[max_k] = max(0.0, rounded_map[max_k] + diff)
+                return rounded_map
+
+            for (w_id, d_str), bst_map in daily_worker_batch_stores.items():
+                day_total = sum(bst_map.values())
+                if day_total <= 0:
+                    continue
+
+                multiplier = (10.0 / day_total) if day_total < 10.0 else 1.0
+                target_total = 10.0 if day_total < 10.0 else day_total
+                rate = worker_date_rates.get((w_id, d_str), 0.0)
+
+                raw_alloc = {k: v * multiplier for k, v in bst_map.items()}
+                alloc_map = _distribute_day_hours(raw_alloc, target_total)
+
+                for (b_name, st_id), alloc_hrs in alloc_map.items():
+                    act_hrs = bst_map[(b_name, st_id)]
+                    alloc_labour = alloc_hrs * rate
+                    act_labour = act_hrs * rate
+
+                    store_actual_hours[st_id] += act_hrs
+                    store_allocated_hours[st_id] += alloc_hrs
+                    store_actual_labour[st_id] += act_labour
+                    store_allocated_labour[st_id] += alloc_labour
+
+                    batch_store_actual_hours[(b_name, st_id)] += act_hrs
+                    batch_store_allocated_hours[(b_name, st_id)] += alloc_hrs
+                    batch_store_actual_labour[(b_name, st_id)] += act_labour
+                    batch_store_allocated_labour[(b_name, st_id)] += alloc_labour
+
+            # Ensure all stores with allocated hours/labour are included in loc_map and batch_map
+            all_work_store_ids = set(store_allocated_hours.keys())
+            missing_store_ids = [sid for sid in all_work_store_ids if sid not in loc_map and sid != 'general']
+            store_objs_by_id = {}
+            if missing_store_ids:
+                store_objs_by_id = {str(s.store_id): s for s in Store.objects.filter(store_id__in=missing_store_ids)}
+                for sid in missing_store_ids:
+                    st_obj = store_objs_by_id.get(sid)
+                    st_name = st_obj.store_name if st_obj else f'Store {sid}'
+                    st_type = (st_obj.type if st_obj else 'OTHER') or 'OTHER'
+                    loc_map[sid] = {
+                        'store_id': sid,
+                        'location_name': st_name,
+                        'store_type': st_type,
+                        'categories': {},
+                        'total_amount': Decimal('0.000'),
+                        'expense_count': 0,
+                    }
+
+            if 'general' in store_allocated_hours and 'general' not in loc_map:
+                loc_map['general'] = {
+                    'store_id': 'general',
+                    'location_name': 'General / Other',
+                    'store_type': 'OTHER',
+                    'categories': {},
+                    'total_amount': Decimal('0.000'),
+                    'expense_count': 0,
+                }
+
+            # Also ensure batch_map contains locations that had worklogs in that batch
+            for (b_name, st_id) in batch_store_allocated_hours.keys():
+                if b_name not in batch_map:
+                    batch_map[b_name] = {
+                        'batch_name': b_name,
+                        'total_amount': Decimal('0.000'),
+                        'expense_count': 0,
+                        'categories': {},
+                        'locations_map': {}
+                    }
+                if st_id not in batch_map[b_name]['locations_map']:
+                    loc_info = loc_map.get(st_id)
+                    st_name = loc_info['location_name'] if loc_info else f'Store {st_id}'
+                    st_type = loc_info['store_type'] if loc_info else 'OTHER'
+                    batch_map[b_name]['locations_map'][st_id] = {
+                        'store_id': st_id,
+                        'location_name': st_name,
+                        'store_type': st_type,
+                        'categories': {},
+                        'total_amount': Decimal('0.000'),
+                        'expense_count': 0,
+                    }
+
+            # Assign allocated_hours, actual_hours, voucher_amount, labour_amount, total_amount to each location in loc_map
+            for sid, loc_item in loc_map.items():
+                sid_str = str(sid)
+                loc_item['allocated_hours'] = _round_half(store_allocated_hours.get(sid_str, 0.0))
+                loc_item['actual_hours'] = _round_half(store_actual_hours.get(sid_str, 0.0))
+                v_amt = loc_item['total_amount']
+                loc_labour = float(round(store_allocated_labour.get(sid_str, 0.0), 3))
+                loc_item['voucher_amount'] = float(round(v_amt, 3))
+                loc_item['labour_amount'] = loc_labour
+                loc_item['total_amount'] = float(round(v_amt + Decimal(str(loc_labour)), 3))
+
             sorted_categories = sorted(list(all_categories))
             locations_list = sorted(list(loc_map.values()), key=lambda x: x['location_name'])
 
             for loc in locations_list:
-                loc['total_amount'] = float(round(loc['total_amount'], 3))
                 for c in sorted_categories:
                     loc['categories'][c] = float(round(loc['categories'].get(c, Decimal('0.000')), 3))
 
@@ -1056,10 +1251,18 @@ class ExpenseViewSet(viewsets.ModelViewSet):
                         'store_type_label': STORE_TYPE_LABELS.get(st, st.replace('_', ' ').title()),
                         'locations_count': 0,
                         'total_amount': 0.0,
+                        'voucher_amount': 0.0,
+                        'labour_amount': 0.0,
+                        'allocated_hours': 0.0,
+                        'actual_hours': 0.0,
                         'categories': {c: 0.0 for c in sorted_categories}
                     }
                 type_map[st]['locations_count'] += 1
                 type_map[st]['total_amount'] = float(round(type_map[st]['total_amount'] + loc['total_amount'], 3))
+                type_map[st]['voucher_amount'] = float(round(type_map[st]['voucher_amount'] + loc.get('voucher_amount', 0.0), 3))
+                type_map[st]['labour_amount'] = float(round(type_map[st]['labour_amount'] + loc.get('labour_amount', 0.0), 3))
+                type_map[st]['allocated_hours'] = float(round(type_map[st]['allocated_hours'] + loc.get('allocated_hours', 0.0), 2))
+                type_map[st]['actual_hours'] = float(round(type_map[st]['actual_hours'] + loc.get('actual_hours', 0.0), 2))
                 for c in sorted_categories:
                     type_map[st]['categories'][c] = float(round(type_map[st]['categories'][c] + loc['categories'].get(c, 0.0), 3))
 
@@ -1069,17 +1272,41 @@ class ExpenseViewSet(viewsets.ModelViewSet):
             batches_list = []
             for b_name, b_entry in sorted(batch_map.items(), key=lambda item: -item[1]['total_amount']):
                 b_locs = sorted(list(b_entry['locations_map'].values()), key=lambda x: x['location_name'])
+                batch_alloc_hours = 0.0
+                batch_act_hours = 0.0
+                batch_voucher_amount = 0.0
+                batch_labour_amount = 0.0
+                batch_total_amount = 0.0
+
                 for bloc in b_locs:
-                    bloc['total_amount'] = float(round(bloc['total_amount'], 3))
+                    bloc_id = str(bloc['store_id'])
+                    bloc_v_amt = bloc['total_amount']
+                    bloc_labour = float(round(batch_store_allocated_labour.get((b_name, bloc_id), 0.0), 3))
+                    bloc['voucher_amount'] = float(round(bloc_v_amt, 3))
+                    bloc['labour_amount'] = bloc_labour
+                    bloc['total_amount'] = float(round(bloc_v_amt + Decimal(str(bloc_labour)), 3))
+                    bloc['allocated_hours'] = _round_half(batch_store_allocated_hours.get((b_name, bloc_id), 0.0))
+                    bloc['actual_hours'] = _round_half(batch_store_actual_hours.get((b_name, bloc_id), 0.0))
+
+                    batch_alloc_hours += bloc['allocated_hours']
+                    batch_act_hours += bloc['actual_hours']
+                    batch_voucher_amount += bloc['voucher_amount']
+                    batch_labour_amount += bloc['labour_amount']
+                    batch_total_amount += bloc['total_amount']
+
                     for c in sorted_categories:
                         bloc['categories'][c] = float(round(bloc['categories'].get(c, Decimal('0.000')), 3))
 
                 b_cat_totals = {c: float(round(b_entry['categories'].get(c, Decimal('0.000')), 3)) for c in sorted_categories}
                 batches_list.append({
                     'batch_name': b_name,
-                    'total_amount': float(round(b_entry['total_amount'], 3)),
+                    'total_amount': float(round(batch_total_amount, 3)),
+                    'voucher_amount': float(round(batch_voucher_amount, 3)),
+                    'labour_amount': float(round(batch_labour_amount, 3)),
                     'expense_count': b_entry['expense_count'],
                     'locations_count': len(b_locs),
+                    'allocated_hours': float(round(batch_alloc_hours, 1)),
+                    'actual_hours': float(round(batch_act_hours, 1)),
                     'categories': b_cat_totals,
                     'locations': b_locs
                 })
@@ -1094,6 +1321,10 @@ class ExpenseViewSet(viewsets.ModelViewSet):
             except Exception:
                 month_label = f"{from_date} to {to_date}"
 
+            total_voucher_sum = sum(l.get('voucher_amount', 0.0) for l in locations_list)
+            total_labour_sum = sum(l.get('labour_amount', 0.0) for l in locations_list)
+            total_grand = float(round(Decimal(str(total_voucher_sum)) + Decimal(str(total_labour_sum)), 3))
+
             return {
                 'from_date': from_date,
                 'to_date': to_date,
@@ -1103,7 +1334,11 @@ class ExpenseViewSet(viewsets.ModelViewSet):
                 'ledger_batches_summary': batches_list,
                 'categories': sorted_categories,
                 'category_totals': formatted_cat_totals,
-                'grand_total': float(round(grand_total, 3)),
+                'voucher_grand_total': float(round(total_voucher_sum, 3)),
+                'labour_grand_total': float(round(total_labour_sum, 3)),
+                'grand_total': total_grand,
+                'total_allocated_hours': float(round(sum(l.get('allocated_hours', 0.0) for l in locations_list), 1)),
+                'total_actual_hours': float(round(sum(l.get('actual_hours', 0.0) for l in locations_list), 1)),
                 'total_locations_count': len(locations_list),
                 'total_expenses_count': qs.count()
             }
@@ -1152,6 +1387,12 @@ class ExpenseViewSet(viewsets.ModelViewSet):
                     })
 
                 st = l1.get('store_type') or l2.get('store_type') or 'OTHER'
+                l1_alloc = l1.get('allocated_hours', 0.0)
+                l2_alloc = l2.get('allocated_hours', 0.0)
+                l1_labour = l1.get('labour_amount', 0.0)
+                l2_labour = l2.get('labour_amount', 0.0)
+                l1_voucher = l1.get('voucher_amount', l1.get('total_amount', 0.0))
+                l2_voucher = l2.get('voucher_amount', l2.get('total_amount', 0.0))
                 comparison_rows.append({
                     'store_id': lid,
                     'location_name': l1['location_name'],
@@ -1160,6 +1401,14 @@ class ExpenseViewSet(viewsets.ModelViewSet):
                     'period2_amount': amt2,
                     'variance': variance,
                     'percent_change': pct,
+                    'period1_allocated_hours': l1_alloc,
+                    'period2_allocated_hours': l2_alloc,
+                    'hours_variance': float(round(l2_alloc - l1_alloc, 2)),
+                    'period1_labour_amount': l1_labour,
+                    'period2_labour_amount': l2_labour,
+                    'labour_variance': float(round(l2_labour - l1_labour, 3)),
+                    'period1_voucher_amount': l1_voucher,
+                    'period2_voucher_amount': l2_voucher,
                     'categories': cat_breakdown
                 })
 
@@ -1234,6 +1483,12 @@ class ExpenseViewSet(viewsets.ModelViewSet):
                         })
 
                     st = bl1.get('store_type') or bl2.get('store_type') or 'OTHER'
+                    bl1_alloc = bl1.get('allocated_hours', 0.0)
+                    bl2_alloc = bl2.get('allocated_hours', 0.0)
+                    bl1_labour = bl1.get('labour_amount', 0.0)
+                    bl2_labour = bl2.get('labour_amount', 0.0)
+                    bl1_voucher = bl1.get('voucher_amount', bl1.get('total_amount', 0.0))
+                    bl2_voucher = bl2.get('voucher_amount', bl2.get('total_amount', 0.0))
                     comp_blocs.append({
                         'store_id': lid,
                         'location_name': loc_name,
@@ -1242,9 +1497,21 @@ class ExpenseViewSet(viewsets.ModelViewSet):
                         'period2_amount': bla2,
                         'variance': bl_v,
                         'percent_change': bl_p,
+                        'period1_allocated_hours': bl1_alloc,
+                        'period2_allocated_hours': bl2_alloc,
+                        'hours_variance': float(round(bl2_alloc - bl1_alloc, 2)),
+                        'period1_labour_amount': bl1_labour,
+                        'period2_labour_amount': bl2_labour,
+                        'labour_variance': float(round(bl2_labour - bl1_labour, 3)),
+                        'period1_voucher_amount': bl1_voucher,
+                        'period2_voucher_amount': bl2_voucher,
                         'categories': cat_breakdown
                     })
 
+                b1_alloc = b1.get('allocated_hours', 0.0)
+                b2_alloc = b2.get('allocated_hours', 0.0)
+                b1_labour = b1.get('labour_amount', 0.0)
+                b2_labour = b2.get('labour_amount', 0.0)
                 comp_batches.append({
                     'batch_name': bname,
                     'period1_amount': ba1,
@@ -1253,6 +1520,12 @@ class ExpenseViewSet(viewsets.ModelViewSet):
                     'percent_change': bp,
                     'period1_locations_count': b1.get('locations_count', 0),
                     'period2_locations_count': b2.get('locations_count', 0),
+                    'period1_allocated_hours': b1_alloc,
+                    'period2_allocated_hours': b2_alloc,
+                    'hours_variance': float(round(b2_alloc - b1_alloc, 2)),
+                    'period1_labour_amount': b1_labour,
+                    'period2_labour_amount': b2_labour,
+                    'labour_variance': float(round(b2_labour - b1_labour, 3)),
                     'locations': comp_blocs
                 })
 
@@ -1275,7 +1548,15 @@ class ExpenseViewSet(viewsets.ModelViewSet):
                     'period1_grand_total': p1_grand,
                     'period2_grand_total': p2_grand,
                     'variance': grand_var,
-                    'percent_change': grand_pct
+                    'percent_change': grand_pct,
+                    'period1_total_allocated_hours': p1.get('total_allocated_hours', 0.0),
+                    'period2_total_allocated_hours': p2.get('total_allocated_hours', 0.0),
+                    'hours_variance': float(round(p2.get('total_allocated_hours', 0.0) - p1.get('total_allocated_hours', 0.0), 2)),
+                    'period1_total_labour_amount': p1.get('labour_grand_total', 0.0),
+                    'period2_total_labour_amount': p2.get('labour_grand_total', 0.0),
+                    'labour_variance': float(round(p2.get('labour_grand_total', 0.0) - p1.get('labour_grand_total', 0.0), 3)),
+                    'period1_total_voucher_amount': p1.get('voucher_grand_total', 0.0),
+                    'period2_total_voucher_amount': p2.get('voucher_grand_total', 0.0),
                 },
                 'store_types_summary': comp_store_types,
                 'ledger_batches_summary': comp_batches,

@@ -9,6 +9,7 @@ import {
     ExternalLink, Sun, Moon, Printer
 } from 'lucide-react';
 import { TimesheetPrintModal } from './TimesheetPrintModal';
+import Can from '@/hooks/Can';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api';
 
@@ -1489,7 +1490,6 @@ export const TimeSheetModal: React.FC<TimeSheetModalProps> = ({
                 {workerName && (
                     <div className="px-4 py-2 bg-slate-50 dark:bg-surface-container-low border-b border-slate-100 dark:border-outline-variant flex items-center justify-between text-xs shrink-0">
                         <div className="flex items-center gap-2 min-w-0">
-                            <span className="w-2 h-2 rounded-full bg-emerald-500 shrink-0"></span>
                             <span className="font-bold text-slate-800 dark:text-on-surface truncate">{workerName}</span>
                             {employeeNo && (
                                 <span className="text-[10px] text-slate-500 dark:text-on-surface-variant font-mono shrink-0">
@@ -1502,15 +1502,7 @@ export const TimeSheetModal: React.FC<TimeSheetModalProps> = ({
                                 </span>
                             )}
                         </div>
-                        <button
-                            type="button"
-                            onClick={() => setIsPrintModalOpen(true)}
-                            className="text-[11px] font-bold text-primary hover:underline flex items-center gap-1 shrink-0 ml-2 cursor-pointer"
-                            title="Print Timesheet (A4)"
-                        >
-                            <Printer className="w-3.5 h-3.5" />
-                            <span>Print Timesheet</span>
-                        </button>
+
                     </div>
                 )}
 
@@ -1595,24 +1587,27 @@ export const TimeSheetModal: React.FC<TimeSheetModalProps> = ({
                         </button>
 
                         {/* Print button */}
-                        <button
-                            type="button"
-                            onClick={() => setIsPrintModalOpen(true)}
-                            aria-label="Print timesheet"
-                            title="Print Timesheet Report (A4)"
-                            className="w-8 h-8 flex-shrink-0 rounded-full
-                                            flex items-center justify-center
-                                            text-slate-400 hover:text-slate-700
-                                            hover:bg-slate-100
-                                            dark:hover:text-on-surface
-                                            dark:hover:bg-surface-container-high
-                                            transition-all duration-200
-                                            active:scale-90
-                                            focus-visible:outline-none focus-visible:ring-2
-                                            focus-visible:ring-slate-400"
-                        >
-                            <Printer className="w-4 h-4" />
-                        </button>
+                        <Can permission={'accounts.view_customuser'} >
+
+                            <button
+                                type="button"
+                                onClick={() => setIsPrintModalOpen(true)}
+                                aria-label="Print timesheet"
+                                title="Print Timesheet Report (A4)"
+                                className="w-8 h-8 flex-shrink-0 rounded-full
+                            flex items-center justify-center
+                            text-slate-400 hover:text-slate-700
+                            hover:bg-slate-100
+                            dark:hover:text-on-surface
+                            dark:hover:bg-surface-container-high
+                            transition-all duration-200
+                            active:scale-90
+                            focus-visible:outline-none focus-visible:ring-2
+                            focus-visible:ring-slate-400"
+                            >
+                                <Printer className="w-4 h-4" />
+                            </button>
+                        </Can>
 
                         {/* Close button */}
                         <button
@@ -2895,19 +2890,11 @@ export const TimeSheetModal: React.FC<TimeSheetModalProps> = ({
                                 <div className="flex items-center gap-2 min-w-0">
                                     <CalendarIcon className="w-4 h-4 text-amber-400 shrink-0" />
                                     <h3 className="font-bold text-xs text-white truncate">
-                                        {workerName ? `${workerName}'s Timesheet Calendar` : 'Select Date'}
+                                        {workerName ? `${workerName}'s Timesheet` : 'Select Date'}
                                     </h3>
                                 </div>
                                 <div className="flex items-center gap-2 shrink-0">
-                                    <button
-                                        type="button"
-                                        onClick={() => setIsPrintModalOpen(true)}
-                                        className="h-6 px-2.5 rounded bg-white/10 hover:bg-white/20 text-white font-bold text-[10px] flex items-center gap-1 transition cursor-pointer"
-                                        title="Print Timesheet Report (A4)"
-                                    >
-                                        <Printer className="w-3.5 h-3.5 text-amber-400" />
-                                        <span>Print A4</span>
-                                    </button>
+
                                     <button
                                         type="button"
                                         onClick={handleCloseCalendarPopup}

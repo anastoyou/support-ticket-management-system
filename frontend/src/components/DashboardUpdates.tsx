@@ -333,11 +333,7 @@ export default function DashboardUpdates() {
                                 </div>
                             </div>
 
-                            {/* Watch Tutorial Label */}
-                            <div className="absolute bottom-3 left-3 z-20 rounded-md bg-black/75 backdrop-blur-xs px-2.5 py-1.5 text-xs font-medium text-white flex items-center gap-1.5">
-                                {isCurrentVertical && <Smartphone size={13} className="text-blue-400" />}
-                                <span>{isCurrentVertical ? "Mobile Video (9:16)" : "Watch Tutorial"}</span>
-                            </div>
+
                         </button>
                     </div>
                 )}

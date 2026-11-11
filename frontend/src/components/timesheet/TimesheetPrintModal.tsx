@@ -9,6 +9,7 @@ import {
     type EmployeeWorkLogItem,
     printEmployeeTimesheetReport
 } from './employeeTimesheetPrintReport';
+import { DateRangePickerCard } from '../../pages/ticket/DateRangePickerCard';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api';
 
@@ -173,13 +174,13 @@ export const TimesheetPrintModal: React.FC<TimesheetPrintModalProps> = ({
     return (
         <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/60 backdrop-blur-xs p-3 sm:p-4">
             <div
-                className="bg-surface dark:bg-surface-container border border-outline-variant rounded-2xl shadow-2xl w-full max-w-4xl max-h-[92vh] flex flex-col overflow-hidden animate-in zoom-in-95 duration-150"
+                className="bg-surface dark:bg-surface-container border border-outline-variant rounded shadow-2xl w-full max-w-4xl max-h-[92vh] flex flex-col overflow-hidden animate-in zoom-in-95 duration-150"
                 onClick={(e) => e.stopPropagation()}
             >
                 {/* Header */}
                 <div className="px-5 py-3.5 bg-surface-container-high border-b border-outline-variant flex items-center justify-between shrink-0">
                     <div className="flex items-center gap-3 min-w-0">
-                        <div className="w-10 h-10 rounded-xl bg-primary/10 text-primary flex items-center justify-center font-bold text-sm shrink-0 border border-primary/20">
+                        <div className="w-10 h-10 rounded bg-primary/10 text-primary flex items-center justify-center font-bold text-sm shrink-0 border border-primary/20">
                             {workerName ? workerName.charAt(0).toUpperCase() : 'W'}
                         </div>
                         <div className="min-w-0">
@@ -188,7 +189,7 @@ export const TimesheetPrintModal: React.FC<TimesheetPrintModalProps> = ({
                                     {workerName}
                                 </h2>
                                 {employeeNo && (
-                                    <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-primary/10 text-primary border border-primary/20 shrink-0">
+                                    <span className="text-[11px] font-bold px-2 py-0.5 rounded bg-primary/10 text-primary border border-primary/20 shrink-0">
                                         ID: {employeeNo}
                                     </span>
                                 )}
@@ -205,7 +206,7 @@ export const TimesheetPrintModal: React.FC<TimesheetPrintModalProps> = ({
                             type="button"
                             onClick={handleTriggerPrint}
                             disabled={loading || isPrinting || logs.length === 0}
-                            className="h-9 px-3.5 rounded-xl font-bold text-xs bg-primary text-on-primary hover:bg-primary/90 flex items-center gap-1.5 transition shadow-sm cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                            className="h-9 px-3.5 rounded font-bold text-xs bg-primary text-on-primary hover:bg-primary/90 flex items-center gap-1.5 transition shadow-sm cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
                             title="Print Timesheet Report formatted for A4"
                         >
                             <Printer className="w-4 h-4" />
@@ -214,7 +215,7 @@ export const TimesheetPrintModal: React.FC<TimesheetPrintModalProps> = ({
                         <button
                             type="button"
                             onClick={onClose}
-                            className="w-8 h-8 rounded-full flex items-center justify-center text-on-surface-variant hover:text-on-surface hover:bg-surface-container transition"
+                            className="w-8 h-8 rounded flex items-center justify-center text-on-surface-variant hover:text-on-surface hover:bg-surface-container transition"
                             title="Close"
                         >
                             <X className="w-4 h-4" />
@@ -231,62 +232,56 @@ export const TimesheetPrintModal: React.FC<TimesheetPrintModalProps> = ({
                             <button
                                 type="button"
                                 onClick={() => handleSetPreset('thisMonth')}
-                                className="px-2.5 py-1 text-xs font-semibold rounded-lg border border-outline-variant hover:bg-surface-container text-on-surface transition"
+                                className="px-2.5 py-1 text-xs font-semibold rounded border border-outline-variant hover:bg-surface-container text-on-surface transition"
                             >
                                 This Month
                             </button>
                             <button
                                 type="button"
                                 onClick={() => handleSetPreset('lastMonth')}
-                                className="px-2.5 py-1 text-xs font-semibold rounded-lg border border-outline-variant hover:bg-surface-container text-on-surface transition"
+                                className="px-2.5 py-1 text-xs font-semibold rounded border border-outline-variant hover:bg-surface-container text-on-surface transition"
                             >
                                 Last Month
                             </button>
                             <button
                                 type="button"
                                 onClick={() => handleSetPreset('last30')}
-                                className="px-2.5 py-1 text-xs font-semibold rounded-lg border border-outline-variant hover:bg-surface-container text-on-surface transition"
+                                className="px-2.5 py-1 text-xs font-semibold rounded border border-outline-variant hover:bg-surface-container text-on-surface transition"
                             >
                                 Last 30 Days
                             </button>
                             <button
                                 type="button"
                                 onClick={() => handleSetPreset('thisWeek')}
-                                className="px-2.5 py-1 text-xs font-semibold rounded-lg border border-outline-variant hover:bg-surface-container text-on-surface transition"
+                                className="px-2.5 py-1 text-xs font-semibold rounded border border-outline-variant hover:bg-surface-container text-on-surface transition"
                             >
                                 This Week
                             </button>
                         </div>
 
-                        {/* From - To inputs */}
+                        {/* Date Range Picker Card & Refresh */}
                         <div className="flex items-center gap-2">
-                            <div className="flex items-center gap-1.5 bg-surface-container-low border border-outline-variant px-2.5 py-1 rounded-lg">
-                                <span className="text-[11px] font-bold text-on-surface-variant uppercase">From:</span>
-                                <input
-                                    type="date"
-                                    value={fromDate}
-                                    onChange={(e) => setFromDate(e.target.value)}
-                                    className="bg-transparent text-xs font-semibold text-on-surface outline-none cursor-pointer"
-                                />
-                            </div>
-
-                            <span className="text-on-surface-variant text-xs">&ndash;</span>
-
-                            <div className="flex items-center gap-1.5 bg-surface-container-low border border-outline-variant px-2.5 py-1 rounded-lg">
-                                <span className="text-[11px] font-bold text-on-surface-variant uppercase">To:</span>
-                                <input
-                                    type="date"
-                                    value={toDate}
-                                    onChange={(e) => setToDate(e.target.value)}
-                                    className="bg-transparent text-xs font-semibold text-on-surface outline-none cursor-pointer"
-                                />
-                            </div>
+                            <DateRangePickerCard
+                                fromDate={fromDate}
+                                toDate={toDate}
+                                hideDateType={true}
+                                onDateRangeChange={(from, to) => {
+                                    setFromDate(from);
+                                    setToDate(to);
+                                }}
+                                onReset={() => {
+                                    const now = new Date();
+                                    const firstDay = new Date(now.getFullYear(), now.getMonth(), 1);
+                                    setFromDate(toIsoDate(firstDay));
+                                    setToDate(toIsoDate(now));
+                                }}
+                            />
 
                             <button
                                 type="button"
                                 onClick={fetchLogs}
                                 disabled={loading}
-                                className="p-1.5 rounded-lg border border-outline-variant bg-surface-container-low hover:bg-surface-container text-on-surface transition cursor-pointer"
+                                className="p-2 rounded border border-outline-variant bg-surface-container-low hover:bg-surface-container text-on-surface transition cursor-pointer"
                                 title="Refresh Logs"
                             >
                                 <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
@@ -296,7 +291,7 @@ export const TimesheetPrintModal: React.FC<TimesheetPrintModalProps> = ({
 
                     {/* KPI Cards */}
                     <div className="grid grid-cols-2 sm:grid-cols-5 gap-2.5 pt-1">
-                        <div className="p-2.5 rounded-xl border border-sky-200 dark:border-sky-900/40 bg-sky-50 dark:bg-sky-950/20 text-center">
+                        <div className="p-2.5 rounded border border-sky-200 dark:border-sky-900/40 bg-sky-50 dark:bg-sky-950/20 text-center">
                             <div className="text-lg font-black text-sky-700 dark:text-sky-300">
                                 {summary.totalHours.toFixed(2)} hrs
                             </div>
@@ -305,7 +300,7 @@ export const TimesheetPrintModal: React.FC<TimesheetPrintModalProps> = ({
                             </div>
                         </div>
 
-                        <div className="p-2.5 rounded-xl border border-outline-variant bg-surface-container-low text-center">
+                        <div className="p-2.5 rounded border border-outline-variant bg-surface-container-low text-center">
                             <div className="text-lg font-black text-on-surface">
                                 {summary.daysWorked}
                             </div>
@@ -314,7 +309,7 @@ export const TimesheetPrintModal: React.FC<TimesheetPrintModalProps> = ({
                             </div>
                         </div>
 
-                        <div className="p-2.5 rounded-xl border border-outline-variant bg-surface-container-low text-center">
+                        <div className="p-2.5 rounded border border-outline-variant bg-surface-container-low text-center">
                             <div className="text-lg font-black text-on-surface">
                                 {summary.avgHours.toFixed(1)} hrs
                             </div>
@@ -323,7 +318,7 @@ export const TimesheetPrintModal: React.FC<TimesheetPrintModalProps> = ({
                             </div>
                         </div>
 
-                        <div className="p-2.5 rounded-xl border border-outline-variant bg-surface-container-low text-center">
+                        <div className="p-2.5 rounded border border-outline-variant bg-surface-container-low text-center">
                             <div className="text-lg font-black text-on-surface">
                                 {summary.ticketCount}
                             </div>
@@ -332,7 +327,7 @@ export const TimesheetPrintModal: React.FC<TimesheetPrintModalProps> = ({
                             </div>
                         </div>
 
-                        <div className="p-2.5 rounded-xl border border-emerald-200 dark:border-emerald-900/40 bg-emerald-50 dark:bg-emerald-950/20 text-center col-span-2 sm:col-span-1">
+                        <div className="p-2.5 rounded border border-emerald-200 dark:border-emerald-900/40 bg-emerald-50 dark:bg-emerald-950/20 text-center col-span-2 sm:col-span-1">
                             <div className="text-lg font-black text-emerald-700 dark:text-emerald-300">
                                 {summary.rateNum > 0
                                     ? `${summary.totalLabourAmount.toFixed(3)} KWD`
@@ -363,7 +358,7 @@ export const TimesheetPrintModal: React.FC<TimesheetPrintModalProps> = ({
                             <p className="text-xs">There are no work logs recorded for this worker between {fromDate} and {toDate}.</p>
                         </div>
                     ) : (
-                        <div className="border border-outline-variant rounded-xl overflow-hidden shadow-2xs">
+                        <div className="border border-outline-variant rounded overflow-hidden shadow-2xs">
                             <table className="w-full text-left text-xs border-collapse">
                                 <thead>
                                     <tr className="bg-surface-container border-b border-outline-variant text-[11px] font-bold text-on-surface-variant uppercase tracking-wider">
@@ -436,25 +431,7 @@ export const TimesheetPrintModal: React.FC<TimesheetPrintModalProps> = ({
                         Showing <strong className="text-on-surface">{logs.length}</strong> log(s) for {workerName}
                     </div>
 
-                    <div className="flex items-center gap-2">
-                        <button
-                            type="button"
-                            onClick={onClose}
-                            className="px-4 py-2 rounded-xl text-xs font-semibold text-on-surface hover:bg-surface-container transition cursor-pointer"
-                        >
-                            Close
-                        </button>
 
-                        <button
-                            type="button"
-                            onClick={handleTriggerPrint}
-                            disabled={loading || isPrinting || logs.length === 0}
-                            className="px-5 py-2 rounded-xl text-xs font-bold bg-primary text-on-primary hover:bg-primary/90 flex items-center gap-1.5 transition shadow-sm cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
-                        >
-                            <Printer className="w-4 h-4" />
-                            <span>{isPrinting ? 'Generating A4...' : 'Print A4 Report'}</span>
-                        </button>
-                    </div>
                 </div>
             </div>
         </div>

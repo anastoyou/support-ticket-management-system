@@ -1,3 +1,5 @@
+from django.core.exceptions import ValidationError
+from django import forms
 from django.contrib import admin
 from guardian.admin import GuardedModelAdmin
 from .models import (
@@ -6,24 +8,29 @@ from .models import (
     ApprovalInstance, AuditEvent, Payment
 )
 
+from unfold.admin import ModelAdmin
+
 
 @admin.register(ExpenseType)
-class ExpenseTypeAdmin(admin.ModelAdmin):
-    list_display = ('expense_type_id', 'department', 'expense_name', 'parent', 'required', 'approve_required')
+class ExpenseTypeAdmin(ModelAdmin):
+    list_display = ('expense_type_id', 'department',
+                    'expense_name', 'parent', 'required', 'approve_required')
     list_filter = ('department', 'required', 'parent')
     search_fields = ('expense_name',)
 
 
 @admin.register(EmployeeRate)
-class EmployeeRateAdmin(admin.ModelAdmin):
-    list_display = ('rate_id', 'worker', 'hourly_rate', 'effective_from', 'effective_to')
+class EmployeeRateAdmin(ModelAdmin):
+    list_display = ('rate_id', 'worker', 'hourly_rate',
+                    'effective_from', 'effective_to')
     list_filter = ('effective_from', 'worker')
     search_fields = ('worker__username',)
 
 
 @admin.register(WorkerClaim)
 class WorkerClaimAdmin(GuardedModelAdmin):
-    list_display = ('claim_id', 'worker', 'ticket', 'total_claimed_amount', 'status', 'claim_date', 'submitted_at', 'approved_by')
+    list_display = ('claim_id', 'worker', 'ticket', 'total_claimed_amount',
+                    'status', 'claim_date', 'submitted_at', 'approved_by')
     list_filter = ('status', 'claim_date', 'period_from', 'period_to')
     search_fields = ('ticket__work_order_no', 'worker__username', 'claim_id')
     raw_id_fields = ('worker', 'ticket', 'approved_by', 'submitted_by')
@@ -33,21 +40,20 @@ class WorkerClaimAdmin(GuardedModelAdmin):
 class ExpenseAdmin(GuardedModelAdmin):
     list_display = ('expense_id', 'ticket', 'worker', 'added_by', 'expense_type', 'amount',
                     'responsible_store', 'expense_date', 'approved', 'is_claimed', 'claim')
-    list_filter = ('approved', 'is_claimed', 'expense_date', 'expense_type', 'responsible_store')
+    list_filter = ('approved', 'is_claimed', 'expense_date',
+                   'expense_type', 'responsible_store')
     search_fields = ('ticket__work_order_no', 'worker__username', 'expense_id')
-    raw_id_fields = ('ticket', 'worker', 'added_by', 'claim', 'responsible_store')
+    raw_id_fields = ('ticket', 'worker', 'added_by',
+                     'claim', 'responsible_store')
 
 
 @admin.register(Reconciliation)
-class ReconciliationAdmin(admin.ModelAdmin):
+class ReconciliationAdmin(ModelAdmin):
     list_display = ('reconciliation_id', 'ticket', 'verified_by', 'labour_total',
                     'expense_total', 'material_total', 'grand_total',
                     'net_payable_amount', 'verified_date', 'completed')
     list_filter = ('completed', 'verified_date')
     search_fields = ('ticket__work_order_no', 'verified_by__username')
-
-
-from django import forms
 
 
 class LedgerBatchAdminForm(forms.ModelForm):
@@ -62,7 +68,8 @@ class LedgerBatchAdminForm(forms.ModelForm):
 
         if sub_departments:
             for subdept in sub_departments:
-                existing_batch = LedgerBatch.objects.exclude(pk=instance_pk).filter(sub_departments=subdept).first()
+                existing_batch = LedgerBatch.objects.exclude(
+                    pk=instance_pk).filter(sub_departments=subdept).first()
                 if existing_batch:
                     raise forms.ValidationError(
                         f"Sub-department '{subdept.sub_department_name}' is already assigned to Ledger Batch '{existing_batch.batch_name}'. A sub-department cannot belong to multiple Ledger Batches."
@@ -71,9 +78,10 @@ class LedgerBatchAdminForm(forms.ModelForm):
 
 
 @admin.register(LedgerBatch)
-class LedgerBatchAdmin(admin.ModelAdmin):
+class LedgerBatchAdmin(ModelAdmin):
     form = LedgerBatchAdminForm
-    list_display = ('batch_id', 'batch_name', 'display_sub_departments', 'active', 'created_at')
+    list_display = ('batch_id', 'batch_name',
+                    'display_sub_departments', 'active', 'created_at')
     list_filter = ('active', 'sub_departments', 'created_at')
     search_fields = ('batch_name', 'description')
     filter_horizontal = ('sub_departments',)
@@ -85,21 +93,20 @@ class LedgerBatchAdmin(admin.ModelAdmin):
 
 
 @admin.register(LedgerGroup)
-class LedgerGroupAdmin(admin.ModelAdmin):
-    list_display = ('ledger_group_id', 'group_name', 'total_amount', 'created_by', 'created_at')
+class LedgerGroupAdmin(ModelAdmin):
+    list_display = ('ledger_group_id', 'group_name',
+                    'total_amount', 'created_by', 'created_at')
     search_fields = ('group_name',)
 
 
 @admin.register(Ledger)
 class LedgerAdmin(GuardedModelAdmin):
-    list_display = ('ledger_id', 'ledger_group', 'total_amount', 'status', 'created_by', 'created_at')
+    list_display = ('ledger_id', 'ledger_group', 'total_amount',
+                    'status', 'created_by', 'created_at')
     list_filter = ('status', 'created_at')
-    search_fields = ('ledger_id', 'ledger_group__group_name', 'created_by__username')
+    search_fields = ('ledger_id', 'ledger_group__group_name',
+                     'created_by__username')
     filter_horizontal = ('bundles', 'expenses')
-
-
-from django import forms
-from django.core.exceptions import ValidationError
 
 
 class ApprovalStepForm(forms.ModelForm):
@@ -113,7 +120,8 @@ class ApprovalStepForm(forms.ModelForm):
         assigned_users = cleaned_data.get('assigned_users')
 
         has_role = bool(assigned_role)
-        has_users = bool(assigned_users and (assigned_users.exists() if hasattr(assigned_users, 'exists') else len(assigned_users) > 0))
+        has_users = bool(assigned_users and (assigned_users.exists() if hasattr(
+            assigned_users, 'exists') else len(assigned_users) > 0))
 
         if has_role and has_users:
             raise ValidationError(
@@ -135,16 +143,18 @@ class ApprovalStepInline(admin.TabularInline):
 
 
 @admin.register(ApprovalWorkflow)
-class ApprovalWorkflowAdmin(admin.ModelAdmin):
-    list_display = ('workflow_id', 'name', 'entity_type', 'is_active', 'created_at')
+class ApprovalWorkflowAdmin(ModelAdmin):
+    list_display = ('workflow_id', 'name', 'entity_type',
+                    'is_active', 'created_at')
     list_filter = ('entity_type', 'is_active')
     inlines = [ApprovalStepInline]
 
 
 @admin.register(ApprovalStep)
-class ApprovalStepAdmin(admin.ModelAdmin):
+class ApprovalStepAdmin(ModelAdmin):
     form = ApprovalStepForm
-    list_display = ('step_id', 'workflow', 'step_order', 'step_name', 'get_assignment_type', 'get_assigned_users', 'assigned_role', 'is_final_step')
+    list_display = ('step_id', 'workflow', 'step_order', 'step_name',
+                    'get_assignment_type', 'get_assigned_users', 'assigned_role', 'is_final_step')
     list_filter = ('workflow', 'assigned_role')
     filter_horizontal = ('assigned_users',)
     ordering = ('workflow', 'step_order')
@@ -164,15 +174,18 @@ class ApprovalStepAdmin(admin.ModelAdmin):
 
 
 @admin.register(ApprovalInstance)
-class ApprovalInstanceAdmin(admin.ModelAdmin):
-    list_display = ('instance_id', 'step', 'claim', 'ledger', 'status', 'action_by', 'actioned_at')
+class ApprovalInstanceAdmin(ModelAdmin):
+    list_display = ('instance_id', 'step', 'claim', 'ledger',
+                    'status', 'action_by', 'actioned_at')
     list_filter = ('status', 'created_at')
-    search_fields = ('claim__claim_id', 'ledger__ledger_id', 'action_by__username')
+    search_fields = ('claim__claim_id', 'ledger__ledger_id',
+                     'action_by__username')
 
 
 @admin.register(AuditEvent)
-class AuditEventAdmin(admin.ModelAdmin):
-    list_display = ('event_id', 'entity_name', 'entity_id', 'action', 'actor', 'timestamp', 'ip_address')
+class AuditEventAdmin(ModelAdmin):
+    list_display = ('event_id', 'entity_name', 'entity_id',
+                    'action', 'actor', 'timestamp', 'ip_address')
     list_filter = ('entity_name', 'action', 'timestamp')
     search_fields = ('entity_id', 'actor__username', 'action')
     readonly_fields = [f.name for f in AuditEvent._meta.fields]
@@ -188,7 +201,9 @@ class AuditEventAdmin(admin.ModelAdmin):
 
 
 @admin.register(Payment)
-class PaymentAdmin(admin.ModelAdmin):
-    list_display = ('payment_id', 'amount_paid', 'payment_method', 'transaction_reference', 'claim', 'ledger', 'expense', 'paid_by', 'paid_at')
+class PaymentAdmin(ModelAdmin):
+    list_display = ('payment_id', 'amount_paid', 'payment_method',
+                    'transaction_reference', 'claim', 'ledger', 'expense', 'paid_by', 'paid_at')
     list_filter = ('payment_method', 'paid_at')
-    search_fields = ('transaction_reference', 'claim__claim_id', 'ledger__ledger_id', 'paid_by__username')
+    search_fields = ('transaction_reference', 'claim__claim_id',
+                     'ledger__ledger_id', 'paid_by__username')

@@ -3,22 +3,24 @@ from django.urls import path
 from django.contrib import admin
 from .models import Priority, Status, WorkNature, NatureWorker, Ticket, Allocation, WorkLog, TicketHistory, StatusChangeRule
 
+from unfold.admin import ModelAdmin
+
 
 @admin.register(Priority)
-class PriorityAdmin(admin.ModelAdmin):
+class PriorityAdmin(ModelAdmin):
     list_display = ('priority_id', 'department', 'priority_name', 'level')
     list_filter = ('department',)
     search_fields = ('priority_name',)
 
 
 @admin.register(Status)
-class StatusAdmin(admin.ModelAdmin):
+class StatusAdmin(ModelAdmin):
     list_display = ('order', 'status_name')
     search_fields = ('status_name',)
 
 
 @admin.register(WorkNature)
-class WorkNatureAdmin(admin.ModelAdmin):
+class WorkNatureAdmin(ModelAdmin):
     list_display = ('nature_id', 'nature_name', 'department',
                     'sub_department', 'default_priority', 'media_required', 'active')
     list_filter = ('media_required', 'active', 'sub_department')
@@ -30,14 +32,14 @@ class WorkNatureAdmin(admin.ModelAdmin):
 
 
 @admin.register(NatureWorker)
-class NatureWorkerAdmin(admin.ModelAdmin):
+class NatureWorkerAdmin(ModelAdmin):
     list_display = ('nature_worker_id', 'nature', 'worker')
     list_filter = ('nature', 'worker')
     search_fields = ('nature__nature_name', 'worker__username')
 
 
 @admin.register(Ticket)
-class TicketAdmin(admin.ModelAdmin):
+class TicketAdmin(ModelAdmin):
     list_display = ('ticket_id', 'work_order_no', 'store', 'department',
                     'nature', 'priority', 'status', 'created_by', 'created_date')
     list_filter = ('priority', 'status', 'store', 'department', 'created_date')
@@ -49,7 +51,7 @@ class TicketAdmin(admin.ModelAdmin):
 
 
 @admin.register(Allocation)
-class AllocationAdmin(admin.ModelAdmin):
+class AllocationAdmin(ModelAdmin):
     list_display = ('allocation_id', 'ticket', 'worker',
                     'assigned_by', 'assigned_date', 'planned_hours')
     list_filter = ('assigned_date', 'worker')
@@ -58,7 +60,7 @@ class AllocationAdmin(admin.ModelAdmin):
 
 
 @admin.register(WorkLog)
-class WorkLogAdmin(admin.ModelAdmin):
+class WorkLogAdmin(ModelAdmin):
     list_display = ('worklog_id', 'ticket', 'worker', 'work_date',
                     'hours', 'hourly_rate', 'labour_amount')
     list_filter = ('work_date', 'worker')
@@ -66,7 +68,7 @@ class WorkLogAdmin(admin.ModelAdmin):
 
 
 @admin.register(TicketHistory)
-class TicketHistoryAdmin(admin.ModelAdmin):
+class TicketHistoryAdmin(ModelAdmin):
     list_display = ('history_id', 'ticket', 'status',
                     'changed_by', 'changed_date', 'remarks')
     list_filter = ('changed_date', 'status')
@@ -74,7 +76,7 @@ class TicketHistoryAdmin(admin.ModelAdmin):
 
 
 @admin.register(StatusChangeRule)
-class StatusChangeRuleAdmin(admin.ModelAdmin):
+class StatusChangeRuleAdmin(ModelAdmin):
     list_display = ("from_status", "to_status", "mode", "type", "path", "message", "is_active",
                     )
 

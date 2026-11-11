@@ -2,16 +2,18 @@ from .models import DashboardUpdate
 from django.contrib import admin
 from .models import MediaCategory, Media, Notification, PushSubscription
 
+from unfold.admin import ModelAdmin
+
 
 @admin.register(MediaCategory)
-class MediaCategoryAdmin(admin.ModelAdmin):
+class MediaCategoryAdmin(ModelAdmin):
     list_display = ('category_id', 'department', 'category_name')
     list_filter = ('department',)
     search_fields = ('category_name',)
 
 
 @admin.register(Media)
-class MediaAdmin(admin.ModelAdmin):
+class MediaAdmin(ModelAdmin):
     list_display = ('media_id', 'file_name', 'ticket',
                     'uploaded_by', 'category', 'uploaded_date')
     list_filter = ('category', 'uploaded_date')
@@ -20,7 +22,7 @@ class MediaAdmin(admin.ModelAdmin):
 
 
 @admin.register(Notification)
-class NotificationAdmin(admin.ModelAdmin):
+class NotificationAdmin(ModelAdmin):
     list_display = ('notification_id', 'user', 'ticket',
                     'notification_type', 'title', 'is_read', 'created_date')
     list_filter = ('notification_type', 'is_read', 'created_date')
@@ -29,7 +31,7 @@ class NotificationAdmin(admin.ModelAdmin):
 
 
 @admin.register(DashboardUpdate)
-class DashboardUpdateAdmin(admin.ModelAdmin):
+class DashboardUpdateAdmin(ModelAdmin):
     list_display = (
         'title',
         'is_vertical',

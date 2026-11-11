@@ -44,24 +44,36 @@ ALLOWED_HOSTS = [h.strip() for h in os.getenv(
 # Application definition
 
 INSTALLED_APPS = [
-    'daphne',
-    'django.contrib.admin',
-    'django.contrib.auth',
-    'django.contrib.contenttypes',
-    'django.contrib.sessions',
-    'django.contrib.messages',
-    'django.contrib.staticfiles',
-    'corsheaders',
-    'rest_framework',
-    'rest_framework.authtoken',
-    'channels',
-    'apps.accounts',
-    'apps.common',
-    'apps.stores',
-    'apps.maintenance',
-    'apps.finance',
-    'apps.reports',
-    'guardian',
+    # Django Unfold (must be before django.contrib.admin)
+    "unfold",
+    "unfold.contrib.filters",
+    "unfold.contrib.forms",
+
+    # Django Channels / ASGI
+    "daphne",
+
+    # Django core apps
+    "django.contrib.admin",
+    "django.contrib.auth",
+    "django.contrib.contenttypes",
+    "django.contrib.sessions",
+    "django.contrib.messages",
+    "django.contrib.staticfiles",
+
+    # Third-party apps
+    "corsheaders",
+    "rest_framework",
+    "rest_framework.authtoken",
+    "channels",
+    "guardian",
+
+    # Local apps
+    "apps.common",
+    "apps.accounts",
+    "apps.stores",
+    "apps.maintenance",
+    "apps.finance",
+    "apps.reports",
 ]
 
 MIDDLEWARE = [

@@ -7,9 +7,11 @@ from .models import Role, CustomUser, PasswordResetOTP, WhatsAppLog
 from django.utils.html import format_html
 from django.utils.safestring import mark_safe
 
+from unfold.admin import ModelAdmin
+
 
 @admin.register(Role)
-class RoleAdmin(admin.ModelAdmin):
+class RoleAdmin(ModelAdmin):
     list_display = ('role_id', 'role_name')
     search_fields = ('role_name',)
 
@@ -21,7 +23,8 @@ class CustomUserAdmin(UserAdmin):
                     'phone', 'whatsapp_number', 'role', 'profile_updated_at', 'active', 'is_staff')
     list_filter = ('active', 'is_staff', 'is_superuser', 'role')
     search_fields = ('username', 'email', 'employee_no', 'full_name', 'phone')
-    readonly_fields = ('profile_updated_at', 'profile_image_preview', 'profile_image_detail')
+    readonly_fields = ('profile_updated_at',
+                       'profile_image_preview', 'profile_image_detail')
 
     def profile_image_preview(self, obj):
         if obj.profile_image:
@@ -58,11 +61,12 @@ class CustomUserAdmin(UserAdmin):
             'fields': ('employee_no', 'full_name', 'phone', 'whatsapp_number', 'profile_image', 'role', 'accessible_stores', 'sub_departments', 'profile_updated_at', 'active')
         }),
     )
-    filter_horizontal = ('groups', 'user_permissions', 'accessible_stores', 'sub_departments')
+    filter_horizontal = ('groups', 'user_permissions',
+                         'accessible_stores', 'sub_departments')
 
 
 @admin.register(PasswordResetOTP)
-class PasswordResetOTPAdmin(admin.ModelAdmin):
+class PasswordResetOTPAdmin(ModelAdmin):
     list_display = ('user', 'otp', 'is_used', 'created_at')
     list_filter = ('is_used', 'created_at')
     search_fields = ('user__username', 'user__employee_no', 'otp')
@@ -70,7 +74,7 @@ class PasswordResetOTPAdmin(admin.ModelAdmin):
 
 
 @admin.register(WhatsAppLog)
-class WhatsAppLogAdmin(admin.ModelAdmin):
+class WhatsAppLogAdmin(ModelAdmin):
     list_display = ('whatsapp_number', 'user',
                     'message_type', 'status', 'created_at')
     list_filter = ('status', 'message_type', 'created_at')
@@ -80,7 +84,7 @@ class WhatsAppLogAdmin(admin.ModelAdmin):
 
 
 @admin.register(Permission)
-class PermissionAdmin(admin.ModelAdmin):
+class PermissionAdmin(ModelAdmin):
     list_display = ("id", "name", "codename", "content_type")
     list_filter = ("content_type",)
     search_fields = ("name", "codename")
@@ -92,7 +96,7 @@ class PermissionAdmin(admin.ModelAdmin):
 
 
 # @admin.register(Group)
-# class GroupAdmin(admin.ModelAdmin):
+# class GroupAdmin(ModelAdmin):
 #     list_display = ("id", "name")
 #     search_fields = ("name",)
 #     ordering = ("name",)

@@ -425,20 +425,13 @@ export const WorkforceView: React.FC = () => {
                 <button
                   type="button"
                   onClick={() => handleOpenTimesheet(item)}
-                  className="px-2.5 py-1 text-xs font-bold rounded-lg border border-amber-300 dark:border-amber-600/60 bg-amber-50 dark:bg-amber-950/40 text-amber-800 dark:text-amber-300 hover:bg-amber-100 dark:hover:bg-amber-900/50 flex items-center gap-1 cursor-pointer transition shadow-2xs"
+                  className="px-2.5 py-1 text-xs font-bold rounded border border-amber-300 dark:border-amber-600/60 bg-amber-50 dark:bg-amber-950/40 text-amber-800 dark:text-amber-300 hover:bg-amber-100 dark:hover:bg-amber-900/50 flex items-center gap-1 cursor-pointer transition shadow-2xs"
                   title="Timesheet Calendar & Work Logs"
                 >
                   <Calendar className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
-                  <span>Calendar</span>
+                  <span>Logs</span>
                 </button>
-                <button
-                  type="button"
-                  onClick={() => handleOpenPrintTimesheet(item)}
-                  className="p-1.5 rounded-lg border border-outline-variant bg-surface-container-low hover:bg-surface-container text-on-surface hover:text-primary flex items-center justify-center cursor-pointer transition shadow-2xs"
-                  title="Print Timesheet (A4)"
-                >
-                  <Printer className="w-3.5 h-3.5" />
-                </button>
+
               </div>
             );
           }

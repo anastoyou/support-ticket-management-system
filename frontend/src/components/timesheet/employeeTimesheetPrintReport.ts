@@ -328,14 +328,16 @@ export function buildEmployeeTimesheetPrintHtml(data: EmployeePrintDetails): str
             font-size: 10.5px;
         }
         table.timesheet-table th {
-            background-color: #1e293b;
-            color: #ffffff;
-            font-weight: 700;
+            background-color: #f8fafc;
+            color: #0f172a;
+            font-weight: 800;
             font-size: 9.5px;
             text-transform: uppercase;
             letter-spacing: 0.4px;
-            padding: 6px 6px;
-            border: 1px solid #1e293b;
+            padding: 7px 6px;
+            border: 1px solid #cbd5e1;
+            border-top: 1.5px solid #0f172a;
+            border-bottom: 1.5px solid #0f172a;
             text-align: left;
         }
         table.timesheet-table td {
@@ -355,12 +357,14 @@ export function buildEmployeeTimesheetPrintHtml(data: EmployeePrintDetails): str
             border-bottom: 1.5px solid #cbd5e1;
         }
         table.timesheet-table tfoot td {
-            background-color: #0f172a;
-            color: #ffffff;
+            background-color: #f8fafc;
+            color: #0f172a;
             font-weight: 800;
-            padding: 7px 8px;
+            padding: 8px 8px;
             font-size: 11px;
-            border: 1px solid #0f172a;
+            border: 1px solid #cbd5e1;
+            border-top: 2px solid #0f172a;
+            border-bottom: 2px solid #0f172a;
         }
 
         .badge-ticket {
@@ -384,36 +388,7 @@ export function buildEmployeeTimesheetPrintHtml(data: EmployeePrintDetails): str
             display: inline-block;
         }
 
-        .signatures-section {
-            page-break-inside: avoid;
-            break-inside: avoid;
-            margin-top: 24px;
-            padding-top: 14px;
-            border-top: 1.5px solid #cbd5e1;
-        }
-        .sig-grid {
-            display: grid;
-            grid-template-columns: 1fr 1fr 1fr;
-            gap: 20px;
-        }
-        .sig-box {
-            text-align: left;
-        }
-        .sig-role {
-            font-size: 10px;
-            font-weight: 800;
-            text-transform: uppercase;
-            color: #1e293b;
-            margin-bottom: 30px;
-        }
-        .sig-line {
-            border-bottom: 1px solid #94a3b8;
-            margin-bottom: 4px;
-        }
-        .sig-caption {
-            font-size: 9px;
-            color: #64748b;
-        }
+
 
         .footer-note {
             page-break-inside: avoid;
@@ -527,42 +502,23 @@ export function buildEmployeeTimesheetPrintHtml(data: EmployeePrintDetails): str
         </tbody>
         <tfoot>
             <tr>
-                <td colspan="3" style="text-align: right; text-transform: uppercase;">
-                    Total Summary (${logs.length} entries across ${totalWorkingDays} days):
+                <td colspan="3" style="text-align: right; font-weight: 800; color: #0f172a;">
+                    Summary (${logs.length} entry ${totalWorkingDays} days):
                 </td>
-                <td style="text-align: right; padding-right: 10px; font-size: 11.5px;">
+                <td style="text-align: right; padding-right: 10px; font-size: 11.5px; font-weight: 900; color: #0284c7;">
                     ${totalHours.toFixed(2)} hrs
                 </td>
-                <td colspan="3" style="text-align: right; font-size: 10px; font-weight: normal;">
-                    ${rateNum > 0 ? `Total Labour Amount: <strong>${estimatedLabourCost.toFixed(3)} KWD</strong>` : ''}
+                <td colspan="3" style="text-align: right; font-size: 10px; font-weight: normal; color: #334155;">
+                    ${rateNum > 0 ? `Total Labour Amount: <strong style="color: #0f172a;">${estimatedLabourCost.toFixed(3)} KWD</strong>` : ''}
                 </td>
             </tr>
         </tfoot>
     </table>
 
-    <!-- Official Signatures -->
-    <div class="signatures-section">
-        <div class="sig-grid">
-            <div class="sig-box">
-                <div class="sig-role">Employee Acknowledgement</div>
-                <div class="sig-line"></div>
-                <div class="sig-caption">${escapeHtml(workerName)} &bull; Signature &amp; Date</div>
-            </div>
-            <div class="sig-box">
-                <div class="sig-role">Supervisor / In-Charge Verification</div>
-                <div class="sig-line"></div>
-                <div class="sig-caption">Maintenance Supervisor &bull; Signature &amp; Date</div>
-            </div>
-            <div class="sig-box">
-                <div class="sig-role">Operations / HR Approval</div>
-                <div class="sig-line"></div>
-                <div class="sig-caption">Management / Office &bull; Signature &amp; Date</div>
-            </div>
-        </div>
-    </div>
+
 
     <div class="footer-note">
-        System-generated A4 document &bull; Maintenance Tracker &bull; Page printed for official records.
+        Maintenance Tracker &bull; Page printed for official records.
     </div>
 </body>
 </html>`;

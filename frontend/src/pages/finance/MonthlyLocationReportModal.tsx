@@ -15,14 +15,22 @@ interface StoreTypeSummaryItem {
   store_type_label: string;
   stores_count: number;
   total_amount: number;
+  voucher_amount?: number;
+  labour_amount?: number;
   expense_count: number;
+  allocated_hours?: number;
+  actual_hours?: number;
 }
 
 interface LedgerBatchSummaryItem {
   batch_name: string;
   total_amount: number;
+  voucher_amount?: number;
+  labour_amount?: number;
   locations_count: number;
   expense_count: number;
+  allocated_hours?: number;
+  actual_hours?: number;
   categories: Record<string, number>;
   locations: {
     store_id: string;
@@ -30,7 +38,11 @@ interface LedgerBatchSummaryItem {
     store_type?: string;
     categories: Record<string, number>;
     total_amount: number;
+    voucher_amount?: number;
+    labour_amount?: number;
     expense_count: number;
+    allocated_hours?: number;
+    actual_hours?: number;
   }[];
 }
 
@@ -44,14 +56,22 @@ interface LocationReportData {
     store_type?: string;
     categories: Record<string, number>;
     total_amount: number;
+    voucher_amount?: number;
+    labour_amount?: number;
     expense_count: number;
+    allocated_hours?: number;
+    actual_hours?: number;
   }[];
   store_types_summary?: StoreTypeSummaryItem[];
   ledger_batches_summary?: LedgerBatchSummaryItem[];
   available_batches?: { batch_id: number; batch_name: string }[];
   categories: string[];
   category_totals: Record<string, number>;
+  voucher_grand_total?: number;
+  labour_grand_total?: number;
   grand_total: number;
+  total_allocated_hours?: number;
+  total_actual_hours?: number;
   total_locations_count: number;
   total_expenses_count: number;
 }
@@ -72,6 +92,14 @@ interface ComparisonLocationItem {
   period2_amount: number;
   variance: number;
   percent_change: number;
+  period1_allocated_hours?: number;
+  period2_allocated_hours?: number;
+  hours_variance?: number;
+  period1_labour_amount?: number;
+  period2_labour_amount?: number;
+  labour_variance?: number;
+  period1_voucher_amount?: number;
+  period2_voucher_amount?: number;
   categories: ComparisonCategoryItem[];
 }
 
@@ -83,6 +111,12 @@ interface ComparisonLedgerBatchItem {
   percent_change: number;
   period1_locations_count: number;
   period2_locations_count: number;
+  period1_allocated_hours?: number;
+  period2_allocated_hours?: number;
+  hours_variance?: number;
+  period1_labour_amount?: number;
+  period2_labour_amount?: number;
+  labour_variance?: number;
   locations: ComparisonLocationItem[];
 }
 
@@ -110,6 +144,14 @@ interface ComparisonReportData {
     period2_grand_total: number;
     variance: number;
     percent_change: number;
+    period1_total_allocated_hours?: number;
+    period2_total_allocated_hours?: number;
+    hours_variance?: number;
+    period1_total_labour_amount?: number;
+    period2_total_labour_amount?: number;
+    labour_variance?: number;
+    period1_total_voucher_amount?: number;
+    period2_total_voucher_amount?: number;
   };
   store_types_summary?: any[];
   ledger_batches_summary?: ComparisonLedgerBatchItem[];
@@ -145,6 +187,29 @@ const STORE_TYPE_LABELS: Record<string, string> = {
   ROASTERY: 'Roastery',
   'FINE DINE': 'Fine Dine',
 };
+
+/**
+ * Formats allocated work hours into rounded hours and minutes:
+ * - Whole hours: "9", "51", "29", "0"
+ * - Half hours: "8:30", "28:30", "23:30"
+ * - Rounds fractional values (e.g. .38 -> :30, .75 -> nearest hour)
+ */
+export function formatWorkHours(val?: number | string | null): string {
+  if (val === undefined || val === null || val === '') return '0';
+  const num = typeof val === 'number' ? val : parseFloat(val);
+  if (isNaN(num) || num === 0) return '0';
+
+  const isNeg = num < 0;
+  const abs = Math.abs(num);
+
+  // Round to nearest 0.5 (half hour)
+  const rounded = Math.round(abs * 2) / 2;
+  const hours = Math.floor(rounded);
+  const isHalf = (rounded % 1) !== 0;
+
+  const res = isHalf ? `${hours}:30` : `${hours}`;
+  return isNeg ? `-${res}` : res;
+}
 
 interface MonthlyLocationReportModalProps {
   isOpen: boolean;
@@ -336,6 +401,8 @@ export const MonthlyLocationReportModal: React.FC<MonthlyLocationReportModalProp
     }
     return Object.entries(groups).map(([typeLabel, locs]) => {
       const subtotal = locs.reduce((sum, l) => sum + (l.total_amount || 0), 0);
+      const totalLabour = locs.reduce((sum, l) => sum + (l.labour_amount || 0), 0);
+      const totalHours = locs.reduce((sum, l) => sum + (l.allocated_hours || 0), 0);
       const categorySubtotals: Record<string, number> = {};
       for (const l of locs) {
         for (const [cat, amt] of Object.entries(l.categories || {})) {
@@ -346,6 +413,8 @@ export const MonthlyLocationReportModal: React.FC<MonthlyLocationReportModalProp
         typeLabel,
         locations: locs,
         subtotal,
+        totalLabour,
+        totalHours,
         categorySubtotals,
       };
     }).sort((a, b) => b.subtotal - a.subtotal);
@@ -363,6 +432,10 @@ export const MonthlyLocationReportModal: React.FC<MonthlyLocationReportModalProp
     return Object.entries(groups).map(([typeLabel, locs]) => {
       const p1Subtotal = locs.reduce((sum, l) => sum + (l.period1_amount || 0), 0);
       const p2Subtotal = locs.reduce((sum, l) => sum + (l.period2_amount || 0), 0);
+      const p1TotalLabour = locs.reduce((sum, l) => sum + (l.period1_labour_amount || 0), 0);
+      const p2TotalLabour = locs.reduce((sum, l) => sum + (l.period2_labour_amount || 0), 0);
+      const p1TotalHours = locs.reduce((sum, l) => sum + (l.period1_allocated_hours || 0), 0);
+      const p2TotalHours = locs.reduce((sum, l) => sum + (l.period2_allocated_hours || 0), 0);
       const variance = p2Subtotal - p1Subtotal;
       const pctChange = p1Subtotal > 0 ? (variance / p1Subtotal) * 100 : (p2Subtotal > 0 ? 100 : 0);
       return {
@@ -370,6 +443,12 @@ export const MonthlyLocationReportModal: React.FC<MonthlyLocationReportModalProp
         locations: locs,
         p1Subtotal,
         p2Subtotal,
+        p1TotalLabour,
+        p2TotalLabour,
+        labourVariance: p2TotalLabour - p1TotalLabour,
+        p1TotalHours,
+        p2TotalHours,
+        hoursVariance: p2TotalHours - p1TotalHours,
         variance,
         pctChange,
       };
@@ -405,6 +484,8 @@ export const MonthlyLocationReportModal: React.FC<MonthlyLocationReportModalProp
         locs = locs.filter(l => l.location_name.toLowerCase().includes(term) || l.store_id.toLowerCase().includes(term));
       }
       const subtotal = locs.reduce((sum, l) => sum + (l.total_amount || 0), 0);
+      const totalLabour = locs.reduce((sum, l) => sum + (l.labour_amount || 0), 0);
+      const totalHours = locs.reduce((sum, l) => sum + (l.allocated_hours || 0), 0);
       const categorySubtotals: Record<string, number> = {};
       for (const l of locs) {
         for (const [c, amt] of Object.entries(l.categories || {})) {
@@ -415,6 +496,8 @@ export const MonthlyLocationReportModal: React.FC<MonthlyLocationReportModalProp
         ...batch,
         locations: locs,
         subtotal,
+        totalLabour,
+        totalHours,
         categorySubtotals,
       };
     }).filter(batch => batch.locations.length > 0);
@@ -432,6 +515,10 @@ export const MonthlyLocationReportModal: React.FC<MonthlyLocationReportModalProp
       }
       const p1Subtotal = locs.reduce((sum, l) => sum + (l.period1_amount || 0), 0);
       const p2Subtotal = locs.reduce((sum, l) => sum + (l.period2_amount || 0), 0);
+      const p1TotalLabour = locs.reduce((sum, l) => sum + (l.period1_labour_amount || 0), 0);
+      const p2TotalLabour = locs.reduce((sum, l) => sum + (l.period2_labour_amount || 0), 0);
+      const p1TotalHours = locs.reduce((sum, l) => sum + (l.period1_allocated_hours || 0), 0);
+      const p2TotalHours = locs.reduce((sum, l) => sum + (l.period2_allocated_hours || 0), 0);
       const variance = p2Subtotal - p1Subtotal;
       const pctChange = p1Subtotal > 0 ? (variance / p1Subtotal) * 100 : (p2Subtotal > 0 ? 100 : 0);
 
@@ -440,6 +527,12 @@ export const MonthlyLocationReportModal: React.FC<MonthlyLocationReportModalProp
         locations: locs,
         p1Subtotal,
         p2Subtotal,
+        p1TotalLabour,
+        p2TotalLabour,
+        labourVariance: p2TotalLabour - p1TotalLabour,
+        p1TotalHours,
+        p2TotalHours,
+        hoursVariance: p2TotalHours - p1TotalHours,
         variance,
         pctChange,
       };
@@ -475,6 +568,7 @@ export const MonthlyLocationReportModal: React.FC<MonthlyLocationReportModalProp
 
     const slColWidth = isVerticalOrientation ? '26px' : '36px';
     const locColMin = isVerticalOrientation ? '120px' : '160px';
+    const hoursColWidth = isVerticalOrientation ? '55px' : '75px';
     const totalColWidth = isVerticalOrientation ? '65px' : '90px';
     const shareColWidth = isVerticalOrientation ? '45px' : '65px';
 
@@ -487,6 +581,8 @@ export const MonthlyLocationReportModal: React.FC<MonthlyLocationReportModalProp
         <tr>
           <th style="width: ${slColWidth}; text-align: center;">#</th>
           <th style="text-align: left; min-width: ${locColMin};">Location / Store</th>
+          <th style="text-align: right; width: ${hoursColWidth}; color: #0284c7;">Working Hours</th>
+          <th style="text-align: right; width: ${totalColWidth}; color: #059669;">Labour (KWD)</th>
           ${singleData.categories.map(c => `<th style="text-align: right;">${c}</th>`).join('')}
           <th style="text-align: right; width: ${totalColWidth};">Total (KWD)</th>
           <th style="text-align: right; width: ${shareColWidth};">% Share</th>
@@ -496,8 +592,8 @@ export const MonthlyLocationReportModal: React.FC<MonthlyLocationReportModalProp
       if (groupingMode === 'batch') {
         tableBodyHtml = filteredSingleBatches.map(batch => `
           <tr style="background: #eef2ff; font-weight: 700; color: #3730a3;">
-            <td colspan="${singleData.categories.length + 4}" style="padding: 6px 10px; font-size: ${isVerticalOrientation ? '9px' : '10px'};">
-              🔹 LEDGER BATCH: ${batch.batch_name} — ${batch.locations.length} Stores | Subtotal: ${batch.subtotal.toFixed(3)} KWD
+            <td colspan="${singleData.categories.length + 6}" style="padding: 6px 10px; font-size: ${isVerticalOrientation ? '9px' : '10px'};">
+              🔹 LEDGER BATCH: ${batch.batch_name} — ${batch.locations.length} Stores | ${formatWorkHours(batch.totalHours)} hrs | Labour: ${batch.totalLabour.toFixed(3)} KWD | Subtotal: ${batch.subtotal.toFixed(3)} KWD
             </td>
           </tr>
           ${batch.locations.map((loc, idx) => {
@@ -508,6 +604,8 @@ export const MonthlyLocationReportModal: React.FC<MonthlyLocationReportModalProp
               <tr>
                 <td style="text-align: center; color: #6b7280;">${idx + 1}</td>
                 <td style="font-weight: 600; color: #111827;">${loc.location_name}</td>
+                <td style="text-align: right; font-weight: 600; color: #0284c7;">${formatWorkHours(loc.allocated_hours)}</td>
+                <td style="text-align: right; font-weight: 600; color: #059669;">${Number(loc.labour_amount || 0).toFixed(3)}</td>
                 ${singleData.categories.map(c => `<td style="text-align: right;">${loc.categories[c] ? Number(loc.categories[c]).toFixed(3) : '-'}</td>`).join('')}
                 <td style="text-align: right; font-weight: 700; color: #111827;">${Number(loc.total_amount).toFixed(3)}</td>
                 <td style="text-align: right; color: #4b5563;">${share}%</td>
@@ -516,6 +614,8 @@ export const MonthlyLocationReportModal: React.FC<MonthlyLocationReportModalProp
           }).join('')}
           <tr style="background: #f9fafb; font-weight: 700; border-top: 1px solid #e5e7eb; border-bottom: 1px solid #e5e7eb;">
             <td colspan="2" style="text-align: right; padding: 4px 6px; font-size: ${isVerticalOrientation ? '8px' : '9.5px'}; color: #374151;">Subtotal (${batch.batch_name}):</td>
+            <td style="text-align: right; font-weight: 700; color: #0284c7; font-size: ${isVerticalOrientation ? '8px' : '9.5px'};">${formatWorkHours(batch.totalHours)}</td>
+            <td style="text-align: right; font-weight: 700; color: #059669; font-size: ${isVerticalOrientation ? '8px' : '9.5px'};">${batch.totalLabour.toFixed(3)}</td>
             ${singleData.categories.map(c => `<td style="text-align: right; font-size: ${isVerticalOrientation ? '8px' : '9.5px'};">${batch.categorySubtotals[c] ? batch.categorySubtotals[c].toFixed(3) : '-'}</td>`).join('')}
             <td style="text-align: right; font-weight: 700; color: #4f46e5; font-size: ${isVerticalOrientation ? '8px' : '9.5px'};">${batch.subtotal.toFixed(3)}</td>
             <td style="text-align: right; font-size: ${isVerticalOrientation ? '8px' : '9.5px'};">${singleData.grand_total > 0 ? ((batch.subtotal / singleData.grand_total) * 100).toFixed(1) : '0.0'}%</td>
@@ -524,8 +624,8 @@ export const MonthlyLocationReportModal: React.FC<MonthlyLocationReportModalProp
       } else if (groupingMode === 'store_type') {
         tableBodyHtml = singleLocationsByStoreType.map(typeGroup => `
           <tr style="background: #eef2ff; font-weight: 700; color: #3730a3;">
-            <td colspan="${singleData.categories.length + 4}" style="padding: 6px 10px; font-size: ${isVerticalOrientation ? '9px' : '10px'};">
-              🔹 STORE TYPE: ${typeGroup.typeLabel} — ${typeGroup.locations.length} Stores | Subtotal: ${typeGroup.subtotal.toFixed(3)} KWD
+            <td colspan="${singleData.categories.length + 6}" style="padding: 6px 10px; font-size: ${isVerticalOrientation ? '9px' : '10px'};">
+              🔹 STORE TYPE: ${typeGroup.typeLabel} — ${typeGroup.locations.length} Stores | ${formatWorkHours(typeGroup.totalHours)} hrs | Labour: ${typeGroup.totalLabour.toFixed(3)} KWD | Subtotal: ${typeGroup.subtotal.toFixed(3)} KWD
             </td>
           </tr>
           ${typeGroup.locations.map((loc, idx) => {
@@ -536,6 +636,8 @@ export const MonthlyLocationReportModal: React.FC<MonthlyLocationReportModalProp
               <tr>
                 <td style="text-align: center; color: #6b7280;">${idx + 1}</td>
                 <td style="font-weight: 600; color: #111827;">${loc.location_name}</td>
+                <td style="text-align: right; font-weight: 600; color: #0284c7;">${formatWorkHours(loc.allocated_hours)}</td>
+                <td style="text-align: right; font-weight: 600; color: #059669;">${Number(loc.labour_amount || 0).toFixed(3)}</td>
                 ${singleData.categories.map(c => `<td style="text-align: right;">${loc.categories[c] ? Number(loc.categories[c]).toFixed(3) : '-'}</td>`).join('')}
                 <td style="text-align: right; font-weight: 700; color: #111827;">${Number(loc.total_amount).toFixed(3)}</td>
                 <td style="text-align: right; color: #4b5563;">${share}%</td>
@@ -544,6 +646,8 @@ export const MonthlyLocationReportModal: React.FC<MonthlyLocationReportModalProp
           }).join('')}
           <tr style="background: #f9fafb; font-weight: 700; border-top: 1px solid #e5e7eb; border-bottom: 1px solid #e5e7eb;">
             <td colspan="2" style="text-align: right; padding: 4px 6px; font-size: ${isVerticalOrientation ? '8px' : '9.5px'}; color: #374151;">Subtotal (${typeGroup.typeLabel}):</td>
+            <td style="text-align: right; font-weight: 700; color: #0284c7; font-size: ${isVerticalOrientation ? '8px' : '9.5px'};">${formatWorkHours(typeGroup.totalHours)}</td>
+            <td style="text-align: right; font-weight: 700; color: #059669; font-size: ${isVerticalOrientation ? '8px' : '9.5px'};">${typeGroup.totalLabour.toFixed(3)}</td>
             ${singleData.categories.map(c => `<td style="text-align: right; font-size: ${isVerticalOrientation ? '8px' : '9.5px'};">${typeGroup.categorySubtotals[c] ? typeGroup.categorySubtotals[c].toFixed(3) : '-'}</td>`).join('')}
             <td style="text-align: right; font-weight: 700; color: #4f46e5; font-size: ${isVerticalOrientation ? '8px' : '9.5px'};">${typeGroup.subtotal.toFixed(3)}</td>
             <td style="text-align: right; font-size: ${isVerticalOrientation ? '8px' : '9.5px'};">${singleData.grand_total > 0 ? ((typeGroup.subtotal / singleData.grand_total) * 100).toFixed(1) : '0.0'}%</td>
@@ -558,6 +662,8 @@ export const MonthlyLocationReportModal: React.FC<MonthlyLocationReportModalProp
             <tr>
               <td style="text-align: center; color: #6b7280;">${idx + 1}</td>
               <td style="font-weight: 600; color: #111827;">${loc.location_name}</td>
+              <td style="text-align: right; font-weight: 600; color: #0284c7;">${formatWorkHours(loc.allocated_hours)}</td>
+              <td style="text-align: right; font-weight: 600; color: #059669;">${Number(loc.labour_amount || 0).toFixed(3)}</td>
               ${singleData.categories.map(c => `<td style="text-align: right;">${loc.categories[c] ? Number(loc.categories[c]).toFixed(3) : '-'}</td>`).join('')}
               <td style="text-align: right; font-weight: 700; color: #111827;">${Number(loc.total_amount).toFixed(3)}</td>
               <td style="text-align: right; color: #4b5563;">${share}%</td>
@@ -569,6 +675,8 @@ export const MonthlyLocationReportModal: React.FC<MonthlyLocationReportModalProp
       tableFootHtml = `
         <tr style="background: #f3f4f6; font-weight: 800;">
           <td colspan="2" style="text-align: left; padding: ${isVerticalOrientation ? '5px 6px' : '8px 10px'};">GRAND TOTAL</td>
+          <td style="text-align: right; padding: ${isVerticalOrientation ? '5px 6px' : '8px 10px'}; font-weight: 800; color: #0284c7;">${formatWorkHours(singleData.total_allocated_hours)}</td>
+          <td style="text-align: right; padding: ${isVerticalOrientation ? '5px 6px' : '8px 10px'}; font-weight: 800; color: #059669;">${Number(singleData.labour_grand_total || 0).toFixed(3)}</td>
           ${singleData.categories.map(c => `<td style="text-align: right; padding: ${isVerticalOrientation ? '5px 6px' : '8px 10px'};">${Number(singleData.category_totals[c] || 0).toFixed(3)}</td>`).join('')}
           <td style="text-align: right; padding: ${isVerticalOrientation ? '5px 6px' : '8px 10px'}; color: #005bbf;">${Number(singleData.grand_total).toFixed(3)}</td>
           <td style="text-align: right; padding: ${isVerticalOrientation ? '5px 6px' : '8px 10px'};">100.0%</td>
@@ -1220,7 +1328,7 @@ export const MonthlyLocationReportModal: React.FC<MonthlyLocationReportModalProp
     ];
 
     if (!isComp && singleData) {
-      const headerRow = ['#', 'Location / Store', ...singleData.categories, 'Total (KWD)', '% Share'];
+      const headerRow = ['#', 'Location / Store', 'Working Hours', 'Labour Cost (KWD)', ...singleData.categories, 'Total (KWD)', '% Share'];
       rows.push(headerRow);
 
       if (groupingMode === 'batch') {
@@ -1233,6 +1341,8 @@ export const MonthlyLocationReportModal: React.FC<MonthlyLocationReportModalProp
             rows.push([
               idx + 1,
               loc.location_name,
+              formatWorkHours(loc.allocated_hours),
+              loc.labour_amount || 0,
               ...singleData.categories.map(c => loc.categories[c] || 0),
               loc.total_amount,
               `${share}%`
@@ -1241,6 +1351,8 @@ export const MonthlyLocationReportModal: React.FC<MonthlyLocationReportModalProp
           rows.push([
             '',
             `Subtotal (${batch.batch_name})`,
+            formatWorkHours(batch.totalHours),
+            batch.totalLabour || 0,
             ...singleData.categories.map(c => batch.categorySubtotals[c] || 0),
             batch.subtotal,
             `${singleData.grand_total > 0 ? ((batch.subtotal / singleData.grand_total) * 100).toFixed(1) : '0.0'}%`
@@ -1257,6 +1369,8 @@ export const MonthlyLocationReportModal: React.FC<MonthlyLocationReportModalProp
             rows.push([
               idx + 1,
               loc.location_name,
+              formatWorkHours(loc.allocated_hours),
+              loc.labour_amount || 0,
               ...singleData.categories.map(c => loc.categories[c] || 0),
               loc.total_amount,
               `${share}%`
@@ -1265,6 +1379,8 @@ export const MonthlyLocationReportModal: React.FC<MonthlyLocationReportModalProp
           rows.push([
             '',
             `Subtotal (${typeGroup.typeLabel})`,
+            formatWorkHours(typeGroup.totalHours),
+            typeGroup.totalLabour || 0,
             ...singleData.categories.map(c => typeGroup.categorySubtotals[c] || 0),
             typeGroup.subtotal,
             `${singleData.grand_total > 0 ? ((typeGroup.subtotal / singleData.grand_total) * 100).toFixed(1) : '0.0'}%`
@@ -1279,6 +1395,8 @@ export const MonthlyLocationReportModal: React.FC<MonthlyLocationReportModalProp
           rows.push([
             idx + 1,
             loc.location_name,
+            formatWorkHours(loc.allocated_hours),
+            loc.labour_amount || 0,
             ...singleData.categories.map(c => loc.categories[c] || 0),
             loc.total_amount,
             `${share}%`
@@ -1290,6 +1408,8 @@ export const MonthlyLocationReportModal: React.FC<MonthlyLocationReportModalProp
       rows.push([
         '',
         'GRAND TOTAL',
+        formatWorkHours(singleData.total_allocated_hours),
+        singleData.labour_grand_total || 0,
         ...singleData.categories.map(c => singleData.category_totals[c] || 0),
         singleData.grand_total,
         '100.0%'
@@ -1763,7 +1883,7 @@ export const MonthlyLocationReportModal: React.FC<MonthlyLocationReportModalProp
             singleData && (
               <div className="space-y-6">
                 {/* Metric Summary Cards */}
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
                   <div className="p-3 rounded-lg border border-outline-variant bg-surface-container dark:bg-dark-surface-container shadow-2xs">
                     <span className="text-[10.5px] font-semibold text-on-surface-variant uppercase tracking-wider block">Stores</span>
                     <span className="text-lg sm:text-xl font-bold text-on-surface mt-0.5 block">
@@ -1772,9 +1892,22 @@ export const MonthlyLocationReportModal: React.FC<MonthlyLocationReportModalProp
                   </div>
 
                   <div className="p-3 rounded-lg border border-outline-variant bg-surface-container dark:bg-dark-surface-container shadow-2xs">
+                    <span className="text-[10.5px] font-semibold text-on-surface-variant uppercase tracking-wider block">Working Hours</span>
+                    <span className="text-lg sm:text-xl font-bold text-sky-600 dark:text-sky-400 mt-0.5 block">
+                      {formatWorkHours(singleData.total_allocated_hours)} <span className="text-xs font-normal text-on-surface-variant">hrs</span>
+                    </span>
+                    <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-bold block truncate" title="Labour Cost = Allocated Hours × Employee Rate">
+                      Labour: {Number(singleData.labour_grand_total || 0).toFixed(3)} KWD
+                    </span>
+                  </div>
+
+                  <div className="p-3 rounded-lg border border-outline-variant bg-surface-container dark:bg-dark-surface-container shadow-2xs">
                     <span className="text-[10.5px] font-semibold text-on-surface-variant uppercase tracking-wider block">Total Expense</span>
                     <span className="text-lg sm:text-xl font-bold text-primary mt-0.5 block">
                       {Number(singleData.grand_total).toFixed(3)} <span className="text-xs font-normal text-on-surface-variant">KWD</span>
+                    </span>
+                    <span className="text-[10px] text-on-surface-variant block truncate" title="Voucher direct expenses">
+                      Vouchers: {Number(singleData.voucher_grand_total || 0).toFixed(3)} KWD
                     </span>
                   </div>
 
@@ -1869,6 +2002,8 @@ export const MonthlyLocationReportModal: React.FC<MonthlyLocationReportModalProp
                           <tr className="bg-surface-container-low border-b border-outline-variant text-[10.5px] font-semibold text-on-surface-variant uppercase">
                             <th className={`py-2 px-2.5 ${isVerticalOrientation ? 'w-8' : 'w-10'} text-center`}>#</th>
                             <th className={`py-2 px-2.5 ${isVerticalOrientation ? 'min-w-[140px]' : 'min-w-[180px]'}`}>Location / Store</th>
+                            <th className={`py-2 px-2.5 text-right font-bold text-sky-600 dark:text-sky-400 ${isVerticalOrientation ? 'w-20' : 'w-24'}`}>Working Hours</th>
+                            <th className={`py-2 px-2.5 text-right font-bold text-emerald-600 dark:text-emerald-400 ${isVerticalOrientation ? 'w-24' : 'w-28'}`}>Labour (KWD)</th>
                             {singleData.categories.map(cat => (
                               <th key={cat} className="py-2 px-2 text-right whitespace-nowrap">
                                 {cat}
@@ -1882,7 +2017,7 @@ export const MonthlyLocationReportModal: React.FC<MonthlyLocationReportModalProp
                           {groupingMode === 'batch' ? (
                             filteredSingleBatches.length === 0 ? (
                               <tr>
-                                <td colSpan={singleData.categories.length + 4} className="py-8 text-center text-outline">
+                                <td colSpan={singleData.categories.length + 6} className="py-8 text-center text-outline">
                                   No expenses found for the selected criteria.
                                 </td>
                               </tr>
@@ -1891,13 +2026,13 @@ export const MonthlyLocationReportModal: React.FC<MonthlyLocationReportModalProp
                                 <React.Fragment key={batch.batch_name}>
                                   {/* LEDGER BATCH HEADER ROW */}
                                   <tr className="bg-primary/10 border-y border-primary/25 font-bold text-primary">
-                                    <td colSpan={singleData.categories.length + 4} className="py-2 px-3 text-xs tracking-wide">
+                                    <td colSpan={singleData.categories.length + 6} className="py-2 px-3 text-xs tracking-wide">
                                       <div className="flex items-center justify-between">
                                         <div className="flex items-center gap-2">
                                           <Layers className="w-4 h-4 text-primary" />
                                           <span className="font-bold">LEDGER BATCH: {batch.batch_name}</span>
                                           <span className="text-[11px] font-normal text-on-surface-variant">
-                                            — {batch.locations.length} Stores ({batch.expense_count} expenses)
+                                            — {batch.locations.length} Stores ({batch.expense_count} expenses) | {formatWorkHours(batch.totalHours)} hrs | Labour: {Number(batch.totalLabour || 0).toFixed(3)} KWD
                                           </span>
                                         </div>
                                         <span className="text-xs font-bold text-primary font-mono">
@@ -1917,6 +2052,12 @@ export const MonthlyLocationReportModal: React.FC<MonthlyLocationReportModalProp
                                         <td className="py-1.5 px-2.5 text-center text-outline">{idx + 1}</td>
                                         <td className="py-1.5 px-2.5 font-semibold text-on-surface">
                                           {loc.location_name}
+                                        </td>
+                                        <td className="py-1.5 px-2.5 text-right font-semibold text-sky-600 dark:text-sky-400 font-mono">
+                                          {formatWorkHours(loc.allocated_hours)}
+                                        </td>
+                                        <td className="py-1.5 px-2.5 text-right font-semibold text-emerald-600 dark:text-emerald-400 font-mono">
+                                          {Number(loc.labour_amount || 0).toFixed(3)}
                                         </td>
                                         {singleData.categories.map(cat => {
                                           const val = loc.categories[cat];
@@ -1941,6 +2082,12 @@ export const MonthlyLocationReportModal: React.FC<MonthlyLocationReportModalProp
                                     <td colSpan={2} className="py-1.5 px-2.5 text-right text-on-surface uppercase font-bold">
                                       Subtotal ({batch.batch_name}):
                                     </td>
+                                    <td className="py-1.5 px-2.5 text-right text-sky-600 dark:text-sky-400 font-bold font-mono">
+                                      {formatWorkHours(batch.totalHours)}
+                                    </td>
+                                    <td className="py-1.5 px-2.5 text-right text-emerald-600 dark:text-emerald-400 font-bold font-mono">
+                                      {Number(batch.totalLabour || 0).toFixed(3)}
+                                    </td>
                                     {singleData.categories.map(cat => {
                                       const sum = batch.categorySubtotals[cat] || 0;
                                       return (
@@ -1962,7 +2109,7 @@ export const MonthlyLocationReportModal: React.FC<MonthlyLocationReportModalProp
                           ) : groupingMode === 'store_type' ? (
                             singleLocationsByStoreType.length === 0 ? (
                               <tr>
-                                <td colSpan={singleData.categories.length + 4} className="py-8 text-center text-outline">
+                                <td colSpan={singleData.categories.length + 6} className="py-8 text-center text-outline">
                                   No expenses found for the selected criteria.
                                 </td>
                               </tr>
@@ -1971,13 +2118,13 @@ export const MonthlyLocationReportModal: React.FC<MonthlyLocationReportModalProp
                                 <React.Fragment key={typeGroup.typeLabel}>
                                   {/* STORE TYPE HEADER ROW */}
                                   <tr className="bg-primary/10 border-y border-primary/25 font-bold text-primary">
-                                    <td colSpan={singleData.categories.length + 4} className="py-2 px-3 text-xs tracking-wide">
+                                    <td colSpan={singleData.categories.length + 6} className="py-2 px-3 text-xs tracking-wide">
                                       <div className="flex items-center justify-between">
                                         <div className="flex items-center gap-2">
                                           <Store className="w-4 h-4 text-primary" />
                                           <span className="font-bold">STORE TYPE: {typeGroup.typeLabel}</span>
                                           <span className="text-[11px] font-normal text-on-surface-variant">
-                                            — {typeGroup.locations.length} Stores
+                                            — {typeGroup.locations.length} Stores | {formatWorkHours(typeGroup.totalHours)} hrs | Labour: {Number(typeGroup.totalLabour || 0).toFixed(3)} KWD
                                           </span>
                                         </div>
                                         <span className="text-xs font-bold text-primary font-mono">
@@ -1997,6 +2144,12 @@ export const MonthlyLocationReportModal: React.FC<MonthlyLocationReportModalProp
                                         <td className="py-1.5 px-2.5 text-center text-outline">{idx + 1}</td>
                                         <td className="py-1.5 px-2.5 font-semibold text-on-surface">
                                           {loc.location_name}
+                                        </td>
+                                        <td className="py-1.5 px-2.5 text-right font-semibold text-sky-600 dark:text-sky-400 font-mono">
+                                          {formatWorkHours(loc.allocated_hours)}
+                                        </td>
+                                        <td className="py-1.5 px-2.5 text-right font-semibold text-emerald-600 dark:text-emerald-400 font-mono">
+                                          {Number(loc.labour_amount || 0).toFixed(3)}
                                         </td>
                                         {singleData.categories.map(cat => {
                                           const val = loc.categories[cat];
@@ -2021,6 +2174,12 @@ export const MonthlyLocationReportModal: React.FC<MonthlyLocationReportModalProp
                                     <td colSpan={2} className="py-1.5 px-2.5 text-right text-on-surface uppercase font-bold">
                                       Subtotal ({typeGroup.typeLabel}):
                                     </td>
+                                    <td className="py-1.5 px-2.5 text-right text-sky-600 dark:text-sky-400 font-bold font-mono">
+                                      {formatWorkHours(typeGroup.totalHours)}
+                                    </td>
+                                    <td className="py-1.5 px-2.5 text-right text-emerald-600 dark:text-emerald-400 font-bold font-mono">
+                                      {Number(typeGroup.totalLabour || 0).toFixed(3)}
+                                    </td>
                                     {singleData.categories.map(cat => {
                                       const sum = typeGroup.categorySubtotals[cat] || 0;
                                       return (
@@ -2042,7 +2201,7 @@ export const MonthlyLocationReportModal: React.FC<MonthlyLocationReportModalProp
                           ) : (
                             filteredSingleLocations.length === 0 ? (
                               <tr>
-                                <td colSpan={singleData.categories.length + 4} className="py-8 text-center text-outline">
+                                <td colSpan={singleData.categories.length + 6} className="py-8 text-center text-outline">
                                   No expenses found for the selected period.
                                 </td>
                               </tr>
@@ -2056,6 +2215,12 @@ export const MonthlyLocationReportModal: React.FC<MonthlyLocationReportModalProp
                                     <td className="py-1.5 px-2.5 text-center text-outline">{idx + 1}</td>
                                     <td className="py-1.5 px-2.5 font-semibold text-on-surface">
                                       {loc.location_name}
+                                    </td>
+                                    <td className="py-1.5 px-2.5 text-right font-semibold text-sky-600 dark:text-sky-400 font-mono">
+                                      {formatWorkHours(loc.allocated_hours)}
+                                    </td>
+                                    <td className="py-1.5 px-2.5 text-right font-semibold text-emerald-600 dark:text-emerald-400 font-mono">
+                                      {Number(loc.labour_amount || 0).toFixed(3)}
                                     </td>
                                     {singleData.categories.map(cat => {
                                       const val = loc.categories[cat];
@@ -2080,6 +2245,12 @@ export const MonthlyLocationReportModal: React.FC<MonthlyLocationReportModalProp
                         <tfoot>
                           <tr className="bg-surface-container-high/80 font-bold border-t-2 border-outline-variant text-xs">
                             <td colSpan={2} className="py-2 px-2.5 text-on-surface uppercase">Grand Total</td>
+                            <td className="py-2 px-2.5 text-right text-sky-600 dark:text-sky-400 text-sm font-black font-mono">
+                              {formatWorkHours(singleData.total_allocated_hours)}
+                            </td>
+                            <td className="py-2 px-2.5 text-right text-emerald-600 dark:text-emerald-400 text-sm font-black font-mono">
+                              {Number(singleData.labour_grand_total || 0).toFixed(3)}
+                            </td>
                             {singleData.categories.map(cat => (
                               <td key={cat} className="py-2 px-2 text-right text-on-surface">
                                 {Number(singleData.category_totals[cat] || 0).toFixed(3)}
