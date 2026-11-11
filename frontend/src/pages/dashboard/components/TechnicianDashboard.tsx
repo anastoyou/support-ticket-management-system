@@ -4,7 +4,7 @@ import { useSelector } from 'react-redux';
 import type { RootState } from '../../../store';
 import { StatCard } from './StatCard';
 import { Wrench, Clock, Receipt, CheckCircle2, Award, PlusCircle, AlertTriangle } from 'lucide-react';
-import { TimeSheetModal } from '../../../components/timesheet/TimeSheetModal';
+import { getCompletionBadgeClasses, TimeSheetModal } from '../../../components/timesheet/TimeSheetModal';
 import Can from '@/hooks/Can';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api';
@@ -77,39 +77,75 @@ export const TechnicianDashboard: React.FC<TechnicianDashboardProps> = ({ data, 
     return (
         <div className="space-y-6">
             {/* Quick Action Mobile Header */}
-            <div className="bg-surface-container border border-outline-variant rounded p-4 flex flex-wrap items-center justify-between gap-3 shadow-xs">
+            <div className="bg-surface-container border border-outline-variant rounded p-4 flex flex-wrap items-center justify-between shadow-xs">
                 <div className="flex items-center gap-2">
                     <div className="w-8 h-8 rounded-full bg-primary-container/10 text-primary flex items-center justify-center font-bold text-xs">
                         <Wrench className="w-4 h-4" />
                     </div>
-                    <div>
-                        <h2 className="text-xs font-semibold text-on-surface">Technician Work Portal</h2>
-                        <p className="text-[11px] text-on-surface-variant">Track your active assignments, log work hours & claims.</p>
-                    </div>
+                    <h2 className="text-xs font-semibold text-on-surface">Technician Portal</h2>
+
                 </div>
+                <a
+                    href="/tickets/all"
+                    className="
+            ml-auto
+            bg-primary hover:bg-primary-container
+            text-on-primary text-xs font-medium
+            px-3 py-1.5 rounded
+            inline-flex items-center gap-1.5
+            transition-colors
+        "
+                >
+                    <Wrench className="w-3.5 h-3.5" />
+                    My Assigned Jobs
+                </a>
 
-                <div className="flex items-center gap-2 flex-wrap">
-                    {/* Time Sheet Button with current day time log */}
-                    {/* <button
-                        type="button"
-                        onClick={() => setIsTimeSheetOpen(true)}
-                        className="border border-outline bg-surface-container hover:bg-surface-container-high text-on-surface text-xs font-medium px-3 py-1.5 rounded flex items-center gap-2 transition-colors cursor-pointer shadow-xs"
-                        title="Open interactive Time Sheet to log hours & sessions"
-                    >
-                        <Clock className="w-3.5 h-3.5 text-primary" />
-                        <span>Time Sheet</span>
-                        <span className="text-[10px] font-medium px-1.5 py-0.2 rounded bg-primary/10 text-primary border border-primary/20">
-                            {todayHours}h / 10h ({todayPct}% complete)
-                        </span>
-                    </button> */}
+                <div className="flex items-end justify-end gap-2 flex-wrap w-full pt-3">
 
-                    <a
-                        href="/tickets/all"
-                        className="bg-primary hover:bg-primary-container text-on-primary text-xs font-medium px-3 py-1.5 rounded flex items-center gap-1.5 transition-colors"
-                    >
-                        <Wrench className="w-3.5 h-3.5" />
-                        My Assigned Jobs
-                    </a>
+                    <Can permission={['can_change_my_log_time']}>
+                        <button
+                            type="button"
+                            onClick={() => setIsTimeSheetOpen(true)}
+                            className="
+                hidden sm:flex
+                relative overflow-hidden
+                bg-surface-container hover:bg-surface-container-high
+                border border-outline/60
+                text-on-surface text-xs font-medium
+                px-3 py-1.5 rounded
+                items-center gap-1.5
+                transition-colors cursor-pointer
+                group
+            "
+                            title="Open Time Sheet to log hours and sessions"
+                        >
+                            <span
+                                className={`absolute inset-y-0 left-0 overflow-hidden transition-all duration-1000 ease-out ${getCompletionBadgeClasses(todayPct)}`}
+                                style={{
+                                    width: `${Math.min(100, Math.max(0, todayPct))}%`
+                                }}
+                            >
+                                <span className="
+                    absolute inset-y-0 -left-1/2 w-1/2
+                    bg-gradient-to-r from-transparent via-white/40 to-transparent
+                    animate-[shimmer_2s_ease-in-out_infinite]
+                " />
+                            </span>
+
+                            <span className="relative z-10 flex items-center gap-1.5">
+                                <Clock className="w-3.5 h-3.5 text-primary" />
+                                <span>Time Sheet</span>
+                                <span className="font-semibold tabular-nums">
+                                    {todayHours}h / 10h
+                                </span>
+                                <span className="text-[10px] opacity-80">
+                                    ({todayPct}%)
+                                </span>
+                            </span>
+                        </button>
+                    </Can>
+
+
                 </div>
             </div>
 

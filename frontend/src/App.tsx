@@ -126,7 +126,7 @@ const App: React.FC = () => {
       <Router>
         <PageTitle />
         <WebSocketListener />
-        {/* <PushNotificationPrompt /> */}
+        <PushNotificationPrompt />
         <ProfileCompletionModal />
         <StoreCompletionModal />
         <ThemeToggleOverlay isDark={isDark} setIsDark={setIsDark} />

@@ -46,18 +46,6 @@ class DashboardUpdateAdmin(admin.ModelAdmin):
         'priority',
     )
 
-    fields = (
-        'title',
-        'description',
-        'video_url',
-        'is_vertical',
-        'roles',
-        'is_active',
-        'priority',
-        'hide_after',
-        'created_at',
-    )
-
     list_filter = (
         'is_active',
         'is_vertical',
@@ -79,11 +67,6 @@ class DashboardUpdateAdmin(admin.ModelAdmin):
         'is_visible',
     )
 
-    list_editable = (
-        'is_active',
-        'priority',
-    )
-
     fieldsets = (
         ('Basic Information', {
             'fields': (
@@ -92,8 +75,11 @@ class DashboardUpdateAdmin(admin.ModelAdmin):
                 'roles',
             )
         }),
-        ('Media', {
-            'fields': ('video_url',)
+        ('Media & Orientation', {
+            'fields': (
+                'video_url',
+                'is_vertical',
+            )
         }),
         ('Visibility & Settings', {
             'fields': (

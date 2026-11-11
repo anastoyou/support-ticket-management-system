@@ -177,16 +177,16 @@ export default function DashboardUpdates() {
     // Toggle fullscreen mode
     const toggleFullscreen = () => {
         if (!document.fullscreenElement) {
-            modalRef.current?.requestFullscreen?.().catch(() => {});
+            modalRef.current?.requestFullscreen?.().catch(() => { });
         } else {
-            document.exitFullscreen?.().catch(() => {});
+            document.exitFullscreen?.().catch(() => { });
         }
     };
 
     // Close popup and exit fullscreen
     const closeVideo = () => {
         if (document.fullscreenElement) {
-            document.exitFullscreen?.().catch(() => {});
+            document.exitFullscreen?.().catch(() => { });
         }
         setVideo(null);
     };
@@ -233,7 +233,7 @@ export default function DashboardUpdates() {
     return (
         <section className="w-full space-y-4">
             {/* Header */}
-            <div className="flex items-center justify-between px-1">
+            {/* <div className="flex items-center justify-between px-1">
                 <div>
                     <div className="flex items-center gap-2">
                         <Sparkles className="h-5 w-5 text-blue-600 dark:text-blue-400" />
@@ -252,13 +252,13 @@ export default function DashboardUpdates() {
                         {current + 1} / {updates.length}
                     </span>
                 )}
-            </div>
+            </div> */}
 
             {/* Main Card */}
-            <div className="overflow-hidden rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-surface-container p-5 sm:p-6 shadow-sm">
+            <div className="overflow-hidden">
                 {/* Update Information */}
                 <div className="flex items-center justify-between">
-                    <span className="rounded-full bg-blue-50 dark:bg-blue-950/60 px-3 py-1 text-xs font-medium text-blue-700 dark:text-blue-300">
+                    <span className=" bg-blue-50 dark:bg-blue-950/60 text-xs font-medium text-blue-700 dark:text-blue-300">
                         NEW UPDATE
                     </span>
 
@@ -307,11 +307,10 @@ export default function DashboardUpdates() {
                             <img
                                 src={`https://img.youtube.com/vi/${videoId}/maxresdefault.jpg`}
                                 alt={update.title}
-                                className={`transition duration-300 group-hover:scale-105 group-hover:opacity-90 ${
-                                    isCurrentVertical
-                                        ? "relative z-10 h-full w-full object-contain"
-                                        : "absolute inset-0 h-full w-full object-cover"
-                                }`}
+                                className={`transition duration-300 group-hover:scale-105 group-hover:opacity-90 ${isCurrentVertical
+                                    ? "relative z-10 h-full w-full object-contain"
+                                    : "absolute inset-0 h-full w-full object-cover"
+                                    }`}
                                 onError={(e) => {
                                     e.currentTarget.src = `https://img.youtube.com/vi/${videoId}/hqdefault.jpg`;
                                 }}
@@ -323,9 +322,8 @@ export default function DashboardUpdates() {
                             {/* YouTube Play Button */}
                             <div className="absolute inset-0 z-20 flex items-center justify-center">
                                 <div
-                                    className={`flex items-center justify-center rounded-xl bg-red-600 text-white shadow-xl transition duration-200 group-hover:scale-110 group-hover:bg-red-700 ${
-                                        isCurrentVertical ? "h-12 w-16" : "h-14 w-20"
-                                    }`}
+                                    className={`flex items-center justify-center rounded-xl bg-red-600 text-white shadow-xl transition duration-200 group-hover:scale-110 group-hover:bg-red-700 ${isCurrentVertical ? "h-12 w-16" : "h-14 w-20"
+                                        }`}
                                 >
                                     <Play
                                         size={isCurrentVertical ? 24 : 30}
@@ -364,11 +362,10 @@ export default function DashboardUpdates() {
                                 type="button"
                                 onClick={() => setCurrent(index)}
                                 aria-label={`Show update ${index + 1}`}
-                                className={`h-2 rounded-full transition-all cursor-pointer ${
-                                    current === index
-                                        ? "w-6 bg-blue-600"
-                                        : "w-2 bg-gray-300 dark:bg-gray-700"
-                                }`}
+                                className={`h-2 rounded-full transition-all cursor-pointer ${current === index
+                                    ? "w-6 bg-blue-600"
+                                    : "w-2 bg-gray-300 dark:bg-gray-700"
+                                    }`}
                             />
                         ))}
                     </div>
@@ -404,11 +401,10 @@ export default function DashboardUpdates() {
                     onClick={closeVideo}
                 >
                     <div
-                        className={`relative w-full h-full flex flex-col items-center justify-center transition-all duration-300 ${
-                            activeIsVertical
-                                ? "max-w-md max-h-[94vh]"
-                                : "max-w-[96vw] max-h-[92vh]"
-                        }`}
+                        className={`relative w-full h-full flex flex-col items-center justify-center transition-all duration-300 ${activeIsVertical
+                            ? "max-w-md max-h-[94vh]"
+                            : "max-w-[96vw] max-h-[92vh]"
+                            }`}
                         onClick={(e) => e.stopPropagation()}
                     >
                         {/* Control Bar: Orientation Switcher + Fullscreen Toggle + Close Button */}
@@ -458,11 +454,10 @@ export default function DashboardUpdates() {
                         {/* Video Player: Adapts seamlessly to 9:16 portrait or 16:9 landscape */}
                         <div className="w-full h-full flex items-center justify-center">
                             <div
-                                className={`w-full max-h-full rounded-2xl overflow-hidden shadow-2xl bg-black border border-white/10 transition-all duration-300 ${
-                                    activeIsVertical
-                                        ? "aspect-[9/16] h-full max-w-[420px]"
-                                        : "aspect-video"
-                                }`}
+                                className={`w-full max-h-full rounded-2xl overflow-hidden shadow-2xl bg-black border border-white/10 transition-all duration-300 ${activeIsVertical
+                                    ? "aspect-[9/16] h-full max-w-[420px]"
+                                    : "aspect-video"
+                                    }`}
                             >
                                 <iframe
                                     src={getYoutubeEmbedUrl(video)}

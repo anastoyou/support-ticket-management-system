@@ -396,7 +396,7 @@ function normalizeRange(a: number, b: number) {
     return { start: Math.min(a, b), end: Math.max(a, b) };
 }
 
-function getCompletionBadgeClasses(percent: number) {
+export function getCompletionBadgeClasses(percent: number) {
     if (percent <= 0) return 'bg-slate-100 text-slate-600 border-slate-200';
     if (percent < 40) return 'bg-rose-50 text-rose-700 border-rose-200';
     if (percent < 85) return 'bg-amber-100 text-amber-800 border-amber-300';
@@ -2809,7 +2809,7 @@ export const TimeSheetModal: React.FC<TimeSheetModalProps> = ({
                 {/* Calendar Date Picker Popup Modal */}
                 {isCalendarOpen && (
                     <div
-                        onClick={() => setIsCalendarOpen(false)}
+                        onClick={() => { setIsCalendarOpen(false); handleCloseModal() }}
                         className="fixed inset-0 z-[75] bg-black/50 backdrop-blur-xs flex items-center justify-center p-4"
                     >
                         <div
@@ -2820,7 +2820,7 @@ export const TimeSheetModal: React.FC<TimeSheetModalProps> = ({
                                 <h3 className="font-bold text-xs text-white">Select Date</h3>
                                 <button
                                     type="button"
-                                    onClick={() => setIsCalendarOpen(false)}
+                                    onClick={() => { setIsCalendarOpen(false); handleCloseModal() }}
                                     className="w-6 h-6 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center text-sm"
                                 >
                                     &times;
@@ -2975,7 +2975,7 @@ export const TimeSheetModal: React.FC<TimeSheetModalProps> = ({
                                     }}
                                     className="font-bold text-amber-700 hover:underline text-[11px]"
                                 >
-                                    Jump to Today
+                                    Select Today
                                 </button>
                                 <button
                                     type="button"
