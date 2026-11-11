@@ -22,10 +22,18 @@ class TicketUserSerializer(serializers.ModelSerializer):
         ]
 
 
+class WorkLogStoreSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Store
+        fields = ['store_id', 'store_name', 'short_code']
+
+
 class AllocationTicketSerializer(serializers.ModelSerializer):
+    store = WorkLogStoreSerializer(read_only=True)
+
     class Meta:
         model = Ticket
-        fields = ['ticket_id', 'work_order_no', 'title', 'status']
+        fields = ['ticket_id', 'work_order_no', 'title', 'status', 'store']
 
 
 class PrioritySerializer(serializers.ModelSerializer):

@@ -7,8 +7,10 @@ import {
   User, DollarSign, Award, Calendar, Building2, Wrench,
   UserCheck, UserX, CheckCircle2, UserLock, ChevronLeft, ChevronRight,
   Link as LinkIcon, Copy, Check, RefreshCw, FileText, Filter, Users,
-  LayoutList, LayoutGrid, Menu
+  LayoutList, LayoutGrid, Menu, Printer
 } from 'lucide-react';
+import { TimeSheetModal } from '../components/timesheet/TimeSheetModal';
+import { TimesheetPrintModal } from '../components/timesheet/TimesheetPrintModal';
 import type { RootState } from '../store';
 import { usePermission } from '../hooks/usePermission';
 import Can from '@/hooks/Can';
@@ -212,6 +214,22 @@ export const WorkforceView: React.FC = () => {
   const [showModal, setShowModal] = useState(false);
   const [editItem, setEditItem] = useState<any | null>(null);
 
+  // Timesheet Calendar & Print Modals
+  const [selectedTimesheetEmployee, setSelectedTimesheetEmployee] = useState<any | null>(null);
+  const [isTimesheetModalOpen, setIsTimesheetModalOpen] = useState(false);
+  const [selectedPrintEmployee, setSelectedPrintEmployee] = useState<any | null>(null);
+  const [isPrintModalOpen, setIsPrintModalOpen] = useState(false);
+
+  const handleOpenTimesheet = (employee: any) => {
+    setSelectedTimesheetEmployee(employee);
+    setIsTimesheetModalOpen(true);
+  };
+
+  const handleOpenPrintTimesheet = (employee: any) => {
+    setSelectedPrintEmployee(employee);
+    setIsPrintModalOpen(true);
+  };
+
   const [showEmployeeModal, setShowEmployeeModal] = useState(false);
   const [editEmployeeItem, setEditEmployeeItem] = useState<any | null>(null);
   const [isFabOpen, setIsFabOpen] = useState(false);
@@ -390,6 +408,40 @@ export const WorkforceView: React.FC = () => {
           width: 120,
           cellClass: 'font-bold text-emerald-600 dark:text-emerald-400 ',
           valueFormatter: params => params.value ? `${params.value} KWD/hr` : '-'
+        },
+        {
+          headerName: 'Actions',
+          field: 'actions',
+          width: 145,
+          pinned: 'right',
+          sortable: false,
+          filter: false,
+          cellClass: 'justify-end flex items-center',
+          cellRenderer: (params: any) => {
+            const item = params.data;
+            if (!item) return null;
+            return (
+              <div className="flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
+                <button
+                  type="button"
+                  onClick={() => handleOpenTimesheet(item)}
+                  className="px-2.5 py-1 text-xs font-bold rounded-lg border border-amber-300 dark:border-amber-600/60 bg-amber-50 dark:bg-amber-950/40 text-amber-800 dark:text-amber-300 hover:bg-amber-100 dark:hover:bg-amber-900/50 flex items-center gap-1 cursor-pointer transition shadow-2xs"
+                  title="Timesheet Calendar & Work Logs"
+                >
+                  <Calendar className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
+                  <span>Calendar</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleOpenPrintTimesheet(item)}
+                  className="p-1.5 rounded-lg border border-outline-variant bg-surface-container-low hover:bg-surface-container text-on-surface hover:text-primary flex items-center justify-center cursor-pointer transition shadow-2xs"
+                  title="Print Timesheet (A4)"
+                >
+                  <Printer className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            );
+          }
         }
       ];
 
@@ -1132,46 +1184,69 @@ export const WorkforceView: React.FC = () => {
                 return paginatedData.map(item => {
                   const canChangeUser = hasPermission('accounts.change_customuser');
                   return (
-                    <button
+                    <div
                       key={item.user_id}
-                      type="button"
-                      onClick={canChangeUser ? () => handleOpenEditEmployee(item) : undefined}
-                      className={`w-full text-left flex items-center gap-3 p-3.5 rounded-xl border transition-all cursor-pointer shadow-xs bg-surface border-outline-variant ${canChangeUser ? 'active:scale-[0.98]' : ''
-                        }`}
+                      className="w-full flex flex-col p-3.5 rounded-xl border transition-all shadow-xs bg-surface border-outline-variant"
                     >
-                      {/* Avatar */}
-                      {item.profile_image ? (
-                        <img src={item.profile_image} alt="" className="w-12 h-12 rounded-full object-cover border border-outline-variant shrink-0" />
-                      ) : (
-                        <div className="w-12 h-12 rounded-full bg-primary/10 text-primary flex items-center justify-center font-bold text-base border border-primary/20 shrink-0">
-                          {item.full_name ? item.full_name.charAt(0).toUpperCase() : (item.username?.charAt(0).toUpperCase() || '?')}
-                        </div>
-                      )}
-
-                      {/* Details */}
-                      <div className="flex-1 min-w-0 space-y-0.5">
-                        <div className="flex items-center justify-between gap-2">
-                          <h4 className="font-bold text-on-surface text-sm truncate">{item.full_name}</h4>
-                          <span className="text-[10px] font-bold text-primary bg-primary/5 px-2 py-0.5 rounded border border-primary/10 uppercase tracking-wide shrink-0">
-                            {item.role?.role_name || item.role || 'No Role'}
-                          </span>
-                        </div>
-
-                        <p className="text-xs text-on-surface-variant truncate">{item.email}</p>
-
-                        <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[10px] text-outline pt-0.5">
-                          {item.phone && <span className="">📞 {item.phone}</span>}
-                          {item.employee_no && <span>· ID: {item.employee_no}</span>}
-                          {item.hourly_rate && <span className="font-semibold text-emerald-600 dark:text-emerald-400">· {item.hourly_rate} KWD/hr</span>}
-                        </div>
-
-                        {item.sub_departments && item.sub_departments.length > 0 && (
-                          <div className="text-[10px] text-outline truncate pt-0.5">
-                            🏢 {item.sub_departments.map((sd: any) => sd.sub_department_name).join(', ')}
+                      <div
+                        onClick={canChangeUser ? () => handleOpenEditEmployee(item) : undefined}
+                        className={`w-full text-left flex items-center gap-3 ${canChangeUser ? 'cursor-pointer active:scale-[0.98]' : ''}`}
+                      >
+                        {/* Avatar */}
+                        {item.profile_image ? (
+                          <img src={item.profile_image} alt="" className="w-12 h-12 rounded-full object-cover border border-outline-variant shrink-0" />
+                        ) : (
+                          <div className="w-12 h-12 rounded-full bg-primary/10 text-primary flex items-center justify-center font-bold text-base border border-primary/20 shrink-0">
+                            {item.full_name ? item.full_name.charAt(0).toUpperCase() : (item.username?.charAt(0).toUpperCase() || '?')}
                           </div>
                         )}
+
+                        {/* Details */}
+                        <div className="flex-1 min-w-0 space-y-0.5">
+                          <div className="flex items-center justify-between gap-2">
+                            <h4 className="font-bold text-on-surface text-sm truncate">{item.full_name}</h4>
+                            <span className="text-[10px] font-bold text-primary bg-primary/5 px-2 py-0.5 rounded border border-primary/10 uppercase tracking-wide shrink-0">
+                              {item.role?.role_name || item.role || 'No Role'}
+                            </span>
+                          </div>
+
+                          <p className="text-xs text-on-surface-variant truncate">{item.email}</p>
+
+                          <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[10px] text-outline pt-0.5">
+                            {item.phone && <span className="">📞 {item.phone}</span>}
+                            {item.employee_no && <span>· ID: {item.employee_no}</span>}
+                            {item.hourly_rate && <span className="font-semibold text-emerald-600 dark:text-emerald-400">· {item.hourly_rate} KWD/hr</span>}
+                          </div>
+
+                          {item.sub_departments && item.sub_departments.length > 0 && (
+                            <div className="text-[10px] text-outline truncate pt-0.5">
+                              🏢 {item.sub_departments.map((sd: any) => sd.sub_department_name).join(', ')}
+                            </div>
+                          )}
+                        </div>
                       </div>
-                    </button>
+
+                      {/* Action Bar: Calendar & Print */}
+                      <div className="flex items-center gap-2 pt-2.5 border-t border-outline-variant/60 mt-2.5">
+                        <button
+                          type="button"
+                          onClick={() => handleOpenTimesheet(item)}
+                          className="flex-1 py-1.5 px-2.5 rounded-lg border border-amber-300 dark:border-amber-600/50 bg-amber-50 dark:bg-amber-950/30 text-amber-800 dark:text-amber-300 hover:bg-amber-100 text-xs font-bold flex items-center justify-center gap-1.5 transition cursor-pointer"
+                        >
+                          <Calendar className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
+                          <span>Timesheet Calendar</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleOpenPrintTimesheet(item)}
+                          className="py-1.5 px-3 rounded-lg border border-outline-variant bg-surface-container-low hover:bg-surface-container text-on-surface text-xs font-semibold flex items-center justify-center gap-1.5 transition cursor-pointer"
+                          title="Print Timesheet (A4)"
+                        >
+                          <Printer className="w-3.5 h-3.5" />
+                          <span>Print A4</span>
+                        </button>
+                      </div>
+                    </div>
                   );
                 });
               })()}
@@ -2274,6 +2349,41 @@ export const WorkforceView: React.FC = () => {
         <div
           className="sm:hidden fixed inset-0 z-30 bg-black/20"
           onClick={() => setIsFabOpen(false)}
+        />
+      )}
+
+      {/* Employee Timesheet Calendar Modal */}
+      {selectedTimesheetEmployee && isTimesheetModalOpen && (
+        <TimeSheetModal
+          isOpen={isTimesheetModalOpen}
+          workerId={selectedTimesheetEmployee.user_id}
+          workerName={selectedTimesheetEmployee.full_name}
+          employeeNo={selectedTimesheetEmployee.employee_no}
+          workerRole={selectedTimesheetEmployee.role?.role_name || selectedTimesheetEmployee.role}
+          workerRate={selectedTimesheetEmployee.hourly_rate}
+          subDepartments={selectedTimesheetEmployee.sub_departments?.map((sd: any) => sd.sub_department_name).join(', ')}
+          initialCalendarOpen={true}
+          onClose={() => {
+            setIsTimesheetModalOpen(false);
+            setSelectedTimesheetEmployee(null);
+          }}
+        />
+      )}
+
+      {/* Standalone Timesheet Print & View Modal */}
+      {selectedPrintEmployee && isPrintModalOpen && (
+        <TimesheetPrintModal
+          isOpen={isPrintModalOpen}
+          onClose={() => {
+            setIsPrintModalOpen(false);
+            setSelectedPrintEmployee(null);
+          }}
+          workerId={selectedPrintEmployee.user_id}
+          workerName={selectedPrintEmployee.full_name}
+          employeeNo={selectedPrintEmployee.employee_no}
+          workerRole={selectedPrintEmployee.role?.role_name || selectedPrintEmployee.role}
+          workerRate={selectedPrintEmployee.hourly_rate}
+          subDepartments={selectedPrintEmployee.sub_departments?.map((sd: any) => sd.sub_department_name).join(', ')}
         />
       )}
     </div>

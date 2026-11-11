@@ -556,7 +556,7 @@ class AllocationViewSet(viewsets.ModelViewSet):
 
 
 class WorkLogViewSet(viewsets.ModelViewSet):
-    queryset = WorkLog.objects.all().select_related('ticket', 'worker', 'allocation').prefetch_related('stores')
+    queryset = WorkLog.objects.all().select_related('ticket', 'ticket__store', 'worker', 'allocation').prefetch_related('stores')
     serializer_class = WorkLogSerializer
 
     def get_serializer_class(self):
@@ -595,11 +595,19 @@ class WorkLogViewSet(viewsets.ModelViewSet):
         if work_date:
             queryset = queryset.filter(work_date=work_date)
 
+        from_date = self.request.query_params.get("from_date") or self.request.query_params.get("date_from") or self.request.query_params.get("start_date")
+        if from_date:
+            queryset = queryset.filter(work_date__gte=from_date)
+
+        to_date = self.request.query_params.get("to_date") or self.request.query_params.get("date_to") or self.request.query_params.get("end_date")
+        if to_date:
+            queryset = queryset.filter(work_date__lte=to_date)
+
         log_type = self.request.query_params.get("log_type")
         if log_type:
             queryset = queryset.filter(log_type=log_type)
 
-        return queryset
+        return queryset.order_by('work_date', 'from_time', 'created_date')
 
     def perform_create(self, serializer):
         user = self.request.user

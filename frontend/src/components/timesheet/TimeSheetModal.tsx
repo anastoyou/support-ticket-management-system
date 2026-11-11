@@ -6,8 +6,9 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
     Clock, Calendar as CalendarIcon, ChevronLeft, ChevronRight,
     X, MapPin, Edit2, Search, Lock, AlertCircle, Trash2,
-    ExternalLink, Sun, Moon
+    ExternalLink, Sun, Moon, Printer
 } from 'lucide-react';
+import { TimesheetPrintModal } from './TimesheetPrintModal';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api';
 
@@ -337,6 +338,11 @@ interface TimeSheetModalProps {
     lockLocation?: boolean;
     minDateKey?: string;
     initialCalendarOpen?: boolean;
+    workerName?: string;
+    employeeNo?: string;
+    workerRole?: string;
+    workerRate?: number | string;
+    subDepartments?: string;
 }
 
 function pad(value: number): string {
@@ -416,6 +422,11 @@ export const TimeSheetModal: React.FC<TimeSheetModalProps> = ({
     lockLocation = false,
     minDateKey,
     initialCalendarOpen,
+    workerName,
+    employeeNo,
+    workerRole,
+    workerRate,
+    subDepartments,
 }) => {
     const { token } = useSelector((state: RootState) => state.auth);
 
@@ -424,6 +435,23 @@ export const TimeSheetModal: React.FC<TimeSheetModalProps> = ({
 
     // Month picker calendar popup state
     const [isCalendarOpen, setIsCalendarOpen] = useState(false);
+    const [isPrintModalOpen, setIsPrintModalOpen] = useState(false);
+    const [hasSelectedDay, setHasSelectedDay] = useState(!initialCalendarOpen);
+
+    useEffect(() => {
+        if (isOpen) {
+            setHasSelectedDay(!initialCalendarOpen);
+        }
+    }, [isOpen, initialCalendarOpen]);
+
+    const handleCloseCalendarPopup = () => {
+        if (hasSelectedDay) {
+            setIsCalendarOpen(false);
+        } else {
+            setIsCalendarOpen(false);
+            handleCloseModal();
+        }
+    };
     const [calendarViewYear, setCalendarViewYear] = useState<number>(new Date().getFullYear());
     const [calendarViewMonth, setCalendarViewMonth] = useState<number>(new Date().getMonth());
     const [monthDaysStats, setMonthDaysStats] = useState<Record<string, { total_hours: number; completion_percentage: number }>>({});
@@ -1457,10 +1485,37 @@ export const TimeSheetModal: React.FC<TimeSheetModalProps> = ({
             >
 
 
+                {/* Employee Info Header Banner */}
+                {workerName && (
+                    <div className="px-4 py-2 bg-slate-50 dark:bg-surface-container-low border-b border-slate-100 dark:border-outline-variant flex items-center justify-between text-xs shrink-0">
+                        <div className="flex items-center gap-2 min-w-0">
+                            <span className="w-2 h-2 rounded-full bg-emerald-500 shrink-0"></span>
+                            <span className="font-bold text-slate-800 dark:text-on-surface truncate">{workerName}</span>
+                            {employeeNo && (
+                                <span className="text-[10px] text-slate-500 dark:text-on-surface-variant font-mono shrink-0">
+                                    (ID: {employeeNo})
+                                </span>
+                            )}
+                            {workerRole && (
+                                <span className="text-[10px] font-semibold text-primary uppercase shrink-0">
+                                    &bull; {workerRole}
+                                </span>
+                            )}
+                        </div>
+                        <button
+                            type="button"
+                            onClick={() => setIsPrintModalOpen(true)}
+                            className="text-[11px] font-bold text-primary hover:underline flex items-center gap-1 shrink-0 ml-2 cursor-pointer"
+                            title="Print Timesheet (A4)"
+                        >
+                            <Printer className="w-3.5 h-3.5" />
+                            <span>Print Timesheet</span>
+                        </button>
+                    </div>
+                )}
+
                 {/* Main Body */}
                 <div className="flex-1 overflow-y-auto divide-y divide-slate-100 dark:divide-outline-variant">
-
-
 
                     <div className="flex items-center gap-2 p-3 pr-2 bg-white dark:bg-surface-container">
                         {/* Date selector */}
@@ -1537,6 +1592,26 @@ export const TimeSheetModal: React.FC<TimeSheetModalProps> = ({
                 dark:group-hover:text-on-surface
                 transition-colors" />
                             </div>
+                        </button>
+
+                        {/* Print button */}
+                        <button
+                            type="button"
+                            onClick={() => setIsPrintModalOpen(true)}
+                            aria-label="Print timesheet"
+                            title="Print Timesheet Report (A4)"
+                            className="w-8 h-8 flex-shrink-0 rounded-full
+                                            flex items-center justify-center
+                                            text-slate-400 hover:text-slate-700
+                                            hover:bg-slate-100
+                                            dark:hover:text-on-surface
+                                            dark:hover:bg-surface-container-high
+                                            transition-all duration-200
+                                            active:scale-90
+                                            focus-visible:outline-none focus-visible:ring-2
+                                            focus-visible:ring-slate-400"
+                        >
+                            <Printer className="w-4 h-4" />
                         </button>
 
                         {/* Close button */}
@@ -2809,7 +2884,7 @@ export const TimeSheetModal: React.FC<TimeSheetModalProps> = ({
                 {/* Calendar Date Picker Popup Modal */}
                 {isCalendarOpen && (
                     <div
-                        onClick={() => { setIsCalendarOpen(false); handleCloseModal() }}
+                        onClick={handleCloseCalendarPopup}
                         className="fixed inset-0 z-[75] bg-black/50 backdrop-blur-xs flex items-center justify-center p-4"
                     >
                         <div
@@ -2817,14 +2892,30 @@ export const TimeSheetModal: React.FC<TimeSheetModalProps> = ({
                             className="bg-white dark:bg-surface-container border border-slate-200 dark:border-outline-variant rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden"
                         >
                             <div className="bg-[#17191C] text-white px-4 py-3 flex justify-between items-center">
-                                <h3 className="font-bold text-xs text-white">Select Date</h3>
-                                <button
-                                    type="button"
-                                    onClick={() => { setIsCalendarOpen(false); handleCloseModal() }}
-                                    className="w-6 h-6 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center text-sm"
-                                >
-                                    &times;
-                                </button>
+                                <div className="flex items-center gap-2 min-w-0">
+                                    <CalendarIcon className="w-4 h-4 text-amber-400 shrink-0" />
+                                    <h3 className="font-bold text-xs text-white truncate">
+                                        {workerName ? `${workerName}'s Timesheet Calendar` : 'Select Date'}
+                                    </h3>
+                                </div>
+                                <div className="flex items-center gap-2 shrink-0">
+                                    <button
+                                        type="button"
+                                        onClick={() => setIsPrintModalOpen(true)}
+                                        className="h-6 px-2.5 rounded bg-white/10 hover:bg-white/20 text-white font-bold text-[10px] flex items-center gap-1 transition cursor-pointer"
+                                        title="Print Timesheet Report (A4)"
+                                    >
+                                        <Printer className="w-3.5 h-3.5 text-amber-400" />
+                                        <span>Print A4</span>
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={handleCloseCalendarPopup}
+                                        className="w-6 h-6 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center text-sm cursor-pointer"
+                                    >
+                                        &times;
+                                    </button>
+                                </div>
                             </div>
 
                             <div className="px-3 py-2 bg-slate-50 dark:bg-surface-container border-b border-slate-100 dark:border-outline-variant flex justify-between items-center text-xs">
@@ -2930,6 +3021,7 @@ export const TimeSheetModal: React.FC<TimeSheetModalProps> = ({
                                             type="button"
                                             onClick={() => {
                                                 setSelectedDateKey(cellKey);
+                                                setHasSelectedDay(true);
                                                 setSelection(null);
                                                 setActiveConflict(null);
                                                 setSelectedSessionForView(null);
@@ -2987,6 +3079,26 @@ export const TimeSheetModal: React.FC<TimeSheetModalProps> = ({
                             </div>
                         </div>
                     </div>
+                )}
+                {/* Timesheet Print & View Modal */}
+                {isPrintModalOpen && (
+                    <TimesheetPrintModal
+                        isOpen={isPrintModalOpen}
+                        onClose={() => setIsPrintModalOpen(false)}
+                        workerId={workerId || 0}
+                        workerName={workerName || 'Employee'}
+                        employeeNo={employeeNo}
+                        workerRole={workerRole}
+                        workerRate={workerRate}
+                        subDepartments={subDepartments}
+                        initialFromDate={(() => {
+                            const dt = parseDateKey(selectedDateKey);
+                            const y = dt.getFullYear();
+                            const m = String(dt.getMonth() + 1).padStart(2, '0');
+                            return `${y}-${m}-01`;
+                        })()}
+                        initialToDate={selectedDateKey}
+                    />
                 )}
             </div>
         </div>
