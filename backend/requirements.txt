@@ -54,7 +54,6 @@ imagesize==2.0.1
 Incremental==24.11.0
 Jinja2==3.1.6
 kiwisolver==1.5.1
-llama_cpp_python==0.3.36
 lxml==6.1.2
 MarkupSafe==3.0.3
 matplotlib==3.11.1
@@ -66,7 +65,6 @@ multidict==6.7.1
 networkx==3.6.1
 numpy==2.3.5
 nvidia-ml-py==13.610.43
-ollama==0.6.3
 opencv-contrib-python==4.10.0.84
 opencv-python==5.0.0.93
 openpyxl==3.1.5
