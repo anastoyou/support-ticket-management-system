@@ -478,16 +478,16 @@ class TicketViewSet(viewsets.ModelViewSet):
             )
         role_name = (user.role.role_name.lower() if hasattr(
             user, 'role') and user.role else '')
-        has_create_perm = (
-            user.is_superuser or
-            user.has_perm('maintenance.can_create_complaint') or
-            role_name in ('administrator', 'admin')
-        )
-        if not has_create_perm:
-            return Response(
-                {"detail": "You do not have permission to register complaints."},
-                status=status.HTTP_403_FORBIDDEN
-            )
+        # has_create_perm = (
+        #     user.is_superuser or
+        #     user.has_perm('maintenance.can_create_complaint') or
+        #     role_name in ('administrator', 'admin')
+        # )
+        # if not has_create_perm:
+        #     return Response(
+        #         {"detail": "You do not have permission to register complaints."},
+        #         status=status.HTTP_403_FORBIDDEN
+        #     )
         return super().create(request, *args, **kwargs)
 
     def perform_create(self, serializer):
