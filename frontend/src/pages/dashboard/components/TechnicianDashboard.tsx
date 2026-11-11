@@ -5,6 +5,7 @@ import type { RootState } from '../../../store';
 import { StatCard } from './StatCard';
 import { Wrench, Clock, Receipt, CheckCircle2, Award, PlusCircle, AlertTriangle } from 'lucide-react';
 import { TimeSheetModal } from '../../../components/timesheet/TimeSheetModal';
+import Can from '@/hooks/Can';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api';
 
@@ -182,16 +183,17 @@ export const TechnicianDashboard: React.FC<TechnicianDashboardProps> = ({ data, 
             )}
 
             {/* Mobile Device Floating Action Button (FAB) with Bottom-to-Top Fill (DESIGN.md tokens) */}
+            <Can permission={['can_change_my_log_time']} >
 
-            <div className="sm:hidden fixed bottom-7 right-6 z-40 flex flex-col items-center gap-2 select-none">
-                <button
-                    type="button"
-                    onClick={() => {
-                        setInitialLogId(undefined);
-                        setInitialDate(undefined);
-                        setIsTimeSheetOpen(true);
-                    }}
-                    className="
+                <div className="sm:hidden fixed bottom-7 right-6 z-40 flex flex-col items-center gap-2 select-none">
+                    <button
+                        type="button"
+                        onClick={() => {
+                            setInitialLogId(undefined);
+                            setInitialDate(undefined);
+                            setIsTimeSheetOpen(true);
+                        }}
+                        className="
             group relative w-[76px] h-[76px]
             rounded-full overflow-visible
             bg-surface-container
@@ -207,71 +209,71 @@ export const TechnicianDashboard: React.FC<TechnicianDashboardProps> = ({ data, 
             focus-visible:ring-offset-2
             animate-[bounce_2s_ease-in-out_3]
         "
-                    aria-label={`Open time sheet. ${todayHours} hours logged, ${todayPct}% complete.`}
-                    title="Time Sheet"
-                >
-                    {/* Circular progress track */}
-                    <svg
-                        className="absolute inset-0 w-full h-full -rotate-90"
-                        viewBox="0 0 76 76"
-                        fill="none"
+                        aria-label={`Open time sheet. ${todayHours} hours logged, ${todayPct}% complete.`}
+                        title="Time Sheet"
                     >
-                        <circle
-                            cx="38"
-                            cy="38"
-                            r="34"
-                            stroke="currentColor"
-                            strokeWidth="3"
-                            className="text-outline-variant/40"
-                        />
+                        {/* Circular progress track */}
+                        <svg
+                            className="absolute inset-0 w-full h-full -rotate-90"
+                            viewBox="0 0 76 76"
+                            fill="none"
+                        >
+                            <circle
+                                cx="38"
+                                cy="38"
+                                r="34"
+                                stroke="currentColor"
+                                strokeWidth="3"
+                                className="text-outline-variant/40"
+                            />
 
-                        {/* Progress indicator */}
-                        <circle
-                            cx="38"
-                            cy="38"
-                            r="34"
-                            stroke="currentColor"
-                            strokeWidth="3"
-                            strokeLinecap="round"
-                            strokeDasharray={2 * Math.PI * 34}
-                            strokeDashoffset={
-                                2 * Math.PI * 34 *
-                                (1 - Math.min(100, Math.max(0, todayPct)) / 100)
-                            }
-                            className="text-primary transition-all duration-700 ease-out"
-                        />
-                    </svg>
+                            {/* Progress indicator */}
+                            <circle
+                                cx="38"
+                                cy="38"
+                                r="34"
+                                stroke="currentColor"
+                                strokeWidth="3"
+                                strokeLinecap="round"
+                                strokeDasharray={2 * Math.PI * 34}
+                                strokeDashoffset={
+                                    2 * Math.PI * 34 *
+                                    (1 - Math.min(100, Math.max(0, todayPct)) / 100)
+                                }
+                                className="text-primary transition-all duration-700 ease-out"
+                            />
+                        </svg>
 
-                    {/* Background progress fill */}
-                    <div
-                        className="
+                        {/* Background progress fill */}
+                        <div
+                            className="
                 absolute inset-1 rounded-full
                 pointer-events-none
                 transition-all duration-500
             "
-                        style={{
-                            background: `linear-gradient(
+                            style={{
+                                background: `linear-gradient(
                     to top,
                     color-mix(in srgb, var(--color-primary) 16%, transparent)
                     ${Math.min(100, Math.max(0, todayPct))}%,
                     transparent
                     ${Math.min(100, Math.max(0, todayPct))}%
                 )`
-                        }}
-                    />
+                            }}
+                        />
 
-                    {/* Main content */}
-                    <div className="relative z-10 flex flex-col items-center justify-center gap-1 pointer-events-none">
-                        <Clock className="w-6 h-6 text-primary transition-transform duration-300 group-hover:scale-110" />
+                        {/* Main content */}
+                        <div className="relative z-10 flex flex-col items-center justify-center gap-1 pointer-events-none">
+                            <Clock className="w-6 h-6 text-primary transition-transform duration-300 group-hover:scale-110" />
 
-                        <span className="text-sm font-bold text-on-surface leading-none tabular-nums">
-                            {todayHours}h
-                        </span>
-                    </div>
+                            <span className="text-sm font-bold text-on-surface leading-none tabular-nums">
+                                {todayHours}h
+                            </span>
+                        </div>
 
-                    {/* Percentage badge */}
-                    <span
-                        className="
+                        {/* Percentage badge */}
+                        <span
+                            className="
                 absolute -top-1.5 -right-2
                 min-w-[36px] h-[23px]
                 px-2 rounded-full
@@ -284,11 +286,12 @@ export const TechnicianDashboard: React.FC<TechnicianDashboardProps> = ({ data, 
                 transition-transform duration-300
                 group-hover:scale-110
             "
-                    >
-                        {todayPct >= 100 ? '100%' : `${todayPct}%`}
-                    </span>
-                </button>
-            </div>
+                        >
+                            {todayPct >= 100 ? '100%' : `${todayPct}%`}
+                        </span>
+                    </button>
+                </div>
+            </Can>
 
             <TimeSheetModal
                 isOpen={isTimeSheetOpen}
@@ -311,6 +314,6 @@ export const TechnicianDashboard: React.FC<TechnicianDashboardProps> = ({ data, 
                 }}
                 onSessionsUpdated={fetchTodayTimesheet}
             />
-        </div>
+        </div >
     );
 };

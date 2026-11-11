@@ -32,6 +32,7 @@ class NotificationAdmin(admin.ModelAdmin):
 class DashboardUpdateAdmin(admin.ModelAdmin):
     list_display = (
         'title',
+        'is_vertical',
         'is_active',
         'priority',
         'hide_after',
@@ -39,8 +40,27 @@ class DashboardUpdateAdmin(admin.ModelAdmin):
         'created_at',
     )
 
+    list_editable = (
+        'is_vertical',
+        'is_active',
+        'priority',
+    )
+
+    fields = (
+        'title',
+        'description',
+        'video_url',
+        'is_vertical',
+        'roles',
+        'is_active',
+        'priority',
+        'hide_after',
+        'created_at',
+    )
+
     list_filter = (
         'is_active',
+        'is_vertical',
         'roles',
         'created_at',
     )

@@ -23,6 +23,12 @@ class DashboardUpdate(models.Model):
         null=True
     )
 
+    is_vertical = models.BooleanField(
+        default=False,
+        verbose_name="Vertical / Mobile Video (9:16)",
+        help_text="Check if video was recorded vertically (e.g. mobile screen recording or YouTube Shorts)."
+    )
+
     hide_after = models.DateTimeField(
         blank=True,
         null=True
@@ -36,6 +42,8 @@ class DashboardUpdate(models.Model):
 
     class Meta:
         ordering = ['-priority', '-created_at']
+        verbose_name = 'Dashboard Update'
+        verbose_name_plural = 'Dashboard Updates'
 
     def __str__(self):
         return self.title

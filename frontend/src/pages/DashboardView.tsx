@@ -185,6 +185,11 @@ export const DashboardView: React.FC = () => {
     return (
         <div className="space-y-6">
             {/* Top Date & Store Filter Bar */}
+
+
+            <DashboardUpdates
+            />
+
             <DateFilterToolbar
                 fromDate={fromDate}
                 toDate={toDate}
@@ -198,8 +203,6 @@ export const DashboardView: React.FC = () => {
                 onDeptChange={setSelectedDept}
                 loading={loading}
                 onRefresh={fetchMetrics}
-            />
-            <DashboardUpdates
             />
 
             {/* Dynamic Role Dashboard View */}

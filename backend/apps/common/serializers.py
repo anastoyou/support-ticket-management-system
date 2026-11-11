@@ -1,5 +1,6 @@
 from rest_framework import serializers
-from .models import MediaCategory, Media, Notification
+from .models import MediaCategory, Media, Notification, DashboardUpdate
+from apps.accounts.models import Role
 from apps.accounts.models import CustomUser
 
 
@@ -63,3 +64,37 @@ class NotificationSerializer(serializers.ModelSerializer):
     class Meta:
         model = Notification
         fields = '__all__'
+
+
+class RoleMiniSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Role
+        fields = ['role_id', 'role_name']
+
+
+class DashboardUpdateSerializer(serializers.ModelSerializer):
+    roles = serializers.PrimaryKeyRelatedField(
+        many=True,
+        queryset=Role.objects.all(),
+        required=False
+    )
+    roles_details = RoleMiniSerializer(source='roles', many=True, read_only=True)
+    is_active = serializers.BooleanField(default=True, required=False)
+    is_visible = serializers.BooleanField(read_only=True)
+
+    class Meta:
+        model = DashboardUpdate
+        fields = [
+            'id',
+            'title',
+            'description',
+            'roles',
+            'roles_details',
+            'video_url',
+            'is_vertical',
+            'hide_after',
+            'is_active',
+            'priority',
+            'created_at',
+            'is_visible',
+        ]

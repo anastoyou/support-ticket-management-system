@@ -1,11 +1,12 @@
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
-from .views import MediaCategoryViewSet, MediaViewSet, NotificationViewSet, SubscribePushView, UnsubscribePushView, GithubWebhookView
+from .views import MediaCategoryViewSet, MediaViewSet, NotificationViewSet, SubscribePushView, UnsubscribePushView, GithubWebhookView, DashboardUpdateViewSet
 
 router = DefaultRouter()
 router.register(r'mediacategory', MediaCategoryViewSet)
 router.register(r"media", MediaViewSet, basename="media")
 router.register(r'notification', NotificationViewSet)
+router.register(r'dashboard-updates', DashboardUpdateViewSet, basename='dashboard-updates')
 
 urlpatterns = [
     path('', include(router.urls)),

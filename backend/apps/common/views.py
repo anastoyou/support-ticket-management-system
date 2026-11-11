@@ -17,8 +17,10 @@ from rest_framework.response import Response
 from rest_framework import status
 from rest_framework.authentication import TokenAuthentication
 from rest_framework.permissions import IsAuthenticated
-from .models import MediaCategory, Media, Notification
-from .serializers import MediaCategorySerializer, MediaSerializer, NotificationSerializer, MediaWriteSerializer
+from .models import MediaCategory, Media, Notification, DashboardUpdate
+from django.db.models import Q
+from rest_framework import exceptions
+from .serializers import MediaCategorySerializer, MediaSerializer, NotificationSerializer, MediaWriteSerializer, DashboardUpdateSerializer
 from apps.stores.models import SubDepartment
 from rest_framework.exceptions import ValidationError
 
@@ -659,3 +661,72 @@ class GithubWebhookView(APIView):
         thread.daemon = True
         thread.start()
         return Response({"success": True, "message": "Deployment triggered."})
+
+
+
+class DashboardUpdateViewSet(viewsets.ModelViewSet):
+    """
+    API endpoint for viewing and managing Dashboard Updates (What's New / Tutorials).
+    """
+    queryset = DashboardUpdate.objects.all()
+    serializer_class = DashboardUpdateSerializer
+    authentication_classes = [TokenAuthentication]
+    permission_classes = [IsAuthenticated]
+
+    def _check_admin_permission(self):
+        user = self.request.user
+        role_name = (user.role.role_name.lower().strip() if hasattr(user, 'role') and user.role else '') if user else ''
+        is_admin = (
+            user.is_superuser or
+            getattr(user, 'is_staff', False) or
+            role_name in ('administrator', 'admin', 'office administrator', 'office admin', 'management', 'main administrator', 'main_admin') or
+            user.has_perm('common.add_dashboardupdate') or
+            user.has_perm('common.change_dashboardupdate')
+        )
+        if not is_admin:
+            raise exceptions.PermissionDenied({'detail': 'You do not have permission to manage dashboard updates.'})
+
+    def perform_create(self, serializer):
+        self._check_admin_permission()
+        serializer.save()
+
+    def perform_update(self, serializer):
+        self._check_admin_permission()
+        serializer.save()
+
+    def perform_destroy(self, instance):
+        self._check_admin_permission()
+        instance.delete()
+
+    def get_queryset(self):
+        user = self.request.user
+        role_name = (user.role.role_name.lower().strip() if hasattr(user, 'role') and user.role else '') if user else ''
+        is_admin = (
+            user.is_superuser or
+            getattr(user, 'is_staff', False) or
+            role_name in ('administrator', 'admin', 'office administrator', 'office admin', 'management', 'main administrator', 'main_admin') or
+            user.has_perm('common.change_dashboardupdate')
+        )
+
+        # For single object actions (retrieve, update, partial_update, destroy), allow access if admin
+        if self.action in ['retrieve', 'update', 'partial_update', 'destroy']:
+            if is_admin:
+                return DashboardUpdate.objects.all().prefetch_related('roles')
+
+        all_param = self.request.query_params.get('all', '').lower() in ('true', '1')
+        if is_admin and all_param:
+            return DashboardUpdate.objects.all().prefetch_related('roles').order_by('-priority', '-created_at')
+
+        now = timezone.now()
+        qs = DashboardUpdate.objects.filter(is_active=True).filter(
+            Q(hide_after__isnull=True) | Q(hide_after__gt=now)
+        )
+
+        if user and not user.is_anonymous and hasattr(user, 'role') and user.role:
+            qs = qs.filter(
+                Q(roles__isnull=True) | Q(roles=user.role)
+            )
+        elif not is_admin:
+            qs = qs.filter(roles__isnull=True)
+
+        return qs.prefetch_related('roles').distinct().order_by('-priority', '-created_at')
