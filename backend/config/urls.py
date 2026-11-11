@@ -14,6 +14,8 @@ Including another URLconf
     1. Import the include() function: from django.urls import include, path
     2. Add a URL to urlpatterns:  path('blog/', include('blog.urls'))
 """
+import re
+from pathlib import Path
 from django.views.static import serve
 from django.contrib import admin
 from django.urls import path, include, re_path
@@ -57,25 +59,31 @@ else:
     urlpatterns += static(settings.STATIC_URL,
                           document_root=settings.STATIC_ROOT)
 
-# Serve root PWA static files directly if requested without /static/ prefix
+def serve_root_static(request, path):
+    if hasattr(settings, 'STATIC_ROOT') and settings.STATIC_ROOT and (Path(settings.STATIC_ROOT) / path).exists():
+        return serve(request, path, document_root=settings.STATIC_ROOT)
+    return serve(request, path, document_root=settings.BASE_DIR / 'static')
+
+
+# Serve root PWA and brand static files directly if requested without /static/ prefix
 ROOT_STATIC_FILES = [
-    # 'manifest.webmanifest',
-    # 'sw.js',
+    'document_logo.png',
+    'manifest.webmanifest',
+    'sw.js',
     'icon-192x192.png',
-    # 'icon-512x512.png',
-    # 'favicon.svg',
-    # 'favicon.ico',
-    # 'ic_stat_notify.png',
+    'icon-512x512.png',
+    'favicon.svg',
+    'favicon.ico',
+    'ic_stat_notify.png',
+    'icons.svg',
 ]
-static_doc_root = settings.STATIC_ROOT if (hasattr(
-    settings, 'STATIC_ROOT') and settings.STATIC_ROOT and settings.STATIC_ROOT.exists()) else settings.BASE_DIR / 'static'
 
 for static_file in ROOT_STATIC_FILES:
     urlpatterns.append(
         path(
             static_file,
-            serve,
-            {'document_root': static_doc_root, 'path': static_file}
+            serve_root_static,
+            {'path': static_file}
         )
     )
 
@@ -83,7 +91,7 @@ for static_file in ROOT_STATIC_FILES:
 urlpatterns += [
     re_path(
         r'^(?!static/|media/|api/|admin/|' +
-        '|'.join(ROOT_STATIC_FILES) + r').*$',
+        '|'.join([re.escape(f) for f in ROOT_STATIC_FILES]) + r').*$',
         TemplateView.as_view(template_name='index.html'),
     )
 ]
