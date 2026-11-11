@@ -3,6 +3,7 @@ from rest_framework import viewsets, exceptions
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from django.utils import timezone
+from rest_framework import status
 from rest_framework.pagination import PageNumberPagination
 from .models import Priority, Status, WorkNature, NatureWorker, Ticket, Allocation, WorkLog, TicketHistory, TicketChatMessage, ComplaintIssueType, Complaint
 from .serializers import (
@@ -53,7 +54,8 @@ class StatusViewSet(viewsets.ModelViewSet):
 
 
 class WorkNatureViewSet(viewsets.ModelViewSet):
-    queryset = WorkNature.objects.all().select_related('sub_department', 'sub_department__department')
+    queryset = WorkNature.objects.all().select_related(
+        'sub_department', 'sub_department__department')
     serializer_class = WorkNatureSerializer
 
     def get_serializer_class(self):
@@ -64,18 +66,22 @@ class WorkNatureViewSet(viewsets.ModelViewSet):
     def perform_update(self, serializer):
         instance = serializer.instance
         is_office_nature = instance.nature_name.lower().strip() == 'office related' or (
-            instance.sub_department and instance.sub_department.sub_department_name.lower().strip() == 'office'
+            instance.sub_department and instance.sub_department.sub_department_name.lower(
+            ).strip() == 'office'
         )
         if is_office_nature:
-            raise exceptions.ValidationError({'detail': 'System work nature "Office Related" cannot be modified or updated.'})
+            raise exceptions.ValidationError(
+                {'detail': 'System work nature "Office Related" cannot be modified or updated.'})
         serializer.save()
 
     def perform_destroy(self, instance):
         is_office_nature = instance.nature_name.lower().strip() == 'office related' or (
-            instance.sub_department and instance.sub_department.sub_department_name.lower().strip() == 'office'
+            instance.sub_department and instance.sub_department.sub_department_name.lower(
+            ).strip() == 'office'
         )
         if is_office_nature:
-            raise exceptions.ValidationError({'detail': 'System work nature "Office Related" cannot be deleted.'})
+            raise exceptions.ValidationError(
+                {'detail': 'System work nature "Office Related" cannot be deleted.'})
         instance.delete()
 
     def get_queryset(self):
@@ -86,14 +92,17 @@ class WorkNatureViewSet(viewsets.ModelViewSet):
 
         department = self.request.query_params.get('department')
         if department:
-            queryset = queryset.filter(sub_department__department_id=department)
+            queryset = queryset.filter(
+                sub_department__department_id=department)
 
         exclude_office = self.request.query_params.get('exclude_office')
         if exclude_office == 'true' or (department and self.request.query_params.get('include_office') != 'true'):
-            queryset = queryset.exclude(sub_department__sub_department_name__iexact='office')
+            queryset = queryset.exclude(
+                sub_department__sub_department_name__iexact='office')
 
         if not user.is_superuser:
-            user_groups_lower = [g.lower().strip() for g in user.groups.values_list('name', flat=True)]
+            user_groups_lower = [g.lower().strip()
+                                 for g in user.groups.values_list('name', flat=True)]
             can_view_all_depts = (
                 user.has_perm('maintenance.view_all_department_tickets') or
                 user.has_perm('maintenance.create_ticket_all_departments') or
@@ -102,9 +111,11 @@ class WorkNatureViewSet(viewsets.ModelViewSet):
                 'administrator' in user_groups_lower
             )
             if not can_view_all_depts:
-                user_dept_ids = list(user.sub_departments.values_list('department_id', flat=True))
+                user_dept_ids = list(user.sub_departments.values_list(
+                    'department_id', flat=True))
                 if user_dept_ids:
-                    queryset = queryset.filter(sub_department__department_id__in=user_dept_ids)
+                    queryset = queryset.filter(
+                        sub_department__department_id__in=user_dept_ids)
                 else:
                     return WorkNature.objects.none()
 
@@ -147,7 +158,8 @@ class TicketViewSet(viewsets.ModelViewSet):
     ).prefetch_related(
         'allocations',
         'allocations__worker',
-        Prefetch('history', queryset=TicketHistory.objects.order_by('-changed_date'), to_attr='cached_history')
+        Prefetch('history', queryset=TicketHistory.objects.order_by(
+            '-changed_date'), to_attr='cached_history')
     )
     serializer_class = TicketSerializer
     pagination_class = TicketPagination
@@ -163,9 +175,12 @@ class TicketViewSet(viewsets.ModelViewSet):
         if not user or user.is_anonymous:
             return Ticket.objects.none()
 
-        role_name = (user.role.role_name.lower() if hasattr(user, 'role') and user.role else '')
-        user_groups_lower = [g.lower().strip() for g in user.groups.values_list('name', flat=True)]
-        is_management = role_name in ('management', 'management team') or 'management' in user_groups_lower
+        role_name = (user.role.role_name.lower() if hasattr(
+            user, 'role') and user.role else '')
+        user_groups_lower = [g.lower().strip()
+                             for g in user.groups.values_list('name', flat=True)]
+        is_management = role_name in (
+            'management', 'management team') or 'management' in user_groups_lower
 
         if user.is_superuser or is_management:
             pass
@@ -236,7 +251,8 @@ class TicketViewSet(viewsets.ModelViewSet):
                 Q(allocations__worker__username__icontains=search)
             )
             if clean_search.isdigit():
-                search_q |= Q(ticket_id=int(clean_search)) | Q(store_id=int(clean_search))
+                search_q |= Q(ticket_id=int(clean_search)) | Q(
+                    store_id=int(clean_search))
             queryset = queryset.filter(search_q).distinct()
 
         store = params.get('store')
@@ -254,7 +270,8 @@ class TicketViewSet(viewsets.ModelViewSet):
 
         sub_department = params.get('sub_department')
         if sub_department:
-            queryset = queryset.filter(nature__sub_department_id=sub_department)
+            queryset = queryset.filter(
+                nature__sub_department_id=sub_department)
 
         status = params.get('status')
         if status:
@@ -277,7 +294,8 @@ class TicketViewSet(viewsets.ModelViewSet):
 
         worker = params.get('worker')
         if worker:
-            queryset = queryset.filter(allocations__worker_id=worker).distinct()
+            queryset = queryset.filter(
+                allocations__worker_id=worker).distinct()
 
         from_date = params.get('from_date')
         to_date = params.get('to_date')
@@ -292,17 +310,20 @@ class TicketViewSet(viewsets.ModelViewSet):
                 if from_date and to_date_val:
                     queryset = queryset.filter(
                         Q(approved_date__gte=from_date, approved_date__lte=to_date_val) |
-                        Q(history__status__status_name__iexact='Open', history__changed_date__gte=from_date, history__changed_date__lte=to_date_val, history__changed_date__gt=F('created_date'))
+                        Q(history__status__status_name__iexact='Open', history__changed_date__gte=from_date,
+                          history__changed_date__lte=to_date_val, history__changed_date__gt=F('created_date'))
                     )
                 elif from_date:
                     queryset = queryset.filter(
                         Q(approved_date__gte=from_date) |
-                        Q(history__status__status_name__iexact='Open', history__changed_date__gte=from_date, history__changed_date__gt=F('created_date'))
+                        Q(history__status__status_name__iexact='Open',
+                          history__changed_date__gte=from_date, history__changed_date__gt=F('created_date'))
                     )
                 elif to_date_val:
                     queryset = queryset.filter(
                         Q(approved_date__lte=to_date_val) |
-                        Q(history__status__status_name__iexact='Open', history__changed_date__lte=to_date_val, history__changed_date__gt=F('created_date'))
+                        Q(history__status__status_name__iexact='Open',
+                          history__changed_date__lte=to_date_val, history__changed_date__gt=F('created_date'))
                     )
                 queryset = queryset.distinct()
 
@@ -310,17 +331,20 @@ class TicketViewSet(viewsets.ModelViewSet):
                 if from_date and to_date_val:
                     queryset = queryset.filter(
                         Q(rejected_date__gte=from_date, rejected_date__lte=to_date_val) |
-                        Q(history__status__status_name__iexact='Rejected', history__changed_date__gte=from_date, history__changed_date__lte=to_date_val)
+                        Q(history__status__status_name__iexact='Rejected',
+                          history__changed_date__gte=from_date, history__changed_date__lte=to_date_val)
                     )
                 elif from_date:
                     queryset = queryset.filter(
                         Q(rejected_date__gte=from_date) |
-                        Q(history__status__status_name__iexact='Rejected', history__changed_date__gte=from_date)
+                        Q(history__status__status_name__iexact='Rejected',
+                          history__changed_date__gte=from_date)
                     )
                 elif to_date_val:
                     queryset = queryset.filter(
                         Q(rejected_date__lte=to_date_val) |
-                        Q(history__status__status_name__iexact='Rejected', history__changed_date__lte=to_date_val)
+                        Q(history__status__status_name__iexact='Rejected',
+                          history__changed_date__lte=to_date_val)
                     )
                 queryset = queryset.distinct()
 
@@ -366,7 +390,8 @@ class TicketViewSet(viewsets.ModelViewSet):
                 if from_date and to_date_val:
                     queryset = queryset.filter(
                         Q(location_approved_date__gte=from_date, location_approved_date__lte=to_date_val) |
-                        Q(history__location_approved_date__gte=from_date, history__location_approved_date__lte=to_date_val)
+                        Q(history__location_approved_date__gte=from_date,
+                          history__location_approved_date__lte=to_date_val)
                     )
                 elif from_date:
                     queryset = queryset.filter(
@@ -385,26 +410,30 @@ class TicketViewSet(viewsets.ModelViewSet):
                     queryset = queryset.filter(
                         Q(closed_date__gte=from_date, closed_date__lte=to_date_val) |
                         Q(history__status__status_name__iexact='Completed', history__changed_date__gte=from_date, history__changed_date__lte=to_date_val) |
-                        Q(history__status__status_name__iexact='Closed', history__changed_date__gte=from_date, history__changed_date__lte=to_date_val)
+                        Q(history__status__status_name__iexact='Closed',
+                          history__changed_date__gte=from_date, history__changed_date__lte=to_date_val)
                     )
                 elif from_date:
                     queryset = queryset.filter(
                         Q(closed_date__gte=from_date) |
                         Q(history__status__status_name__iexact='Completed', history__changed_date__gte=from_date) |
-                        Q(history__status__status_name__iexact='Closed', history__changed_date__gte=from_date)
+                        Q(history__status__status_name__iexact='Closed',
+                          history__changed_date__gte=from_date)
                     )
                 elif to_date_val:
                     queryset = queryset.filter(
                         Q(closed_date__lte=to_date_val) |
                         Q(history__status__status_name__iexact='Completed', history__changed_date__lte=to_date_val) |
-                        Q(history__status__status_name__iexact='Closed', history__changed_date__lte=to_date_val)
+                        Q(history__status__status_name__iexact='Closed',
+                          history__changed_date__lte=to_date_val)
                     )
                 queryset = queryset.distinct()
 
             else:
                 # Default: created date
                 if from_date and to_date_val:
-                    queryset = queryset.filter(created_date__gte=from_date, created_date__lte=to_date_val)
+                    queryset = queryset.filter(
+                        created_date__gte=from_date, created_date__lte=to_date_val)
                 elif from_date:
                     queryset = queryset.filter(created_date__gte=from_date)
                 elif to_date_val:
@@ -413,23 +442,29 @@ class TicketViewSet(viewsets.ModelViewSet):
             # When from_date and to_date are not specified and status is not explicitly passed, filter by date_type stage/status
             if date_type in ('open', 'approved'):
                 queryset = queryset.filter(
-                    Q(approved_date__isnull=False) | Q(status__status_name__iexact='Open')
+                    Q(approved_date__isnull=False) | Q(
+                        status__status_name__iexact='Open')
                 ).distinct()
             elif date_type in ('rejected', 'relected'):
                 queryset = queryset.filter(
-                    Q(rejected_date__isnull=False) | Q(status__status_name__iexact='Rejected')
+                    Q(rejected_date__isnull=False) | Q(
+                        status__status_name__iexact='Rejected')
                 ).distinct()
             elif date_type == 'blocked':
-                queryset = queryset.filter(status__status_name__iexact='Blocked').distinct()
+                queryset = queryset.filter(
+                    status__status_name__iexact='Blocked').distinct()
             elif date_type in ('in_progress', 'in progress'):
-                queryset = queryset.filter(status__status_name__iexact='In Progress').distinct()
+                queryset = queryset.filter(
+                    status__status_name__iexact='In Progress').distinct()
             elif date_type in ('location_approval', 'location approval', 'location_approved'):
                 queryset = queryset.filter(
-                    Q(location_approved_date__isnull=False) | Q(status__status_name__iexact='Location Approval')
+                    Q(location_approved_date__isnull=False) | Q(
+                        status__status_name__iexact='Location Approval')
                 ).distinct()
             elif date_type in ('closed', 'completed'):
                 queryset = queryset.filter(
-                    Q(closed_date__isnull=False) | Q(status__status_name__in=['Closed', 'Completed'])
+                    Q(closed_date__isnull=False) | Q(
+                        status__status_name__in=['Closed', 'Completed'])
                 ).distinct()
 
         return queryset
@@ -441,7 +476,8 @@ class TicketViewSet(viewsets.ModelViewSet):
                 {"detail": "Authentication required to register complaints."},
                 status=status.HTTP_401_UNAUTHORIZED
             )
-        role_name = (user.role.role_name.lower() if hasattr(user, 'role') and user.role else '')
+        role_name = (user.role.role_name.lower() if hasattr(
+            user, 'role') and user.role else '')
         has_create_perm = (
             user.is_superuser or
             user.has_perm('maintenance.can_create_complaint') or
@@ -456,10 +492,13 @@ class TicketViewSet(viewsets.ModelViewSet):
 
     def perform_create(self, serializer):
         user = self.request.user
-        role_name = (user.role.role_name.lower() if hasattr(user, 'role') and user.role else '') if user else ''
-        user_groups_lower = [g.lower().strip() for g in user.groups.values_list('name', flat=True)] if user else []
+        role_name = (user.role.role_name.lower() if hasattr(
+            user, 'role') and user.role else '') if user else ''
+        user_groups_lower = [g.lower().strip() for g in user.groups.values_list(
+            'name', flat=True)] if user else []
         if role_name in ('management', 'management team') or 'management' in user_groups_lower:
-            raise exceptions.PermissionDenied({'detail': 'Management role is view-only and cannot raise or create tickets.'})
+            raise exceptions.PermissionDenied(
+                {'detail': 'Management role is view-only and cannot raise or create tickets.'})
 
         kwargs = {}
         if user and not user.is_anonymous:
@@ -468,10 +507,13 @@ class TicketViewSet(viewsets.ModelViewSet):
 
     def perform_update(self, serializer):
         user = self.request.user
-        role_name = (user.role.role_name.lower() if hasattr(user, 'role') and user.role else '') if user else ''
-        user_groups_lower = [g.lower().strip() for g in user.groups.values_list('name', flat=True)] if user else []
+        role_name = (user.role.role_name.lower() if hasattr(
+            user, 'role') and user.role else '') if user else ''
+        user_groups_lower = [g.lower().strip() for g in user.groups.values_list(
+            'name', flat=True)] if user else []
         if role_name in ('management', 'management team') or 'management' in user_groups_lower:
-            raise exceptions.PermissionDenied({'detail': 'Management role is read-only and cannot edit tickets.'})
+            raise exceptions.PermissionDenied(
+                {'detail': 'Management role is read-only and cannot edit tickets.'})
         serializer.save()
 
     @action(detail=False, methods=['get'], url_path='check-throttle')
@@ -491,10 +533,12 @@ class TicketViewSet(viewsets.ModelViewSet):
         return Response(result)
 
     def destroy(self, request, *args, **kwargs):
-        raise exceptions.PermissionDenied({'detail': 'Tickets cannot be deleted to preserve system audit log and tracking integrity.'})
+        raise exceptions.PermissionDenied(
+            {'detail': 'Tickets cannot be deleted to preserve system audit log and tracking integrity.'})
 
     def perform_destroy(self, instance):
-        raise exceptions.PermissionDenied({'detail': 'Tickets cannot be deleted to preserve system audit log and tracking integrity.'})
+        raise exceptions.PermissionDenied(
+            {'detail': 'Tickets cannot be deleted to preserve system audit log and tracking integrity.'})
 
 
 class AllocationViewSet(viewsets.ModelViewSet):
@@ -512,9 +556,12 @@ class AllocationViewSet(viewsets.ModelViewSet):
         if not user or user.is_anonymous:
             return Allocation.objects.none()
 
-        role_name = (user.role.role_name.lower() if hasattr(user, 'role') and user.role else '')
-        user_groups_lower = [g.lower().strip() for g in user.groups.values_list('name', flat=True)]
-        is_management = role_name in ('management', 'management team') or 'management' in user_groups_lower
+        role_name = (user.role.role_name.lower() if hasattr(
+            user, 'role') and user.role else '')
+        user_groups_lower = [g.lower().strip()
+                             for g in user.groups.values_list('name', flat=True)]
+        is_management = role_name in (
+            'management', 'management team') or 'management' in user_groups_lower
 
         if not user.is_superuser and not is_management:
             accessible_store_ids = list(
@@ -531,10 +578,13 @@ class AllocationViewSet(viewsets.ModelViewSet):
 
     def perform_create(self, serializer):
         user = self.request.user
-        role_name = (user.role.role_name.lower() if hasattr(user, 'role') and user.role else '') if user else ''
-        user_groups_lower = [g.lower().strip() for g in user.groups.values_list('name', flat=True)] if user else []
+        role_name = (user.role.role_name.lower() if hasattr(
+            user, 'role') and user.role else '') if user else ''
+        user_groups_lower = [g.lower().strip() for g in user.groups.values_list(
+            'name', flat=True)] if user else []
         if role_name in ('management', 'management team') or 'management' in user_groups_lower:
-            raise exceptions.PermissionDenied({'detail': 'Management role is view-only and cannot perform create operations.'})
+            raise exceptions.PermissionDenied(
+                {'detail': 'Management role is view-only and cannot perform create operations.'})
 
         kwargs = {}
         if user and not user.is_anonymous:
@@ -545,10 +595,13 @@ class AllocationViewSet(viewsets.ModelViewSet):
 
     def perform_update(self, serializer):
         user = self.request.user
-        role_name = (user.role.role_name.lower() if hasattr(user, 'role') and user.role else '') if user else ''
-        user_groups_lower = [g.lower().strip() for g in user.groups.values_list('name', flat=True)] if user else []
+        role_name = (user.role.role_name.lower() if hasattr(
+            user, 'role') and user.role else '') if user else ''
+        user_groups_lower = [g.lower().strip() for g in user.groups.values_list(
+            'name', flat=True)] if user else []
         if role_name in ('management', 'management team') or 'management' in user_groups_lower:
-            raise exceptions.PermissionDenied({'detail': 'Management role is view-only and cannot perform update operations.'})
+            raise exceptions.PermissionDenied(
+                {'detail': 'Management role is view-only and cannot perform update operations.'})
 
         allocation = serializer.save()
         if allocation.worker and allocation.ticket and allocation.ticket.store:
@@ -556,7 +609,8 @@ class AllocationViewSet(viewsets.ModelViewSet):
 
 
 class WorkLogViewSet(viewsets.ModelViewSet):
-    queryset = WorkLog.objects.all().select_related('ticket', 'ticket__store', 'worker', 'allocation').prefetch_related('stores')
+    queryset = WorkLog.objects.all().select_related('ticket', 'ticket__store',
+                                                    'worker', 'allocation').prefetch_related('stores')
     serializer_class = WorkLogSerializer
 
     def get_serializer_class(self):
@@ -570,17 +624,22 @@ class WorkLogViewSet(viewsets.ModelViewSet):
         if not user or user.is_anonymous:
             return WorkLog.objects.none()
 
-        role_name = (user.role.role_name.lower() if hasattr(user, 'role') and user.role else '')
-        user_groups_lower = [g.lower().strip() for g in user.groups.values_list('name', flat=True)]
-        is_management = role_name in ('management', 'management team') or 'management' in user_groups_lower
-        is_admin = user.is_superuser or any(x in role_name for x in ['admin', 'administrator', 'office']) or any(x in ' '.join(user_groups_lower) for x in ['admin', 'office'])
+        role_name = (user.role.role_name.lower() if hasattr(
+            user, 'role') and user.role else '')
+        user_groups_lower = [g.lower().strip()
+                             for g in user.groups.values_list('name', flat=True)]
+        is_management = role_name in (
+            'management', 'management team') or 'management' in user_groups_lower
+        is_admin = user.is_superuser or any(x in role_name for x in ['admin', 'administrator', 'office']) or any(
+            x in ' '.join(user_groups_lower) for x in ['admin', 'office'])
 
         if not is_admin and not is_management:
             accessible_store_ids = list(
                 user.accessible_stores.values_list('store_id', flat=True))
             cond = Q(worker=user)
             if accessible_store_ids:
-                cond |= Q(ticket__store_id__in=accessible_store_ids) | Q(stores__store_id__in=accessible_store_ids)
+                cond |= Q(ticket__store_id__in=accessible_store_ids) | Q(
+                    stores__store_id__in=accessible_store_ids)
             queryset = queryset.filter(cond).distinct()
 
         ticket = self.request.query_params.get("ticket")
@@ -591,15 +650,18 @@ class WorkLogViewSet(viewsets.ModelViewSet):
         if worker:
             queryset = queryset.filter(worker_id=worker)
 
-        work_date = self.request.query_params.get("date") or self.request.query_params.get("work_date")
+        work_date = self.request.query_params.get(
+            "date") or self.request.query_params.get("work_date")
         if work_date:
             queryset = queryset.filter(work_date=work_date)
 
-        from_date = self.request.query_params.get("from_date") or self.request.query_params.get("date_from") or self.request.query_params.get("start_date")
+        from_date = self.request.query_params.get("from_date") or self.request.query_params.get(
+            "date_from") or self.request.query_params.get("start_date")
         if from_date:
             queryset = queryset.filter(work_date__gte=from_date)
 
-        to_date = self.request.query_params.get("to_date") or self.request.query_params.get("date_to") or self.request.query_params.get("end_date")
+        to_date = self.request.query_params.get("to_date") or self.request.query_params.get(
+            "date_to") or self.request.query_params.get("end_date")
         if to_date:
             queryset = queryset.filter(work_date__lte=to_date)
 
@@ -611,18 +673,23 @@ class WorkLogViewSet(viewsets.ModelViewSet):
 
     def perform_create(self, serializer):
         user = self.request.user
-        role_name = (user.role.role_name.lower() if hasattr(user, 'role') and user.role else '') if user else ''
-        user_groups_lower = [g.lower().strip() for g in user.groups.values_list('name', flat=True)] if user else []
+        role_name = (user.role.role_name.lower() if hasattr(
+            user, 'role') and user.role else '') if user else ''
+        user_groups_lower = [g.lower().strip() for g in user.groups.values_list(
+            'name', flat=True)] if user else []
         if role_name in ('management', 'management team') or 'management' in user_groups_lower:
-            raise exceptions.PermissionDenied({'detail': 'Management role is read-only.'})
+            raise exceptions.PermissionDenied(
+                {'detail': 'Management role is read-only.'})
         from decimal import Decimal
         worker = serializer.validated_data.get('worker') or user
         if serializer.validated_data.get('hourly_rate') is None:
-            rate = serializer._get_rate(worker) if hasattr(serializer, '_get_rate') else None
+            rate = serializer._get_rate(worker) if hasattr(
+                serializer, '_get_rate') else None
             hourly_rate = rate.hourly_rate if rate else Decimal('0.00')
             serializer.validated_data['hourly_rate'] = hourly_rate
             hours = serializer.validated_data.get('hours') or Decimal('0.00')
-            serializer.validated_data['labour_amount'] = Decimal(str(hours)) * hourly_rate
+            serializer.validated_data['labour_amount'] = Decimal(
+                str(hours)) * hourly_rate
         if 'worker' not in serializer.validated_data and user and not user.is_anonymous:
             instance = serializer.save(worker=user)
         else:
@@ -633,12 +700,16 @@ class WorkLogViewSet(viewsets.ModelViewSet):
 
     def perform_update(self, serializer):
         user = self.request.user
-        role_name = (user.role.role_name.lower() if hasattr(user, 'role') and user.role else '') if user else ''
-        user_groups_lower = [g.lower().strip() for g in user.groups.values_list('name', flat=True)] if user else []
+        role_name = (user.role.role_name.lower() if hasattr(
+            user, 'role') and user.role else '') if user else ''
+        user_groups_lower = [g.lower().strip() for g in user.groups.values_list(
+            'name', flat=True)] if user else []
         if role_name in ('management', 'management team') or 'management' in user_groups_lower:
-            raise exceptions.PermissionDenied({'detail': 'Management role is read-only.'})
+            raise exceptions.PermissionDenied(
+                {'detail': 'Management role is read-only.'})
         if serializer.instance.is_claimed:
-            raise exceptions.PermissionDenied({'detail': 'This work log has been claimed and cannot be modified.'})
+            raise exceptions.PermissionDenied(
+                {'detail': 'This work log has been claimed and cannot be modified.'})
         instance = serializer.save()
         if instance.worker and instance.stores.exists():
             for st in instance.stores.all():
@@ -646,12 +717,16 @@ class WorkLogViewSet(viewsets.ModelViewSet):
 
     def perform_destroy(self, instance):
         user = self.request.user
-        role_name = (user.role.role_name.lower() if hasattr(user, 'role') and user.role else '') if user else ''
-        user_groups_lower = [g.lower().strip() for g in user.groups.values_list('name', flat=True)] if user else []
+        role_name = (user.role.role_name.lower() if hasattr(
+            user, 'role') and user.role else '') if user else ''
+        user_groups_lower = [g.lower().strip() for g in user.groups.values_list(
+            'name', flat=True)] if user else []
         if role_name in ('management', 'management team') or 'management' in user_groups_lower:
-            raise exceptions.PermissionDenied({'detail': 'Management role is read-only.'})
+            raise exceptions.PermissionDenied(
+                {'detail': 'Management role is read-only.'})
         if instance.is_claimed:
-            raise exceptions.PermissionDenied({'detail': 'This work log has been claimed and cannot be deleted.'})
+            raise exceptions.PermissionDenied(
+                {'detail': 'This work log has been claimed and cannot be deleted.'})
         instance.delete()
 
     @action(detail=False, methods=['get'])
@@ -661,9 +736,12 @@ class WorkLogViewSet(viewsets.ModelViewSet):
             return Response({'error': 'Authentication required.'}, status=401)
 
         worker_id = request.query_params.get('worker')
-        role_name = (user.role.role_name.lower() if hasattr(user, 'role') and user.role else '')
-        user_groups_lower = [g.lower().strip() for g in user.groups.values_list('name', flat=True)]
-        is_admin_or_mgmt = user.is_superuser or any(x in role_name for x in ['admin', 'office', 'management']) or any(x in ' '.join(user_groups_lower) for x in ['admin', 'office', 'management'])
+        role_name = (user.role.role_name.lower() if hasattr(
+            user, 'role') and user.role else '')
+        user_groups_lower = [g.lower().strip()
+                             for g in user.groups.values_list('name', flat=True)]
+        is_admin_or_mgmt = user.is_superuser or any(x in role_name for x in ['admin', 'office', 'management']) or any(
+            x in ' '.join(user_groups_lower) for x in ['admin', 'office', 'management'])
 
         if worker_id and is_admin_or_mgmt:
             from apps.accounts.models import CustomUser
@@ -697,7 +775,8 @@ class WorkLogViewSet(viewsets.ModelViewSet):
         daily_goal_hours = 10.0
         total_hours = sum([float(log.hours or 0) for log in logs])
         total_minutes = int(round(total_hours * 60))
-        completion_pct = min(100, int(round((total_hours / daily_goal_hours) * 100)))
+        completion_pct = min(
+            100, int(round((total_hours / daily_goal_hours) * 100)))
 
         sessions = []
         for log in logs:
@@ -817,9 +896,12 @@ class WorkLogViewSet(viewsets.ModelViewSet):
             return Response({'error': 'Authentication required.'}, status=401)
 
         worker_id = request.query_params.get('worker')
-        role_name = (user.role.role_name.lower() if hasattr(user, 'role') and user.role else '')
-        user_groups_lower = [g.lower().strip() for g in user.groups.values_list('name', flat=True)]
-        is_admin_or_mgmt = user.is_superuser or any(x in role_name for x in ['admin', 'office', 'management']) or any(x in ' '.join(user_groups_lower) for x in ['admin', 'office', 'management'])
+        role_name = (user.role.role_name.lower() if hasattr(
+            user, 'role') and user.role else '')
+        user_groups_lower = [g.lower().strip()
+                             for g in user.groups.values_list('name', flat=True)]
+        is_admin_or_mgmt = user.is_superuser or any(x in role_name for x in ['admin', 'office', 'management']) or any(
+            x in ' '.join(user_groups_lower) for x in ['admin', 'office', 'management'])
 
         if worker_id and is_admin_or_mgmt:
             from apps.accounts.models import CustomUser
@@ -889,6 +971,7 @@ class WorkLogViewSet(viewsets.ModelViewSet):
             'deleted_count': deleted_count
         })
 
+
 class TicketHistoryViewSet(viewsets.ModelViewSet):
     queryset = TicketHistory.objects.all().select_related('ticket', 'changed_by')
     serializer_class = TicketHistorySerializer
@@ -899,9 +982,12 @@ class TicketHistoryViewSet(viewsets.ModelViewSet):
         if not user or user.is_anonymous:
             return TicketHistory.objects.none()
 
-        role_name = (user.role.role_name.lower() if hasattr(user, 'role') and user.role else '')
-        user_groups_lower = [g.lower().strip() for g in user.groups.values_list('name', flat=True)]
-        is_management = role_name in ('management', 'management team') or 'management' in user_groups_lower
+        role_name = (user.role.role_name.lower() if hasattr(
+            user, 'role') and user.role else '')
+        user_groups_lower = [g.lower().strip()
+                             for g in user.groups.values_list('name', flat=True)]
+        is_management = role_name in (
+            'management', 'management team') or 'management' in user_groups_lower
 
         if not user.is_superuser and not is_management:
             accessible_store_ids = list(
@@ -934,14 +1020,19 @@ class TicketChatMessageViewSet(viewsets.ModelViewSet):
         if not user or user.is_anonymous:
             return TicketChatMessage.objects.none()
 
-        role_name = (user.role.role_name.lower() if hasattr(user, 'role') and user.role else '')
-        user_groups_lower = [g.lower().strip() for g in user.groups.values_list('name', flat=True)]
-        is_management = role_name in ('management', 'management team') or 'management' in user_groups_lower
+        role_name = (user.role.role_name.lower() if hasattr(
+            user, 'role') and user.role else '')
+        user_groups_lower = [g.lower().strip()
+                             for g in user.groups.values_list('name', flat=True)]
+        is_management = role_name in (
+            'management', 'management team') or 'management' in user_groups_lower
 
         if not user.is_superuser and not is_management:
-            accessible_store_ids = list(user.accessible_stores.values_list('store_id', flat=True))
+            accessible_store_ids = list(
+                user.accessible_stores.values_list('store_id', flat=True))
             if accessible_store_ids:
-                queryset = queryset.filter(ticket__store_id__in=accessible_store_ids)
+                queryset = queryset.filter(
+                    ticket__store_id__in=accessible_store_ids)
             else:
                 return TicketChatMessage.objects.none()
 
@@ -954,9 +1045,9 @@ class TicketChatMessageViewSet(viewsets.ModelViewSet):
         return queryset.order_by('-created_date')
 
 
-
 class ComplaintIssueTypeViewSet(viewsets.ReadOnlyModelViewSet):
-    queryset = ComplaintIssueType.objects.filter(is_active=True).order_by('name')
+    queryset = ComplaintIssueType.objects.filter(
+        is_active=True).order_by('name')
     serializer_class = ComplaintIssueTypeSerializer
     pagination_class = None
 
@@ -964,7 +1055,8 @@ class ComplaintIssueTypeViewSet(viewsets.ReadOnlyModelViewSet):
         queryset = super().get_queryset()
         role_type = self.request.query_params.get('role_type')
         if role_type:
-            queryset = queryset.filter(Q(role_type=role_type) | Q(role_type='all'))
+            queryset = queryset.filter(
+                Q(role_type=role_type) | Q(role_type='all'))
         return queryset
 
 
@@ -977,11 +1069,15 @@ class ComplaintViewSet(viewsets.ModelViewSet):
         if not user or user.is_anonymous:
             return Complaint.objects.none()
 
-        role_name = (user.role.role_name.lower() if hasattr(user, 'role') and user.role else '')
-        user_groups_lower = [g.lower().strip() for g in user.groups.values_list('name', flat=True)]
+        role_name = (user.role.role_name.lower() if hasattr(
+            user, 'role') and user.role else '')
+        user_groups_lower = [g.lower().strip()
+                             for g in user.groups.values_list('name', flat=True)]
         is_admin = user.is_superuser or role_name in ('administrator', 'admin')
-        is_office_admin = 'office' in role_name or any('office' in g for g in user_groups_lower)
-        is_management = role_name in ('management', 'management team') or 'management' in user_groups_lower
+        is_office_admin = 'office' in role_name or any(
+            'office' in g for g in user_groups_lower)
+        is_management = role_name in (
+            'management', 'management team') or 'management' in user_groups_lower
 
         queryset = Complaint.objects.select_related(
             'ticket', 'ticket__store', 'ticket__department', 'ticket__status', 'ticket__nature',
@@ -1000,15 +1096,19 @@ class ComplaintViewSet(viewsets.ModelViewSet):
             is_office_admin
         )
 
-        can_view_mgr = user.has_perm('maintenance.can_view_manager_complaint') or has_all_view
-        can_view_wkr = user.has_perm('maintenance.can_view_worker_complaint') or has_all_view
+        can_view_mgr = user.has_perm(
+            'maintenance.can_view_manager_complaint') or has_all_view
+        can_view_wkr = user.has_perm(
+            'maintenance.can_view_worker_complaint') or has_all_view
 
         if has_all_view:
             # Users with all_complaint_view can see complaints across all profiles
             if can_view_mgr and not can_view_wkr:
-                queryset = queryset.filter(complaint_type='manager_against_worker')
+                queryset = queryset.filter(
+                    complaint_type='manager_against_worker')
             elif can_view_wkr and not can_view_mgr:
-                queryset = queryset.filter(complaint_type='worker_against_manager')
+                queryset = queryset.filter(
+                    complaint_type='worker_against_manager')
         else:
             # Workers and managers only see complaints created in their own accounts
             queryset = queryset.filter(complainant=user)
@@ -1016,7 +1116,8 @@ class ComplaintViewSet(viewsets.ModelViewSet):
         # Query filters
         ticket_id = self.request.query_params.get('ticket_id')
         if ticket_id:
-            queryset = queryset.filter(Q(ticket_id=ticket_id) | Q(related_tickets__ticket_id=ticket_id)).distinct()
+            queryset = queryset.filter(Q(ticket_id=ticket_id) | Q(
+                related_tickets__ticket_id=ticket_id)).distinct()
 
         complaint_type = self.request.query_params.get('complaint_type')
         if complaint_type:
@@ -1045,7 +1146,8 @@ class ComplaintViewSet(viewsets.ModelViewSet):
     def perform_create(self, serializer):
         complaint = serializer.save(complainant=self.request.user)
         # Handle media upload attached directly in multipart request
-        files = self.request.FILES.getlist('files') or self.request.FILES.getlist('media')
+        files = self.request.FILES.getlist(
+            'files') or self.request.FILES.getlist('media')
         if files:
             from apps.common.models import Media
             for f in files:
@@ -1073,7 +1175,8 @@ class ComplaintViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=['post'])
     def add_media(self, request, pk=None):
         complaint = self.get_object()
-        files = request.FILES.getlist('files') or request.FILES.getlist('media')
+        files = request.FILES.getlist(
+            'files') or request.FILES.getlist('media')
         if not files:
             return Response({'error': 'No files uploaded'}, status=400)
 
