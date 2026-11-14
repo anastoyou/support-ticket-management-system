@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useMemo } from 'react';
-import { useParams } from 'react-router-dom';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import { useParams, useNavigate } from 'react-router-dom';
 import { useSelector } from 'react-redux';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -7,10 +7,11 @@ import {
   User, DollarSign, Award, Calendar, Building2, Wrench,
   UserCheck, UserX, CheckCircle2, UserLock, ChevronLeft, ChevronRight,
   Link as LinkIcon, Copy, Check, RefreshCw, FileText, Filter, Users,
-  LayoutList, LayoutGrid, Menu, Printer
+  LayoutList, LayoutGrid, Menu, Printer, Palmtree
 } from 'lucide-react';
 import { TimeSheetModal } from '../components/timesheet/TimeSheetModal';
 import { TimesheetPrintModal } from '../components/timesheet/TimesheetPrintModal';
+import { EmployeeLeaveAdminView } from './workforce/EmployeeLeaveAdminView';
 import type { RootState } from '../store';
 import { usePermission } from '../hooks/usePermission';
 import Can from '@/hooks/Can';
@@ -80,9 +81,32 @@ const EmptyState: React.FC<{ onClear: () => void }> = ({ onClear }) => (
 );
 
 export const WorkforceView: React.FC = () => {
-  const { subpage } = useParams<{ subpage: string }>();
+  const { subpage, section } = useParams<{ subpage: string; section?: string }>();
+  const navigate = useNavigate();
   const { token, user } = useSelector((state: RootState) => state.auth);
   const { hasPermission } = usePermission();
+
+  const isLeaveSection = subpage === 'leave' || (subpage === 'employees' && section === 'leave');
+  const [pendingLeavesCount, setPendingLeavesCount] = useState<number>(0);
+
+  const fetchPendingLeavesCount = useCallback(async () => {
+    if (!token) return;
+    try {
+      const res = await fetch(`${API_URL}/maintenance/leaves/stats/`, {
+        headers: { Authorization: `Token ${token}` },
+      });
+      if (res.ok) {
+        const statsData = await res.json();
+        setPendingLeavesCount(statsData.pending || 0);
+      }
+    } catch {
+      // ignore
+    }
+  }, [token]);
+
+  useEffect(() => {
+    fetchPendingLeavesCount();
+  }, [fetchPendingLeavesCount]);
 
   // Get parent department IDs for logged-in user
   const getLoggedInUserDepartmentIds = () => {
@@ -1029,106 +1053,130 @@ export const WorkforceView: React.FC = () => {
         <div className="bg-surface-container-low border-b border-outline-variant p-2 sm:py-3 flex flex-col">
 
           {/* Row 1: Search, Sub-tabs & Action Buttons */}
-          <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
-
-            {/* Left: Search input */}
-            <div className="flex items-center gap-2 flex-1 max-w-md w-full">
-              <div className="relative flex-1">
-                <Search className="absolute left-2.5 top-2.5 w-4 h-4 text-on-surface-variant pointer-events-none" />
-                <input
-                  type="text"
-                  placeholder="Search staff, ID, skills, rates..."
-                  value={search}
-                  onChange={e => {
-                    setSearch(e.target.value);
-                    if (gridApi) {
-                      gridApi.setGridOption('quickFilterText', e.target.value);
-                    }
-                  }}
-                  className="w-full text-xs bg-surface-container border border-outline-variant rounded pl-8 pr-8 py-2 text-on-surface focus:outline-none focus:border-primary transition-colors placeholder:text-on-surface-variant/60"
-                />
-                {search && (
-                  <button
-                    onClick={() => {
-                      setSearch('');
-                      if (gridApi) {
-                        gridApi.setGridOption('quickFilterText', '');
-                      }
-                    }}
-                    className="absolute right-2.5 top-2.5 text-on-surface-variant hover:text-on-surface transition-colors cursor-pointer"
-                  >
-                    <X className="w-3.5 h-3.5" />
-                  </button>
-                )}
+          {isLeaveSection ? (
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-full bg-amber-500/15 text-amber-600 flex items-center justify-center font-bold shrink-0">
+                  <Palmtree className="w-4 h-4" />
+                </div>
+                <div>
+                  <h2 className="text-xs font-semibold text-on-surface">Employee Leave Approvals</h2>
+                  <p className="text-[11px] text-on-surface-variant">Review, approve, and track employee leave requests</p>
+                </div>
               </div>
 
               <button
-                onClick={fetchData}
-                disabled={loading}
-                className="border border-outline bg-surface-container hover:bg-surface-container-high text-on-surface text-xs font-medium p-2 sm:px-3 sm:py-2 rounded flex items-center gap-2 transition-colors disabled:opacity-50 shrink-0 cursor-pointer"
-                title="Refresh workforce list"
+                type="button"
+                onClick={() => navigate('/workforce/employees')}
+                className="border border-outline bg-surface-container hover:bg-surface-container-high text-on-surface text-xs font-medium px-3 py-1.5 rounded transition-colors cursor-pointer"
               >
-                <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
-                <span className="hidden sm:inline">Refresh</span>
+                Back to Employees List
               </button>
             </div>
-
-            {/* Right: Primary Actions */}
-            <div className="flex items-center gap-2 shrink-0">
-              {subpage === 'rates' && (
-                <button
-                  onClick={handleOpenCreate}
-                  className="bg-primary hover:bg-primary-container text-on-primary text-xs font-medium px-3 py-2 rounded flex items-center gap-2 transition-colors cursor-pointer shadow-xs"
-                >
-                  <Plus className="w-4 h-4" />
-                  <span>Add Hourly Rate</span>
-                </button>
-              )}
-
-              {(subpage === 'employees' || !subpage) && (
-                <Can permission="accounts.add_customuser">
-                  <div className="flex items-center gap-2">
+          ) : (
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
+              {/* Left: Search input */}
+              <div className="flex items-center gap-2 flex-1 max-w-md w-full">
+                <div className="relative flex-1">
+                  <Search className="absolute left-2.5 top-2.5 w-4 h-4 text-on-surface-variant pointer-events-none" />
+                  <input
+                    type="text"
+                    placeholder="Search staff, ID, skills, rates..."
+                    value={search}
+                    onChange={e => {
+                      setSearch(e.target.value);
+                      if (gridApi) {
+                        gridApi.setGridOption('quickFilterText', e.target.value);
+                      }
+                    }}
+                    className="w-full text-xs bg-surface-container border border-outline-variant rounded pl-8 pr-8 py-2 text-on-surface focus:outline-none focus:border-primary transition-colors placeholder:text-on-surface-variant/60"
+                  />
+                  {search && (
                     <button
                       onClick={() => {
-                        setGenRole('');
-                        setGenStore('');
-                        setGenSubDepartment('');
-                        setGenNaturesList([]);
-                        setCopiedToast(false);
-                        setShowLinkModal(true);
+                        setSearch('');
+                        if (gridApi) {
+                          gridApi.setGridOption('quickFilterText', '');
+                        }
                       }}
-                      className="border-outline-none bg-surface-container hover:bg-surface-container-high text-on-surface text-xs font-medium px-3 py-2 rounded hidden sm:flex items-center gap-2 transition-colors cursor-pointer"
+                      className="absolute right-2.5 top-2.5 text-on-surface-variant hover:text-on-surface transition-colors cursor-pointer"
                     >
-                      <LinkIcon className="w-4 h-4 text-primary" />
-                      <span className="hidden sm:inline">Registration Link</span>
+                      <X className="w-3.5 h-3.5" />
                     </button>
-                    <button
-                      onClick={handleOpenCreateEmployee}
-                      className="bg-primary hover:bg-primary-container text-on-primary text-xs font-medium px-3 py-2 rounded hidden sm:flex items-center gap-2 transition-colors cursor-pointer shadow-xs"
-                    >
-                      <Plus className="w-4 h-4" />
-                      <span>Add Employee</span>
-                    </button>
-                  </div>
-                </Can>
-              )}
-            </div>
-          </div>
+                  )}
+                </div>
 
-          {/* Row 2: Sub-tabs for Office Staff/Admin (Approved vs Unapproved) */}
-          {(subpage === 'employees' || !subpage) && isOfficeStaffOrAdmin && (
-            <div className="flex items-center gap-2 .py-2 border-t border-outline-variant/60">
+                <button
+                  onClick={fetchData}
+                  disabled={loading}
+                  className="border border-outline bg-surface-container hover:bg-surface-container-high text-on-surface text-xs font-medium p-2 sm:px-3 sm:py-2 rounded flex items-center gap-2 transition-colors disabled:opacity-50 shrink-0 cursor-pointer"
+                  title="Refresh workforce list"
+                >
+                  <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+                  <span className="hidden sm:inline">Refresh</span>
+                </button>
+              </div>
+
+              {/* Right: Primary Actions */}
+              <div className="flex items-center gap-2 shrink-0">
+                {subpage === 'rates' && (
+                  <button
+                    onClick={handleOpenCreate}
+                    className="bg-primary hover:bg-primary-container text-on-primary text-xs font-medium px-3 py-2 rounded flex items-center gap-2 transition-colors cursor-pointer shadow-xs"
+                  >
+                    <Plus className="w-4 h-4" />
+                    <span>Add Hourly Rate</span>
+                  </button>
+                )}
+
+                {(subpage === 'employees' || !subpage) && (
+                  <Can permission="accounts.add_customuser">
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => {
+                          setGenRole('');
+                          setGenStore('');
+                          setGenSubDepartment('');
+                          setGenNaturesList([]);
+                          setCopiedToast(false);
+                          setShowLinkModal(true);
+                        }}
+                        className="border-outline-none bg-surface-container hover:bg-surface-container-high text-on-surface text-xs font-medium px-3 py-2 rounded hidden sm:flex items-center gap-2 transition-colors cursor-pointer"
+                      >
+                        <LinkIcon className="w-4 h-4 text-primary" />
+                        <span className="hidden sm:inline">Registration Link</span>
+                      </button>
+                      <button
+                        onClick={handleOpenCreateEmployee}
+                        className="bg-primary hover:bg-primary-container text-on-primary text-xs font-medium px-3 py-2 rounded hidden sm:flex items-center gap-2 transition-colors cursor-pointer shadow-xs"
+                      >
+                        <Plus className="w-4 h-4" />
+                        <span>Add Employee</span>
+                      </button>
+                    </div>
+                  </Can>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Row 2: Sub-tabs for Office Staff/Admin (Approved vs Unapproved vs Leave Approvals) */}
+          {(subpage === 'employees' || !subpage || isLeaveSection) && isOfficeStaffOrAdmin && (
+            <div className="flex items-center gap-2 py-2 border-t border-outline-variant/60">
               <button
                 type="button"
-                onClick={() => setEmployeeTab('approved')}
-                className={`flex items-center gap-2 px-3 py-1.5 text-xs font-medium rounded transition-all cursor-pointer ${employeeTab === 'approved'
+                onClick={() => {
+                  if (isLeaveSection) navigate('/workforce/employees');
+                  setEmployeeTab('approved');
+                }}
+                className={`flex items-center gap-2 px-3 py-1.5 text-xs font-medium rounded transition-all cursor-pointer ${!isLeaveSection && employeeTab === 'approved'
                   ? 'bg-primary text-on-primary font-semibold shadow-xs'
                   : 'text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high'
                   }`}
               >
                 <UserCheck className="w-3.5 h-3.5" />
                 <span>Approved</span>
-                <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-bold ${employeeTab === 'approved' ? 'bg-on-primary/20 text-on-primary' : 'bg-surface-container-high text-on-surface-variant'
+                <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-bold ${!isLeaveSection && employeeTab === 'approved' ? 'bg-on-primary/20 text-on-primary' : 'bg-surface-container-high text-on-surface-variant'
                   }`}>
                   {approvedCount}
                 </span>
@@ -1136,8 +1184,11 @@ export const WorkforceView: React.FC = () => {
 
               <button
                 type="button"
-                onClick={() => setEmployeeTab('unapproved')}
-                className={`flex items-center gap-2 px-3 py-1.5 text-xs font-medium rounded transition-all cursor-pointer ${employeeTab === 'unapproved'
+                onClick={() => {
+                  if (isLeaveSection) navigate('/workforce/employees');
+                  setEmployeeTab('unapproved');
+                }}
+                className={`flex items-center gap-2 px-3 py-1.5 text-xs font-medium rounded transition-all cursor-pointer ${!isLeaveSection && employeeTab === 'unapproved'
                   ? 'bg-tertiary-container text-on-tertiary-container font-semibold shadow-xs'
                   : 'text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high'
                   }`}
@@ -1149,7 +1200,29 @@ export const WorkforceView: React.FC = () => {
                     {unapprovedCount}
                   </span>
                 ) : (
-                  <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-bold ${employeeTab === 'unapproved' ? 'bg-on-tertiary-container/20 text-on-tertiary-container' : 'bg-surface-container-high text-on-surface-variant'
+                  <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-bold ${!isLeaveSection && employeeTab === 'unapproved' ? 'bg-on-tertiary-container/20 text-on-tertiary-container' : 'bg-surface-container-high text-on-surface-variant'
+                    }`}>
+                    0
+                  </span>
+                )}
+              </button>
+
+              <button
+                type="button"
+                onClick={() => navigate('/workforce/employees/leave')}
+                className={`flex items-center gap-2 px-3 py-1.5 text-xs font-medium rounded transition-all cursor-pointer ${isLeaveSection
+                  ? 'bg-amber-500 text-white font-semibold shadow-xs'
+                  : 'text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high'
+                  }`}
+              >
+                <Palmtree className="w-3.5 h-3.5" />
+                <span>Leave Approvals</span>
+                {pendingLeavesCount > 0 ? (
+                  <span className="px-1.5 py-0.2 rounded-full text-[10px] font-bold bg-amber-600 text-white animate-pulse">
+                    {pendingLeavesCount}
+                  </span>
+                ) : (
+                  <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-bold ${isLeaveSection ? 'bg-white/20 text-white' : 'bg-surface-container-high text-on-surface-variant'
                     }`}>
                     0
                   </span>
@@ -1159,8 +1232,12 @@ export const WorkforceView: React.FC = () => {
           )}
         </div>
 
-        {/* Table / Skeleton / Empty state */}
-        {loading ? (
+        {/* Table / Skeleton / Empty state / Leave Admin Module */}
+        {isLeaveSection ? (
+          <div className="p-3 sm:p-4 bg-surface-container">
+            <EmployeeLeaveAdminView />
+          </div>
+        ) : loading ? (
           <SkeletonGrid />
         ) : filteredData.length === 0 ? (
           <EmptyState onClear={() => setSearch('')} />
@@ -2270,7 +2347,7 @@ export const WorkforceView: React.FC = () => {
         )}
       </AnimatePresence>
       {/* Floating Action Button (FAB) for Mobile Add Employee / Registration Link Speed-Dial */}
-      {(subpage === 'employees' || !subpage) && (
+      {(subpage === 'employees' || !subpage) && !isLeaveSection && (
         <Can permission="accounts.add_customuser">
           <div className="sm:hidden fixed bottom-6 right-6 z-40 flex flex-col items-end gap-2">
             {/* Speed-dial options */}

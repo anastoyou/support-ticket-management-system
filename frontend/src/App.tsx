@@ -193,6 +193,14 @@ const App: React.FC = () => {
             </ProtectedRoute>
           } />
 
+          <Route path="/workforce/:subpage/:section" element={
+            <ProtectedRoute>
+              <DashboardLayout>
+                <WorkforceView />
+              </DashboardLayout>
+            </ProtectedRoute>
+          } />
+
           <Route path="/reports/:subpage" element={
             <ProtectedRoute>
               <DashboardLayout>

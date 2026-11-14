@@ -5,14 +5,19 @@ from rest_framework.response import Response
 from django.utils import timezone
 from rest_framework import status
 from rest_framework.pagination import PageNumberPagination
-from .models import Priority, Status, WorkNature, NatureWorker, Ticket, Allocation, WorkLog, TicketHistory, TicketChatMessage, ComplaintIssueType, Complaint
+from rest_framework.permissions import IsAuthenticated
+from .models import (
+    Priority, Status, WorkNature, NatureWorker, Ticket, Allocation,
+    WorkLog, TicketHistory, TicketChatMessage, ComplaintIssueType, Complaint,
+    WorkerLeave
+)
 from .serializers import (
     PrioritySerializer, StatusSerializer, WorkNatureSerializer,
     NatureWorkerSerializer, TicketSerializer, AllocationSerializer,
     WorkLogSerializer, TicketHistorySerializer, TicketChatMessageSerializer,
     AllocationWriteSerializer, WorkLogWriteSerializer, TicketWriteSerializer,
     WorkNatureWriteSerializer, NatureWorkerWriteSerializer,
-    ComplaintIssueTypeSerializer, ComplaintSerializer
+    ComplaintIssueTypeSerializer, ComplaintSerializer, WorkerLeaveSerializer
 )
 
 
@@ -856,6 +861,14 @@ class WorkLogViewSet(viewsets.ModelViewSet):
                 'is_locked': bool(is_ticket or log.is_claimed)
             })
 
+        # Check if worker has an active leave covering target_date
+        leave_entry = WorkerLeave.objects.filter(
+            worker=worker,
+            start_date__lte=target_date,
+            end_date__gte=target_date,
+            status__in=['approved', 'pending']
+        ).first()
+
         return Response({
             'date': target_date.strftime('%Y-%m-%d'),
             'today': timezone.localdate().strftime('%Y-%m-%d'),
@@ -865,6 +878,20 @@ class WorkLogViewSet(viewsets.ModelViewSet):
             'total_booked_hours': round(total_hours, 2),
             'total_booked_minutes': total_minutes,
             'completion_percentage': completion_pct,
+            'is_on_leave': bool(leave_entry),
+            'leave': {
+                'leave_id': leave_entry.leave_id,
+                'leave_type': leave_entry.leave_type,
+                'leave_type_display': leave_entry.get_leave_type_display(),
+                'status': leave_entry.status,
+                'is_half_day': leave_entry.is_half_day,
+                'half_day_slot': getattr(leave_entry, 'half_day_slot', ''),
+                'half_day_slot_display': leave_entry.get_half_day_slot_display() if getattr(leave_entry, 'half_day_slot', '') else '',
+                'hours': float(leave_entry.hours),
+                'start_date': str(leave_entry.start_date),
+                'end_date': str(leave_entry.end_date),
+                'reason': leave_entry.reason,
+            } if leave_entry else None,
             'sessions': sessions
         })
 
@@ -914,6 +941,40 @@ class WorkLogViewSet(viewsets.ModelViewSet):
                 'total_hours': round(h, 2),
                 'completion_percentage': pct
             }
+
+        # Integrate leaves across this month
+        import calendar
+        from datetime import date, timedelta
+        _, last_day = calendar.monthrange(year, month)
+        month_start = date(year, month, 1)
+        month_end = date(year, month, last_day)
+
+        month_leaves = WorkerLeave.objects.filter(
+            worker=worker,
+            start_date__lte=month_end,
+            end_date__gte=month_start,
+            status__in=['approved', 'pending']
+        )
+        for l in month_leaves:
+            cur = max(l.start_date, month_start)
+            end_cur = min(l.end_date, month_end)
+            while cur <= end_cur:
+                dt_key = cur.strftime('%Y-%m-%d')
+                if dt_key not in days_map:
+                    days_map[dt_key] = {
+                        'total_hours': 0.0,
+                        'completion_percentage': 0,
+                    }
+                days_map[dt_key]['is_leave'] = True
+                days_map[dt_key]['leave_id'] = l.leave_id
+                days_map[dt_key]['leave_type'] = l.leave_type
+                days_map[dt_key]['leave_type_display'] = l.get_leave_type_display()
+                days_map[dt_key]['leave_status'] = l.status
+                days_map[dt_key]['leave_reason'] = l.reason
+                days_map[dt_key]['is_half_day'] = l.is_half_day
+                days_map[dt_key]['half_day_slot'] = getattr(l, 'half_day_slot', '')
+                days_map[dt_key]['half_day_slot_display'] = l.get_half_day_slot_display() if getattr(l, 'half_day_slot', '') else ''
+                cur += timedelta(days=1)
 
         return Response({
             'year': year,
@@ -1183,3 +1244,207 @@ class ComplaintViewSet(viewsets.ModelViewSet):
             return Response({'status': 'deleted'})
         except Media.DoesNotExist:
             return Response({'error': 'Media not found'}, status=404)
+
+
+class WorkerLeaveViewSet(viewsets.ModelViewSet):
+    serializer_class = WorkerLeaveSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        user = self.request.user
+        role_name = (user.role.role_name.lower() if hasattr(
+            user, 'role') and user.role else '')
+        user_groups_lower = [g.lower().strip()
+                             for g in user.groups.values_list('name', flat=True)]
+        is_admin_or_mgmt = user.is_superuser or any(x in role_name for x in ['admin', 'office', 'management']) or any(
+            x in ' '.join(user_groups_lower) for x in ['admin', 'office', 'management'])
+
+        worker_param = self.request.query_params.get('worker')
+        mine_param = self.request.query_params.get('mine')
+
+        if not is_admin_or_mgmt or mine_param == 'true':
+            qs = WorkerLeave.objects.filter(worker=user)
+        elif worker_param:
+            qs = WorkerLeave.objects.filter(worker_id=worker_param)
+        else:
+            qs = WorkerLeave.objects.all()
+
+        status_param = self.request.query_params.get('status')
+        if status_param and status_param != 'all':
+            qs = qs.filter(status=status_param)
+
+        leave_type_param = self.request.query_params.get('leave_type')
+        if leave_type_param and leave_type_param != 'all':
+            qs = qs.filter(leave_type=leave_type_param)
+
+        search_param = self.request.query_params.get('search')
+        if search_param:
+            from django.db.models import Q
+            qs = qs.filter(
+                Q(worker__first_name__icontains=search_param) |
+                Q(worker__last_name__icontains=search_param) |
+                Q(worker__username__icontains=search_param) |
+                Q(worker__employee_no__icontains=search_param) |
+                Q(reason__icontains=search_param) |
+                Q(admin_notes__icontains=search_param)
+            )
+
+        from_date = self.request.query_params.get('from_date')
+        to_date = self.request.query_params.get('to_date')
+        if from_date:
+            qs = qs.filter(end_date__gte=from_date)
+        if to_date:
+            qs = qs.filter(start_date__lte=to_date)
+
+        year = self.request.query_params.get('year')
+        month = self.request.query_params.get('month')
+        if year and month:
+            try:
+                import calendar
+                from datetime import date
+                y, m = int(year), int(month)
+                _, last_day = calendar.monthrange(y, m)
+                qs = qs.filter(start_date__lte=date(y, m, last_day), end_date__gte=date(y, m, 1))
+            except (ValueError, TypeError):
+                pass
+
+        return qs.select_related('worker', 'worker__role', 'approved_by').prefetch_related('worker__sub_departments').order_by('-created_at', '-start_date')
+
+    def perform_create(self, serializer):
+        user = self.request.user
+        role_name = (user.role.role_name.lower() if hasattr(
+            user, 'role') and user.role else '')
+        is_admin_or_mgmt = user.is_superuser or any(x in role_name for x in ['admin', 'office', 'management'])
+        worker = user
+        worker_id = self.request.data.get('worker_id') or self.request.data.get('worker')
+        if worker_id and is_admin_or_mgmt:
+            from apps.accounts.models import CustomUser
+            target_worker = CustomUser.objects.filter(pk=worker_id).first()
+            if target_worker:
+                worker = target_worker
+
+        status_val = self.request.data.get('status') or 'pending'
+        serializer.save(
+            worker=worker,
+            status=status_val,
+            approved_by=user if status_val == 'approved' and is_admin_or_mgmt else None
+        )
+
+    @action(detail=False, methods=['get'])
+    def stats(self, request):
+        from datetime import date
+        today = date.today()
+        first_day_of_month = date(today.year, today.month, 1)
+
+        user = request.user
+        role_name = (user.role.role_name.lower() if hasattr(user, 'role') and user.role else '')
+        user_groups_lower = [g.lower().strip() for g in user.groups.values_list('name', flat=True)]
+        is_admin_or_mgmt = user.is_superuser or any(x in role_name for x in ['admin', 'office', 'management']) or any(
+            x in ' '.join(user_groups_lower) for x in ['admin', 'office', 'management']
+        )
+
+        base_qs = WorkerLeave.objects.all() if is_admin_or_mgmt else WorkerLeave.objects.filter(worker=user)
+
+        pending_count = base_qs.filter(status='pending').count()
+        approved_this_month = base_qs.filter(status='approved', start_date__gte=first_day_of_month).count()
+        active_today = base_qs.filter(status='approved', start_date__lte=today, end_date__gte=today).count()
+        rejected_count = base_qs.filter(status='rejected').count()
+        all_count = base_qs.count()
+
+        return Response({
+            'total': all_count,
+            'pending': pending_count,
+            'approved_this_month': approved_this_month,
+            'active_today': active_today,
+            'rejected': rejected_count,
+        })
+
+    @action(detail=True, methods=['post'])
+    def approve(self, request, pk=None):
+        leave = self.get_object()
+        # Verify no conflicting approved leave exists
+        conflicting = WorkerLeave.objects.filter(
+            worker=leave.worker,
+            status='approved',
+            start_date__lte=leave.end_date,
+            end_date__gte=leave.start_date,
+        ).exclude(pk=leave.pk)
+
+        has_conflict = False
+        for c in conflicting:
+            if not leave.is_half_day or not c.is_half_day:
+                has_conflict = True
+                break
+            elif not leave.half_day_slot or not c.half_day_slot or leave.half_day_slot == c.half_day_slot:
+                has_conflict = True
+                break
+
+        if has_conflict:
+            return Response(
+                {'error': 'Cannot approve: An already approved leave overlaps with this period.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        leave.status = 'approved'
+        leave.approved_by = request.user
+        if 'admin_notes' in request.data:
+            leave.admin_notes = request.data.get('admin_notes', '')
+        leave.save()
+        return Response(WorkerLeaveSerializer(leave).data)
+
+    @action(detail=True, methods=['post'])
+    def reject(self, request, pk=None):
+        leave = self.get_object()
+        leave.status = 'rejected'
+        leave.admin_notes = request.data.get('admin_notes', '')
+        leave.approved_by = request.user
+        leave.save()
+        return Response(WorkerLeaveSerializer(leave).data)
+
+    @action(detail=True, methods=['post'])
+    def cancel(self, request, pk=None):
+        leave = self.get_object()
+        leave.status = 'cancelled'
+        leave.save()
+        return Response(WorkerLeaveSerializer(leave).data)
+
+    @action(detail=False, methods=['post'])
+    def bulk_approve(self, request):
+        leave_ids = request.data.get('leave_ids', [])
+        if not isinstance(leave_ids, list) or not leave_ids:
+            return Response({'error': 'No leave IDs provided'}, status=status.HTTP_400_BAD_REQUEST)
+
+        leaves = list(WorkerLeave.objects.filter(leave_id__in=leave_ids, status='pending').select_related('worker'))
+        approved_count = 0
+        skipped_conflicts = 0
+
+        for leave in leaves:
+            conflicting = WorkerLeave.objects.filter(
+                worker=leave.worker,
+                status='approved',
+                start_date__lte=leave.end_date,
+                end_date__gte=leave.start_date,
+            ).exclude(pk=leave.pk)
+
+            conflict = False
+            for c in conflicting:
+                if not leave.is_half_day or not c.is_half_day:
+                    conflict = True
+                    break
+                elif not leave.half_day_slot or not c.half_day_slot or leave.half_day_slot == c.half_day_slot:
+                    conflict = True
+                    break
+
+            if conflict:
+                skipped_conflicts += 1
+            else:
+                leave.status = 'approved'
+                leave.approved_by = request.user
+                leave.save()
+                approved_count += 1
+
+        return Response({
+            'approved_count': approved_count,
+            'skipped_conflicts': skipped_conflicts,
+        })
+

@@ -4,7 +4,7 @@ from .views import (
     PriorityViewSet, StatusViewSet, WorkNatureViewSet,
     NatureWorkerViewSet, TicketViewSet, AllocationViewSet,
     WorkLogViewSet, TicketHistoryViewSet, TicketChatMessageViewSet,
-    ComplaintViewSet, ComplaintIssueTypeViewSet
+    ComplaintViewSet, ComplaintIssueTypeViewSet, WorkerLeaveViewSet
 )
 
 router = DefaultRouter()
@@ -19,6 +19,7 @@ router.register(r'tickethistory', TicketHistoryViewSet)
 router.register(r'ticketchat', TicketChatMessageViewSet)
 router.register(r'complaint', ComplaintViewSet)
 router.register(r'complaint-issues', ComplaintIssueTypeViewSet)
+router.register(r'leaves', WorkerLeaveViewSet, basename='workerleave')
 
 urlpatterns = [
     path('', include(router.urls)),

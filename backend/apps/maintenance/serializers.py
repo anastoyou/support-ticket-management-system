@@ -1,5 +1,9 @@
 from rest_framework import serializers
-from .models import Priority, Status, WorkNature, NatureWorker, Ticket, Allocation, WorkLog, TicketHistory, TicketChatMessage, ComplaintIssueType, Complaint
+from .models import (
+    Priority, Status, WorkNature, NatureWorker, Ticket, Allocation,
+    WorkLog, TicketHistory, TicketChatMessage, ComplaintIssueType, Complaint,
+    WorkerLeave
+)
 from apps.finance.models import EmployeeRate
 from decimal import Decimal
 from apps.stores.serializers import StoreSerializer, DepartmentSerializer, SubDepartmentSerializer
@@ -375,6 +379,46 @@ class WorkLogWriteSerializer(serializers.ModelSerializer):
 
         req_user = self.context.get('request').user if getattr(self, 'context', None) and self.context.get('request') and not self.context.get('request').user.is_anonymous else None
         worker = data.get('worker') or req_user or getattr(self.instance, 'worker', None)
+        work_date = data.get('work_date') or getattr(self.instance, 'work_date', None)
+
+        # Validate that work is NOT logged during marked leave periods
+        if worker and work_date:
+            from .models import WorkerLeave
+            from datetime import time
+            leaves = WorkerLeave.objects.filter(
+                worker=worker,
+                start_date__lte=work_date,
+                end_date__gte=work_date,
+                status__in=['approved', 'pending']
+            )
+            for lv in leaves:
+                if not lv.is_half_day:
+                    raise serializers.ValidationError({
+                        "work_date": f"Cannot log work hours on {work_date}: Worker has an active {lv.get_leave_type_display()}."
+                    })
+                else:
+                    if from_time and to_time:
+                        slot_start = time(8, 0) if lv.half_day_slot == 'first_half' else time(13, 0)
+                        slot_end = time(13, 0) if lv.half_day_slot == 'first_half' else time(18, 0)
+                        overlap = False
+                        if to_time > from_time:
+                            if max(from_time, slot_start) < min(to_time, slot_end):
+                                overlap = True
+                        else:
+                            overlap = True
+                        if overlap:
+                            slot_name = "First Half (08:00 AM - 01:00 PM)" if lv.half_day_slot == 'first_half' else "Second Half (01:00 PM - 06:00 PM)"
+                            raise serializers.ValidationError({
+                                "non_field_errors": [
+                                    f"Cannot log work during leave period: Worker is on {lv.get_leave_type_display()} for {slot_name} on {work_date}."
+                                ]
+                            })
+                    else:
+                        if hours and Decimal(str(hours)) > Decimal('5.0'):
+                            raise serializers.ValidationError({
+                                "hours": f"Cannot log more than 5.0 hours on {work_date} due to Half-Day {lv.get_leave_type_display()}."
+                            })
+
         if worker and hours is not None:
             rate = self._get_rate(worker)
             hourly_rate = rate.hourly_rate if rate else Decimal('0.00')
@@ -501,3 +545,174 @@ class ComplaintSerializer(serializers.ModelSerializer):
         if obj.issue_type:
             return obj.issue_type.name
         return obj.custom_issue or 'Complaint'
+
+
+class WorkerLeaveSerializer(serializers.ModelSerializer):
+    worker_name = serializers.SerializerMethodField()
+    worker_employee_no = serializers.SerializerMethodField()
+    worker_role = serializers.SerializerMethodField()
+    worker_department = serializers.SerializerMethodField()
+    approved_by_name = serializers.SerializerMethodField()
+    leave_type_display = serializers.CharField(source='get_leave_type_display', read_only=True)
+    half_day_slot_display = serializers.CharField(source='get_half_day_slot_display', read_only=True)
+    status_display = serializers.CharField(source='get_status_display', read_only=True)
+    duration_days = serializers.SerializerMethodField()
+    end_date = serializers.DateField(required=False)
+
+    class Meta:
+        model = WorkerLeave
+        fields = [
+            'leave_id',
+            'worker',
+            'worker_name',
+            'worker_employee_no',
+            'worker_role',
+            'worker_department',
+            'leave_type',
+            'leave_type_display',
+            'start_date',
+            'end_date',
+            'is_half_day',
+            'half_day_slot',
+            'half_day_slot_display',
+            'duration_days',
+            'hours',
+            'reason',
+            'status',
+            'status_display',
+            'approved_by',
+            'approved_by_name',
+            'admin_notes',
+            'created_at',
+            'updated_at',
+        ]
+        read_only_fields = ['leave_id', 'worker', 'created_at', 'updated_at']
+
+    def get_worker_name(self, obj):
+        return obj.worker.full_name or obj.worker.username if obj.worker else None
+
+    def get_worker_employee_no(self, obj):
+        return getattr(obj.worker, 'employee_no', None)
+
+    def get_worker_role(self, obj):
+        if obj.worker and getattr(obj.worker, 'role', None):
+            return getattr(obj.worker.role, 'role_name', None) or str(obj.worker.role)
+        return None
+
+    def get_worker_department(self, obj):
+        if obj.worker and hasattr(obj.worker, 'sub_departments'):
+            subs = list(obj.worker.sub_departments.values_list('sub_department_name', flat=True))
+            if subs:
+                return ", ".join(subs)
+        return None
+
+    def get_approved_by_name(self, obj):
+        if obj.approved_by:
+            return obj.approved_by.full_name or obj.approved_by.username
+        return None
+
+    def get_duration_days(self, obj):
+        if obj.is_half_day:
+            return 0.5
+        if obj.start_date and obj.end_date:
+            return (obj.end_date - obj.start_date).days + 1
+        return 1
+
+    def validate(self, attrs):
+        leave_type = attrs.get('leave_type', getattr(self.instance, 'leave_type', None))
+        start_date = attrs.get('start_date', getattr(self.instance, 'start_date', None))
+        end_date = attrs.get('end_date', getattr(self.instance, 'end_date', None))
+        is_half_day = attrs.get('is_half_day', getattr(self.instance, 'is_half_day', False))
+        half_day_slot = attrs.get('half_day_slot', getattr(self.instance, 'half_day_slot', ''))
+
+        if leave_type == 'unpaid':
+            request = self.context.get('request')
+            if request and not (request.user.is_superuser or request.user.has_perm('maintenance.change_workerleave')):
+                raise serializers.ValidationError({'leave_type': 'Unpaid Leave is disabled by default. Please contact HR.'})
+
+        if leave_type == 'annual':
+            if is_half_day:
+                raise serializers.ValidationError({'is_half_day': 'Half-day is not allowed for Annual Leave.'})
+            if not end_date and start_date:
+                end_date = start_date
+                attrs['end_date'] = start_date
+            elif start_date and end_date and end_date < start_date:
+                raise serializers.ValidationError({'end_date': 'End date must be greater than or equal to start date.'})
+            attrs['is_half_day'] = False
+            attrs['half_day_slot'] = ''
+            is_half_day = False
+            half_day_slot = ''
+
+        elif leave_type in ['sick', 'casual']:
+            if start_date:
+                attrs['end_date'] = start_date
+                end_date = start_date
+            if is_half_day:
+                attrs['hours'] = 5.0
+                if not half_day_slot:
+                    attrs['half_day_slot'] = 'first_half'
+                    half_day_slot = 'first_half'
+            else:
+                attrs['hours'] = 10.0
+                attrs['half_day_slot'] = ''
+                half_day_slot = ''
+
+        # Resolve target worker for overlap validation
+        worker = None
+        if self.instance and getattr(self.instance, 'worker', None):
+            worker = self.instance.worker
+        elif 'worker' in attrs:
+            worker = attrs['worker']
+        elif self.context.get('request'):
+            req = self.context.get('request')
+            req_user = req.user
+            role_name = (req_user.role.role_name.lower() if hasattr(req_user, 'role') and req_user.role else '')
+            is_admin_or_mgmt = req_user.is_superuser or any(x in role_name for x in ['admin', 'office', 'management'])
+            worker_id = req.data.get('worker_id') or req.data.get('worker')
+            if worker_id and is_admin_or_mgmt:
+                from apps.accounts.models import CustomUser
+                worker = CustomUser.objects.filter(pk=worker_id).first()
+            if not worker:
+                worker = req_user
+
+        final_start = attrs.get('start_date', getattr(self.instance, 'start_date', None))
+        final_end = attrs.get('end_date', getattr(self.instance, 'end_date', final_start))
+        final_is_half_day = attrs.get('is_half_day', getattr(self.instance, 'is_half_day', False))
+        final_half_day_slot = attrs.get('half_day_slot', getattr(self.instance, 'half_day_slot', ''))
+
+        if worker and final_start and final_end:
+            overlapping_qs = WorkerLeave.objects.filter(
+                worker=worker,
+                status__in=['pending', 'approved'],
+                start_date__lte=final_end,
+                end_date__gte=final_start,
+            )
+            if self.instance and self.instance.pk:
+                overlapping_qs = overlapping_qs.exclude(pk=self.instance.pk)
+
+            for lv in overlapping_qs:
+                conflict = False
+                if not final_is_half_day or not lv.is_half_day:
+                    conflict = True
+                else:
+                    if not final_half_day_slot or not lv.half_day_slot or final_half_day_slot == lv.half_day_slot:
+                        conflict = True
+
+                if conflict:
+                    slot_txt = f" ({lv.get_half_day_slot_display() or 'Half Day'})" if lv.is_half_day else ""
+                    range_txt = f"{lv.start_date}" if lv.start_date == lv.end_date else f"{lv.start_date} to {lv.end_date}"
+                    type_txt = lv.get_leave_type_display() or lv.leave_type.capitalize()
+                    status_txt = lv.get_status_display() or lv.status.capitalize()
+
+                    req_user = self.context.get('request').user if self.context.get('request') else None
+                    is_self = (not req_user or req_user.pk == getattr(worker, 'pk', None))
+                    subject = "You already have" if is_self else "The worker already has"
+
+                    raise serializers.ValidationError({
+                        'non_field_errors': [
+                            f"{subject} an existing {type_txt} request{slot_txt} for this period ({range_txt}) with status '{status_txt}'. Overlapping leave requests are not allowed."
+                        ]
+                    })
+
+        return attrs
+

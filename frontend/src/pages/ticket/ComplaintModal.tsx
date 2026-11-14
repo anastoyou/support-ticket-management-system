@@ -4,7 +4,8 @@ import {
     X, AlertTriangle, CheckCircle2,
     FileText, Video, Trash2, Loader2, Upload,
     User, Building2, Search, Check, AlertCircle,
-    ChevronDown, Phone, PhoneCall
+    ChevronDown, Phone, ChevronLeft, ChevronRight,
+    ChevronsLeft, ChevronsRight, ShieldAlert
 } from 'lucide-react';
 import { API_URL, type Ticket, type UserStub, getMediaUrl, isImage, isVideo, AvatarCircle } from './TicketsTypesAndComponents';
 import { usePermission } from '@/hooks/usePermission';
@@ -69,6 +70,8 @@ const isUserStoreManager = (u: any): boolean => {
     return /store\s*manager/i.test(String(rName).trim());
 };
 
+const ITEMS_PER_PAGE = 3;
+
 export const ComplaintModal: React.FC<ComplaintModalProps> = ({
     isOpen,
     onClose,
@@ -124,6 +127,7 @@ export const ComplaintModal: React.FC<ComplaintModalProps> = ({
             setActiveTab('list');
         }
     }, [canCreateComplaint, activeTab]);
+
     const [complaintsList, setComplaintsList] = useState<Complaint[]>([]);
     const [loadingComplaints, setLoadingComplaints] = useState(false);
 
@@ -143,9 +147,15 @@ export const ComplaintModal: React.FC<ComplaintModalProps> = ({
     const [submitSuccess, setSubmitSuccess] = useState(false);
     const [errorMsg, setErrorMsg] = useState('');
 
+    // Pagination for modal list
+    const [listPage, setListPage] = useState(1);
+
     // Zoom image state
     const [previewImage, setPreviewImage] = useState<string | null>(null);
 
+    // Ref for submit button reflow lock
+    const submitBtnRef = useRef<HTMLButtonElement>(null);
+    const [submitBtnSize, setSubmitBtnSize] = useState<{ width?: number; height?: number }>({});
     const fileInputRef = useRef<HTMLInputElement>(null);
 
     // Fetch existing complaints for this ticket
@@ -162,7 +172,7 @@ export const ComplaintModal: React.FC<ComplaintModalProps> = ({
                 setComplaintsList(list);
                 if (list.length > 0 && canViewAnyComplaints) {
                     setActiveTab('list');
-                } else {
+                } else if (canCreateComplaint) {
                     setActiveTab('create');
                 }
             }
@@ -194,7 +204,7 @@ export const ComplaintModal: React.FC<ComplaintModalProps> = ({
             }
         };
 
-        // 2. Extract candidate workers from ticket allocations (for manager complaint against worker)
+        // 2. Extract candidate workers from ticket allocations
         const ticketWorkers: UserStub[] = [];
         if (ticket.allocations && ticket.allocations.length > 0) {
             ticket.allocations.forEach(a => {
@@ -206,23 +216,17 @@ export const ComplaintModal: React.FC<ComplaintModalProps> = ({
         setAvailableWorkers(ticketWorkers);
 
         // 3. Extract candidate managers strictly:
-        // - Current assigned Store Manager of this store
-        // - Ticket creator ONLY if they are a Store Manager (do not list if created by other roles)
-        // - Store Managers who have access to the current store
         const fetchStoreManagers = async () => {
             const managersMap = new Map<number, UserStub>();
 
-            // a) Current assigned Store Manager of this store
             if (ticket.store?.manager && isUserStoreManager(ticket.store.manager)) {
                 managersMap.set(ticket.store.manager.user_id, ticket.store.manager);
             }
 
-            // b) Ticket creator ONLY if they are a Store Manager
             if (ticket.created_by && isUserStoreManager(ticket.created_by)) {
                 managersMap.set(ticket.created_by.user_id, ticket.created_by);
             }
 
-            // c) Store managers who have access to the current store
             const storeId = ticket.store?.store_id;
             if (storeId) {
                 try {
@@ -318,6 +322,11 @@ export const ComplaintModal: React.FC<ComplaintModalProps> = ({
             return;
         }
 
+        if (submitBtnRef.current) {
+            const rect = submitBtnRef.current.getBoundingClientRect();
+            setSubmitBtnSize({ width: rect.width, height: rect.height });
+        }
+
         setSubmitting(true);
         try {
             const formData = new FormData();
@@ -333,7 +342,6 @@ export const ComplaintModal: React.FC<ComplaintModalProps> = ({
 
             formData.append('description', description.trim());
 
-            // Media files
             selectedFiles.forEach(file => {
                 formData.append('files', file);
             });
@@ -371,63 +379,88 @@ export const ComplaintModal: React.FC<ComplaintModalProps> = ({
         }
     };
 
+    // Modal List Pagination
+    const totalListPages = Math.max(1, Math.ceil(complaintsList.length / ITEMS_PER_PAGE));
+    const validListPage = Math.min(Math.max(1, listPage), totalListPages);
+    const paginatedList = useMemo(() => {
+        const start = (validListPage - 1) * ITEMS_PER_PAGE;
+        return complaintsList.slice(start, start + ITEMS_PER_PAGE);
+    }, [complaintsList, validListPage]);
+
+    // Status Chip Helper
+    const getStatusChipClass = (status: Complaint['status']) => {
+        switch (status) {
+            case 'pending':
+                return 'text-error bg-error-container dark:bg-error-container/20 dark:text-red-400 border border-error/20';
+            case 'under_review':
+                return 'text-tertiary bg-tertiary-container/20 dark:bg-amber-950/40 dark:text-amber-400 border border-tertiary/20';
+            case 'resolved':
+                return 'text-on-secondary-container bg-secondary-container dark:bg-emerald-950/40 dark:text-emerald-300 border border-secondary/20';
+            case 'dismissed':
+            default:
+                return 'text-on-surface-variant bg-surface-variant dark:bg-neutral-800 dark:text-neutral-400 border border-outline-variant dark:border-dark-outline-variant';
+        }
+    };
+
     if (!isOpen) return null;
 
     return (
         <AnimatePresence>
-            <div className="fixed inset-0 z-[70] flex items-center justify-center p-2 sm:p-4 overflow-y-auto">
-                {/* Backdrop */}
+            <div className="fixed inset-0 z-[70] flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
+                {/* Backdrop with M3 blur */}
                 <motion.div
                     initial={{ opacity: 0 }}
                     animate={{ opacity: 0.6 }}
                     exit={{ opacity: 0 }}
                     onClick={onClose}
-                    className="fixed inset-0 bg-black/70 backdrop-blur-xs"
+                    className="fixed inset-0 bg-inverse-surface/60 backdrop-blur-xs"
                 />
 
                 {/* Modal Container */}
                 <motion.div
-                    initial={{ opacity: 0, scale: 0.95, y: 15 }}
+                    initial={{ opacity: 0, scale: 0.96, y: 12 }}
                     animate={{ opacity: 1, scale: 1, y: 0 }}
-                    exit={{ opacity: 0, scale: 0.95, y: 15 }}
-                    className="relative bg-surface dark:bg-dark-surface border border-outline-variant dark:border-dark-outline-variant w-full max-w-2xl max-h-[90vh] flex flex-col rounded-xl shadow-2xl overflow-hidden z-10"
+                    exit={{ opacity: 0, scale: 0.96, y: 12 }}
+                    className="relative bg-surface-container dark:bg-dark-surface-container border border-outline-variant dark:border-dark-outline-variant w-full max-w-2xl max-h-[90vh] flex flex-col rounded shadow-2xl overflow-hidden z-10"
                 >
                     {/* Header */}
-                    <div className="flex items-center justify-between px-4 py-3 border-b border-outline-variant dark:border-dark-outline-variant bg-surface-container dark:bg-dark-surface-container shrink-0">
+                    <div className="flex items-center justify-between px-4 py-3 border-b border-outline-variant dark:border-dark-outline-variant bg-surface-container-low dark:bg-dark-surface-container-low shrink-0">
                         <div className="flex items-center gap-2.5 min-w-0">
-                            <div className="p-1.5 rounded-lg bg-red-500/10 text-red-600 dark:text-red-400">
-                                <AlertTriangle className="w-5 h-5" />
+                            <div className="p-1.5 rounded bg-error/10 text-error dark:text-red-400">
+                                <AlertTriangle className="w-4 h-4" />
                             </div>
                             <div className="min-w-0">
-                                <h3 className="text-sm font-bold text-on-surface dark:text-dark-on-surface flex items-center gap-2">
+                                <h3 className="text-sm font-semibold tracking-tight text-on-surface dark:text-dark-on-surface flex items-center gap-2">
                                     <span>Ticket Complaint</span>
-                                    <span className="text-xs px-2 py-0.5 rounded bg-surface-container-high text-outline font-semibold">
+                                    <span className="font-mono text-xs px-2 py-0.5 rounded bg-surface-container-high dark:bg-dark-surface-container-high text-on-surface-variant dark:text-dark-on-surface-variant font-semibold">
                                         {ticket.work_order_no}
                                     </span>
                                 </h3>
-                                <p className="text-[11px] text-outline truncate">{ticket.title}</p>
+                                <p className="text-xs text-on-surface-variant dark:text-dark-on-surface-variant truncate">
+                                    {ticket.title} {ticket.store?.store_name ? `• ${ticket.store.store_name}` : ''}
+                                </p>
                             </div>
                         </div>
 
                         <button
+                            type="button"
                             onClick={onClose}
-                            className="p-1.5 text-outline hover:text-on-surface hover:bg-surface-container-high rounded-lg transition-colors cursor-pointer"
+                            className="p-1.5 text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high dark:hover:bg-dark-surface-container-high rounded transition-colors cursor-pointer"
                         >
                             <X className="w-4 h-4" />
                         </button>
                     </div>
 
                     {/* Navigation Tabs */}
-                    <div className="flex items-center gap-2 px-4 pt-2.5 border-b border-outline-variant dark:border-dark-outline-variant bg-surface dark:bg-dark-surface shrink-0">
+                    <div className="flex items-center gap-2 px-4 pt-2.5 border-b border-outline-variant dark:border-dark-outline-variant bg-surface-container dark:bg-dark-surface-container shrink-0">
                         <Can permission="maintenance.can_create_complaint">
                             <button
                                 type="button"
                                 onClick={() => setActiveTab('create')}
-                                className={`pb-2 px-3 text-xs font-bold border-b-2 transition-all flex items-center gap-1.5 cursor-pointer ${
-                                    activeTab === 'create'
-                                        ? 'border-primary text-primary'
-                                        : 'border-transparent text-outline hover:text-on-surface'
-                                }`}
+                                className={`pb-2.5 px-3 text-xs font-semibold border-b-2 transition-all flex items-center gap-1.5 cursor-pointer ${activeTab === 'create'
+                                    ? 'border-primary text-primary'
+                                    : 'border-transparent text-on-surface-variant dark:text-dark-on-surface-variant hover:text-on-surface'
+                                    }`}
                             >
                                 <AlertTriangle className="w-3.5 h-3.5" />
                                 <span>Register Complaint</span>
@@ -443,16 +476,15 @@ export const ComplaintModal: React.FC<ComplaintModalProps> = ({
                             <button
                                 type="button"
                                 onClick={() => setActiveTab('list')}
-                                className={`pb-2 px-3 text-xs font-bold border-b-2 transition-all flex items-center gap-1.5 cursor-pointer ${
-                                    activeTab === 'list'
-                                        ? 'border-primary text-primary'
-                                        : 'border-transparent text-outline hover:text-on-surface'
-                                }`}
+                                className={`pb-2.5 px-3 text-xs font-semibold border-b-2 transition-all flex items-center gap-1.5 cursor-pointer ${activeTab === 'list'
+                                    ? 'border-primary text-primary'
+                                    : 'border-transparent text-on-surface-variant dark:text-dark-on-surface-variant hover:text-on-surface'
+                                    }`}
                             >
                                 <FileText className="w-3.5 h-3.5" />
                                 <span>{canViewAllComplaints ? 'Existing Complaints' : 'My Filed Complaints'}</span>
                                 {complaintsList.length > 0 && (
-                                    <span className="px-1.5 py-0.2 bg-red-500 text-white rounded-full text-[10px] font-extrabold">
+                                    <span className="px-1.5 py-0.2 bg-primary text-on-primary rounded-full text-[10px] font-bold">
                                         {complaintsList.length}
                                     </span>
                                 )}
@@ -466,59 +498,31 @@ export const ComplaintModal: React.FC<ComplaintModalProps> = ({
                         {activeTab === 'create' && (canCreateComplaint ? (
                             <form onSubmit={handleSubmit} className="space-y-4">
                                 {submitSuccess && (
-                                    <div className="p-3 bg-emerald-500/10 border border-emerald-500/30 rounded-lg flex items-center gap-2 text-emerald-600 dark:text-emerald-400 text-xs font-semibold">
-                                        <CheckCircle2 className="w-4 h-4 shrink-0" />
+                                    <div className="p-3 bg-secondary-container/40 border border-secondary/30 rounded flex items-center gap-2 text-on-secondary-container text-xs font-medium">
+                                        <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-600 dark:text-emerald-400" />
                                         <span>Complaint registered successfully!</span>
                                     </div>
                                 )}
 
                                 {errorMsg && (
-                                    <div className="p-3 bg-red-500/10 border border-red-500/30 rounded-lg flex items-center gap-2 text-red-600 dark:text-red-400 text-xs font-semibold">
-                                        <AlertCircle className="w-4 h-4 shrink-0" />
+                                    <div className="p-3 bg-error-container/40 border border-error/30 rounded flex items-center gap-2 text-on-error-container text-xs font-medium">
+                                        <AlertCircle className="w-4 h-4 shrink-0 text-error" />
                                         <span>{errorMsg}</span>
                                     </div>
                                 )}
 
-                                {/* Complaint Type Card: ONE USER ONLY SEES ONE OPTION */}
-                                <div>
-                                    <label className="block text-xs font-bold text-outline uppercase tracking-wider mb-1.5">
-                                        Complaint Type
-                                    </label>
-                                    {complaintType === 'manager_against_worker' ? (
-                                        <div className="p-3 rounded-xl border border-blue-500/30 bg-blue-500/10 text-on-surface dark:text-dark-on-surface">
-                                            <p className="text-xs font-bold text-blue-600 dark:text-blue-400 flex items-center gap-1.5">
-                                                <span className="w-2 h-2 rounded-full bg-blue-500 inline-block" />
-                                                <span>Manager against Worker</span>
-                                            </p>
-                                            <p className="text-[11px] text-outline mt-0.5">
-                                                Complaint filed regarding worker performance
-                                            </p>
-                                        </div>
-                                    ) : (
-                                        <div className="p-3 rounded-xl border border-amber-500/30 bg-amber-500/10 text-on-surface dark:text-dark-on-surface">
-                                            <p className="text-xs font-bold text-amber-600 dark:text-amber-400 flex items-center gap-1.5">
-                                                <span className="w-2 h-2 rounded-full bg-amber-500 inline-block" />
-                                                <span>Worker against Manager</span>
-                                            </p>
-                                            <p className="text-[11px] text-outline mt-0.5">
-                                                Complaint filed regarding store manager/admin
-                                            </p>
-                                        </div>
-                                    )}
-                                </div>
-
                                 {/* Against Whom Selection */}
                                 <div>
-                                    <label className="block text-xs font-bold text-on-surface dark:text-dark-on-surface mb-1">
+                                    <label className="block text-xs font-semibold text-on-surface dark:text-dark-on-surface mb-1.5">
                                         {complaintType === 'manager_against_worker'
                                             ? 'Worker (Against Whom):'
                                             : 'Store Manager (Against Whom):'}
-                                        <span className="text-red-500 ml-0.5">*</span>
+                                        <span className="text-error ml-0.5">*</span>
                                     </label>
                                     <select
                                         value={againstUserId}
                                         onChange={e => setAgainstUserId(Number(e.target.value) || '')}
-                                        className="w-full text-xs p-2.5 rounded-lg bg-surface dark:bg-dark-surface border border-outline-variant dark:border-dark-outline-variant text-on-surface dark:text-dark-on-surface focus:outline-none focus:border-primary font-semibold"
+                                        className="w-full text-xs p-2.5 rounded bg-surface dark:bg-dark-surface border border-outline/40 dark:border-dark-outline-variant text-on-surface dark:text-dark-on-surface focus:outline-none focus:border-primary font-medium cursor-pointer"
                                         required
                                     >
                                         <option value="">-- Select Person --</option>
@@ -545,16 +549,16 @@ export const ComplaintModal: React.FC<ComplaintModalProps> = ({
                                         )}
                                     </select>
                                     {complaintType === 'worker_against_manager' && availableManagers.length === 0 && (
-                                        <p className="text-[11px] text-amber-600 dark:text-amber-400 mt-1">
+                                        <p className="text-[11px] text-tertiary dark:text-amber-400 mt-1">
                                             No assigned store manager with access found for this location.
                                         </p>
                                     )}
                                 </div>
 
-                                {/* Issue Reason: DROPDOWN with role-tailored options and 'Other' */}
+                                {/* Issue Reason: DROPDOWN with predefined options and 'Other' */}
                                 <div>
-                                    <label className="block text-xs font-bold text-on-surface dark:text-dark-on-surface mb-1">
-                                        Issue Reason <span className="text-red-500">*</span>
+                                    <label className="block text-xs font-semibold text-on-surface dark:text-dark-on-surface mb-1.5">
+                                        Issue Reason <span className="text-error ml-0.5">*</span>
                                     </label>
                                     <select
                                         value={selectedIssueValue}
@@ -564,7 +568,7 @@ export const ComplaintModal: React.FC<ComplaintModalProps> = ({
                                                 setCustomIssue('');
                                             }
                                         }}
-                                        className="w-full text-xs p-2.5 rounded-lg bg-surface dark:bg-dark-surface border border-outline-variant dark:border-dark-outline-variant text-on-surface dark:text-dark-on-surface focus:outline-none focus:border-primary font-semibold"
+                                        className="w-full text-xs p-2.5 rounded bg-surface dark:bg-dark-surface border border-outline/40 dark:border-dark-outline-variant text-on-surface dark:text-dark-on-surface focus:outline-none focus:border-primary font-medium cursor-pointer"
                                         required
                                     >
                                         <option value="">-- Select Issue Reason --</option>
@@ -584,7 +588,7 @@ export const ComplaintModal: React.FC<ComplaintModalProps> = ({
                                                 placeholder="Enter specific custom issue reason..."
                                                 value={customIssue}
                                                 onChange={e => setCustomIssue(e.target.value)}
-                                                className="w-full text-xs p-2.5 rounded-lg bg-surface dark:bg-dark-surface border border-outline-variant dark:border-dark-outline-variant text-on-surface dark:text-dark-on-surface focus:outline-none focus:border-primary"
+                                                className="w-full text-xs p-2.5 rounded bg-surface dark:bg-dark-surface border border-outline/40 dark:border-dark-outline-variant text-on-surface dark:text-dark-on-surface focus:outline-none focus:border-primary"
                                                 required
                                             />
                                         </div>
@@ -593,15 +597,15 @@ export const ComplaintModal: React.FC<ComplaintModalProps> = ({
 
                                 {/* Detailed Description */}
                                 <div>
-                                    <label className="block text-xs font-bold text-on-surface dark:text-dark-on-surface mb-1">
-                                        Detailed Description <span className="text-red-500">*</span>
+                                    <label className="block text-xs font-semibold text-on-surface dark:text-dark-on-surface mb-1.5">
+                                        Detailed Description <span className="text-error ml-0.5">*</span>
                                     </label>
                                     <textarea
                                         rows={3}
                                         placeholder="Describe what occurred, impact, and any specific incidents..."
                                         value={description}
                                         onChange={e => setDescription(e.target.value)}
-                                        className="w-full text-xs p-3 rounded-lg bg-surface dark:bg-dark-surface border border-outline-variant dark:border-dark-outline-variant text-on-surface dark:text-dark-on-surface focus:outline-none focus:border-primary resize-y"
+                                        className="w-full text-xs p-3 rounded bg-surface dark:bg-dark-surface border border-outline/40 dark:border-dark-outline-variant text-on-surface dark:text-dark-on-surface focus:outline-none focus:border-primary resize-y"
                                         required
                                     />
                                 </div>
@@ -609,15 +613,15 @@ export const ComplaintModal: React.FC<ComplaintModalProps> = ({
                                 {/* Media Attachments */}
                                 <div>
                                     <div className="flex items-center justify-between mb-1.5">
-                                        <label className="text-xs font-bold text-on-surface dark:text-dark-on-surface">
+                                        <label className="text-xs font-semibold text-on-surface dark:text-dark-on-surface">
                                             Relevant Media (Images, Videos, Voice, Documents)
                                         </label>
                                         <button
                                             type="button"
                                             onClick={() => fileInputRef.current?.click()}
-                                            className="px-2 py-1 text-xs font-bold text-primary bg-primary/10 rounded hover:bg-primary/20 transition-all flex items-center gap-1 cursor-pointer"
+                                            className="px-2.5 py-1 text-xs font-medium text-primary bg-primary/10 hover:bg-primary/20 rounded transition-colors flex items-center gap-1 cursor-pointer"
                                         >
-                                            <Upload className="w-3 h-3" />
+                                            <Upload className="w-3.5 h-3.5" />
                                             <span>Add Media</span>
                                         </button>
                                     </div>
@@ -636,17 +640,17 @@ export const ComplaintModal: React.FC<ComplaintModalProps> = ({
                                             {filePreviews.map((item, idx) => (
                                                 <div
                                                     key={idx}
-                                                    className="relative group border border-outline-variant dark:border-dark-outline-variant rounded-lg overflow-hidden bg-surface-container aspect-video flex items-center justify-center"
+                                                    className="relative group border border-outline-variant dark:border-dark-outline-variant rounded overflow-hidden bg-surface-container-low dark:bg-dark-surface-container-low aspect-video flex items-center justify-center"
                                                 >
                                                     {item.isImg ? (
                                                         <img src={item.url} alt="upload" className="w-full h-full object-cover" />
                                                     ) : item.isVid ? (
-                                                        <div className="flex flex-col items-center justify-center p-2 text-outline">
+                                                        <div className="flex flex-col items-center justify-center p-2 text-on-surface-variant">
                                                             <Video className="w-6 h-6 text-primary mb-1" />
                                                             <span className="text-[10px] truncate max-w-[80px]">{item.file.name}</span>
                                                         </div>
                                                     ) : (
-                                                        <div className="flex flex-col items-center justify-center p-2 text-outline">
+                                                        <div className="flex flex-col items-center justify-center p-2 text-on-surface-variant">
                                                             <FileText className="w-6 h-6 text-primary mb-1" />
                                                             <span className="text-[10px] truncate max-w-[80px]">{item.file.name}</span>
                                                         </div>
@@ -655,7 +659,7 @@ export const ComplaintModal: React.FC<ComplaintModalProps> = ({
                                                     <button
                                                         type="button"
                                                         onClick={() => handleRemoveFile(idx)}
-                                                        className="absolute top-1 right-1 p-1 rounded-full bg-red-600 text-white opacity-80 hover:opacity-100 transition-opacity cursor-pointer"
+                                                        className="absolute top-1 right-1 p-1 rounded bg-error text-on-error opacity-80 hover:opacity-100 transition-opacity cursor-pointer"
                                                         title="Remove File"
                                                     >
                                                         <Trash2 className="w-3 h-3" />
@@ -666,41 +670,45 @@ export const ComplaintModal: React.FC<ComplaintModalProps> = ({
                                     ) : (
                                         <div
                                             onClick={() => fileInputRef.current?.click()}
-                                            className="border-2 border-dashed border-outline-variant dark:border-dark-outline-variant rounded-lg p-4 text-center cursor-pointer hover:border-primary transition-colors"
+                                            className="border border-dashed border-outline-variant dark:border-dark-outline-variant rounded p-4 text-center cursor-pointer hover:border-primary transition-colors bg-surface-container-low/50 dark:bg-dark-surface-container-low/50"
                                         >
-                                            <Upload className="w-6 h-6 mx-auto text-outline mb-1" />
+                                            <Upload className="w-6 h-6 mx-auto text-on-surface-variant dark:text-dark-on-surface-variant mb-1 opacity-70" />
                                             <p className="text-xs font-semibold text-on-surface dark:text-dark-on-surface">
                                                 Click to upload photos, videos, or documents
                                             </p>
-                                            <p className="text-[11px] text-outline">Attach evidence supporting your complaint</p>
+                                            <p className="text-[11px] text-on-surface-variant dark:text-dark-on-surface-variant mt-0.5">
+                                                Attach evidence supporting your complaint
+                                            </p>
                                         </div>
                                     )}
                                 </div>
 
                                 {/* Form Action Buttons */}
-                                <div className="flex items-center justify-end gap-2 pt-2 border-t border-outline-variant dark:border-dark-outline-variant">
+                                <div className="flex items-center justify-end gap-2 pt-3 border-t border-outline-variant dark:border-dark-outline-variant">
                                     <button
                                         type="button"
                                         onClick={onClose}
                                         disabled={submitting}
-                                        className="px-4 py-2 text-xs font-bold text-outline hover:text-on-surface rounded-lg hover:bg-surface-container-high transition-colors cursor-pointer"
+                                        className="border border-outline/30 dark:border-dark-outline-variant bg-surface-container dark:bg-dark-surface-container hover:bg-surface-container-high dark:hover:bg-dark-surface-container-high text-on-surface dark:text-dark-on-surface text-xs font-medium px-3.5 py-2 rounded transition-colors cursor-pointer disabled:opacity-50"
                                     >
                                         Cancel
                                     </button>
                                     <Can permission="maintenance.can_create_complaint">
                                         <button
+                                            ref={submitBtnRef}
                                             type="submit"
                                             disabled={submitting}
-                                            className="px-5 py-2 text-xs font-bold bg-primary text-on-primary rounded-lg hover:bg-primary-hover active:scale-95 transition-all flex items-center gap-1.5 shadow-sm disabled:opacity-50 cursor-pointer"
+                                            style={submitting && submitBtnSize.width ? { width: `${submitBtnSize.width}px`, height: `${submitBtnSize.height}px` } : undefined}
+                                            className="bg-primary hover:bg-primary-container text-on-primary text-xs font-medium px-4 py-2 rounded flex items-center justify-center gap-1.5 transition-colors disabled:opacity-50 cursor-pointer shadow-xs"
                                         >
                                             {submitting ? (
                                                 <>
-                                                    <Loader2 className="w-4 h-4 animate-spin" />
+                                                    <Loader2 className="w-4 h-4 animate-spin shrink-0" />
                                                     <span>Registering...</span>
                                                 </>
                                             ) : (
                                                 <>
-                                                    <AlertTriangle className="w-4 h-4" />
+                                                    <AlertTriangle className="w-4 h-4 shrink-0" />
                                                     <span>Submit Complaint</span>
                                                 </>
                                             )}
@@ -709,10 +717,12 @@ export const ComplaintModal: React.FC<ComplaintModalProps> = ({
                                 </div>
                             </form>
                         ) : (
-                            <div className="p-8 text-center border border-dashed border-outline-variant rounded-xl bg-surface-container/20">
-                                <AlertCircle className="w-10 h-10 text-outline mx-auto mb-2" />
-                                <p className="text-xs font-bold text-on-surface">Permission Required</p>
-                                <p className="text-[11px] text-outline mt-1">You do not have permission to register complaints.</p>
+                            <div className="p-8 text-center border border-dashed border-outline-variant dark:border-dark-outline-variant rounded bg-surface-container-low/40">
+                                <AlertCircle className="w-8 h-8 text-on-surface-variant mx-auto mb-2 opacity-60" />
+                                <p className="text-xs font-semibold text-on-surface dark:text-dark-on-surface">Permission Required</p>
+                                <p className="text-[11px] text-on-surface-variant dark:text-dark-on-surface-variant mt-1">
+                                    You do not have permission to register complaints.
+                                </p>
                             </div>
                         ))}
 
@@ -720,150 +730,175 @@ export const ComplaintModal: React.FC<ComplaintModalProps> = ({
                         {activeTab === 'list' && (
                             <div className="space-y-3">
                                 {loadingComplaints ? (
-                                    <div className="p-8 text-center text-outline">
+                                    <div className="p-8 text-center text-on-surface-variant dark:text-dark-on-surface-variant">
                                         <Loader2 className="w-6 h-6 animate-spin mx-auto mb-2 text-primary" />
                                         <p className="text-xs">Loading complaints...</p>
                                     </div>
                                 ) : complaintsList.length === 0 ? (
-                                    <div className="p-8 text-center border border-dashed border-outline-variant rounded-xl">
-                                        <CheckCircle2 className="w-8 h-8 mx-auto text-emerald-500 mb-2" />
-                                        <p className="text-xs font-bold text-on-surface dark:text-dark-on-surface">
+                                    <div className="p-8 text-center border border-dashed border-outline-variant dark:border-dark-outline-variant rounded bg-surface-container-low/40">
+                                        <CheckCircle2 className="w-8 h-8 mx-auto text-emerald-500 mb-2 opacity-80" />
+                                        <p className="text-xs font-semibold text-on-surface dark:text-dark-on-surface">
                                             No complaints registered for this ticket
                                         </p>
-                                        <p className="text-[11px] text-outline mt-1">
+                                        <p className="text-[11px] text-on-surface-variant dark:text-dark-on-surface-variant mt-0.5">
                                             Work is proceeding normally without registered disputes.
                                         </p>
-                                        <button
-                                            type="button"
-                                            onClick={() => setActiveTab('create')}
-                                            className="mt-3 px-3 py-1.5 text-xs font-bold bg-primary text-on-primary rounded-lg hover:bg-primary-hover inline-flex items-center gap-1 cursor-pointer"
-                                        >
-                                            <AlertTriangle className="w-3.5 h-3.5" />
-                                            <span>Register First Complaint</span>
-                                        </button>
+
+                                        {canCreateComplaint && (
+                                            <button
+                                                type="button"
+                                                onClick={() => setActiveTab('create')}
+                                                className="mt-3 px-3 py-1.5 text-xs font-medium bg-primary text-on-primary hover:bg-primary-container rounded inline-flex items-center gap-1.5 cursor-pointer shadow-xs"
+                                            >
+                                                <AlertTriangle className="w-3.5 h-3.5" />
+                                                <span>Register Complaint</span>
+                                            </button>
+                                        )}
                                     </div>
                                 ) : (
-                                    complaintsList.map(item => (
-                                        <div
-                                            key={item.complaint_id}
-                                            className="p-3.5 rounded-xl border border-outline-variant dark:border-dark-outline-variant bg-surface-container dark:bg-dark-surface-container space-y-3"
-                                        >
-                                            {/* Header */}
-                                            <div className="flex items-start justify-between gap-2">
-                                                <div>
-                                                    <span
-                                                        className={`inline-block px-2 py-0.5 rounded text-[10px] font-extrabold uppercase tracking-wider mb-1 ${
-                                                            item.complaint_type === 'manager_against_worker'
-                                                                ? 'bg-blue-500/15 text-blue-600 dark:text-blue-400 border border-blue-500/30'
-                                                                : 'bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-500/30'
-                                                        }`}
-                                                    >
-                                                        {item.complaint_type === 'manager_against_worker'
-                                                            ? 'Manager against Worker'
-                                                            : 'Worker against Manager'}
+                                    <>
+                                        {paginatedList.map(item => (
+                                            <div
+                                                key={item.complaint_id}
+                                                className="p-3.5 rounded border border-outline-variant dark:border-dark-outline-variant bg-surface dark:bg-dark-surface space-y-3"
+                                            >
+                                                {/* Header */}
+                                                <div className="flex items-start justify-between gap-2 border-b border-outline-variant dark:border-dark-outline-variant pb-2.5">
+                                                    <div>
+                                                        <span
+                                                            className={`inline-block px-2 py-0.5 rounded text-[10px] font-medium uppercase tracking-wider mb-1 ${item.complaint_type === 'manager_against_worker'
+                                                                ? 'bg-primary-fixed text-on-primary-fixed dark:bg-blue-950/60 dark:text-blue-300'
+                                                                : 'bg-tertiary-fixed text-on-tertiary-fixed dark:bg-amber-950/60 dark:text-amber-300'
+                                                                }`}
+                                                        >
+                                                            {item.complaint_type === 'manager_against_worker'
+                                                                ? 'Manager vs Worker'
+                                                                : 'Worker vs Manager'}
+                                                        </span>
+                                                        <h4 className="text-xs font-semibold text-on-surface dark:text-dark-on-surface">
+                                                            {item.issue_display}
+                                                        </h4>
+                                                    </div>
+
+                                                    <span className={`px-2 py-0.5 rounded text-[11px] font-semibold capitalize ${getStatusChipClass(item.status)}`}>
+                                                        {item.status.replace('_', ' ')}
                                                     </span>
-                                                    <h4 className="text-xs font-bold text-on-surface dark:text-dark-on-surface">
-                                                        {item.issue_display}
-                                                    </h4>
                                                 </div>
 
-                                                <span
-                                                    className={`px-2 py-0.5 rounded-full text-[10px] font-bold capitalize ${
-                                                        item.status === 'resolved'
-                                                            ? 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400'
-                                                            : item.status === 'under_review'
-                                                            ? 'bg-sky-500/15 text-sky-600 dark:text-sky-400'
-                                                            : item.status === 'dismissed'
-                                                            ? 'bg-slate-500/15 text-slate-600'
-                                                            : 'bg-red-500/15 text-red-600 dark:text-red-400'
-                                                    }`}
-                                                >
-                                                    {item.status.replace('_', ' ')}
-                                                </span>
-                                            </div>
+                                                {/* Profiles Involved */}
+                                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 p-2.5 rounded bg-surface-container-low dark:bg-dark-surface-container-low border border-outline-variant/60 text-xs">
+                                                    <div className="flex items-center gap-2">
+                                                        <AvatarCircle user={item.complainant} size="sm" />
+                                                        <div className="min-w-0">
+                                                            <p className="text-[10px] font-semibold text-on-surface-variant uppercase tracking-wider">Complainant:</p>
+                                                            <p className="font-semibold text-on-surface dark:text-dark-on-surface truncate">
+                                                                {item.complainant?.full_name || (item.complainant as any)?.username}
+                                                            </p>
+                                                            <p className="text-[10px] text-primary">
+                                                                {item.complainant?.role?.role_name || 'Staff'}
+                                                            </p>
+                                                        </div>
+                                                    </div>
 
-                                            {/* Profiles Involved */}
-                                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 p-2.5 rounded-lg bg-surface dark:bg-dark-surface border border-outline-variant/60 text-xs">
-                                                <div className="flex items-center gap-2">
-                                                    <AvatarCircle user={item.complainant} size="sm" />
-                                                    <div className="min-w-0">
-                                                        <p className="text-[10px] font-semibold text-outline">Complainant:</p>
-                                                        <p className="font-bold text-on-surface dark:text-dark-on-surface truncate">
-                                                            {item.complainant?.full_name || (item.complainant as any)?.username}
-                                                        </p>
-                                                        <p className="text-[10px] text-primary">
-                                                            {item.complainant?.role?.role_name || 'Staff'}
-                                                        </p>
+                                                    <div className="flex items-center gap-2 pt-2 sm:pt-0 border-t sm:border-t-0 sm:border-l border-outline-variant/60 sm:pl-2">
+                                                        <AvatarCircle user={item.against_user} size="sm" />
+                                                        <div className="min-w-0">
+                                                            <p className="text-[10px] font-semibold text-on-surface-variant uppercase tracking-wider">Against:</p>
+                                                            <p className="font-semibold text-on-surface dark:text-dark-on-surface truncate">
+                                                                {item.against_user?.full_name || (item.against_user as any)?.username}
+                                                            </p>
+                                                            <p className="text-[10px] text-tertiary">
+                                                                {item.against_user?.role?.role_name || 'Worker'}
+                                                            </p>
+                                                        </div>
                                                     </div>
                                                 </div>
 
-                                                <div className="flex items-center gap-2 pt-2 sm:pt-0 border-t sm:border-t-0 sm:border-l border-outline-variant/60 sm:pl-2">
-                                                    <AvatarCircle user={item.against_user} size="sm" />
-                                                    <div className="min-w-0">
-                                                        <p className="text-[10px] font-semibold text-outline">Against:</p>
-                                                        <p className="font-bold text-on-surface dark:text-dark-on-surface truncate">
-                                                            {item.against_user?.full_name || (item.against_user as any)?.username}
+                                                {/* Description */}
+                                                <p className="text-xs text-on-surface dark:text-dark-on-surface whitespace-pre-wrap bg-surface-container-lowest dark:bg-dark-surface-container-lowest p-2.5 rounded border border-outline-variant/50 leading-relaxed">
+                                                    {item.description}
+                                                </p>
+
+                                                {/* Media Files */}
+                                                {item.media_files && item.media_files.length > 0 && (
+                                                    <div>
+                                                        <p className="text-[11px] font-semibold text-on-surface-variant dark:text-dark-on-surface-variant mb-1.5">
+                                                            Attached Media ({item.media_files.length}):
                                                         </p>
-                                                        <p className="text-[10px] text-amber-600 dark:text-amber-400">
-                                                            {item.against_user?.role?.role_name || 'Worker'}
-                                                        </p>
+                                                        <div className="flex flex-wrap gap-2">
+                                                            {item.media_files.map(m => {
+                                                                const fullUrl = getMediaUrl(m.file_url);
+                                                                const isImg = isImage(m.file_name);
+                                                                return (
+                                                                    <div
+                                                                        key={m.media_id}
+                                                                        className="relative w-16 h-16 rounded overflow-hidden border border-outline-variant bg-surface-container group cursor-pointer"
+                                                                        onClick={() => isImg && setPreviewImage(fullUrl)}
+                                                                    >
+                                                                        {isImg ? (
+                                                                            <img src={fullUrl} alt={m.file_name} className="w-full h-full object-cover group-hover:scale-105 transition-transform" />
+                                                                        ) : (
+                                                                            <a
+                                                                                href={fullUrl}
+                                                                                target="_blank"
+                                                                                rel="noreferrer"
+                                                                                className="w-full h-full flex flex-col items-center justify-center p-1 text-primary text-[10px] text-center"
+                                                                            >
+                                                                                <FileText className="w-4 h-4 mb-0.5" />
+                                                                                <span className="truncate w-full">{m.file_name}</span>
+                                                                            </a>
+                                                                        )}
+                                                                    </div>
+                                                                );
+                                                            })}
+                                                        </div>
                                                     </div>
+                                                )}
+
+                                                {/* Resolution Notes (if any) */}
+                                                {item.resolution_notes && (
+                                                    <div className="p-2.5 rounded bg-secondary-container/30 border border-secondary/30 text-xs text-on-surface dark:text-dark-on-surface">
+                                                        <span className="font-semibold text-secondary dark:text-emerald-400">Resolution Note: </span>
+                                                        <span>{item.resolution_notes}</span>
+                                                    </div>
+                                                )}
+
+                                                {/* Footer Timestamp */}
+                                                <div className="flex items-center justify-between text-[11px] text-on-surface-variant dark:text-dark-on-surface-variant pt-1">
+                                                    <span>Filed on {new Date(item.created_at).toLocaleString()}</span>
+                                                    <span className="font-mono text-[10px]">#{item.complaint_id}</span>
                                                 </div>
                                             </div>
+                                        ))}
 
-                                            {/* Description */}
-                                            <p className="text-xs text-on-surface dark:text-dark-on-surface whitespace-pre-wrap bg-surface-container-high/40 p-2.5 rounded-lg border border-outline-variant/40 leading-relaxed">
-                                                {item.description}
-                                            </p>
-
-                                            {/* Media Files */}
-                                            {item.media_files && item.media_files.length > 0 && (
-                                                <div>
-                                                    <p className="text-[11px] font-bold text-outline mb-1.5">Attached Media:</p>
-                                                    <div className="flex flex-wrap gap-2">
-                                                        {item.media_files.map(m => {
-                                                            const fullUrl = getMediaUrl(m.file_url);
-                                                            const isImg = isImage(m.file_name);
-                                                            return (
-                                                                <div
-                                                                    key={m.media_id}
-                                                                    className="relative w-16 h-16 rounded-lg overflow-hidden border border-outline-variant bg-surface group cursor-pointer"
-                                                                    onClick={() => isImg && setPreviewImage(fullUrl)}
-                                                                >
-                                                                    {isImg ? (
-                                                                        <img src={fullUrl} alt={m.file_name} className="w-full h-full object-cover group-hover:scale-105 transition-transform" />
-                                                                    ) : (
-                                                                        <a
-                                                                            href={fullUrl}
-                                                                            target="_blank"
-                                                                            rel="noreferrer"
-                                                                            className="w-full h-full flex flex-col items-center justify-center p-1 text-primary text-[10px] text-center"
-                                                                        >
-                                                                            <FileText className="w-4 h-4 mb-0.5" />
-                                                                            <span className="truncate w-full">{m.file_name}</span>
-                                                                        </a>
-                                                                    )}
-                                                                </div>
-                                                            );
-                                                        })}
-                                                    </div>
+                                        {/* Modal Mini-Pagination */}
+                                        {totalListPages > 1 && (
+                                            <div className="flex items-center justify-between pt-2 border-t border-outline-variant dark:border-dark-outline-variant text-xs text-on-surface-variant dark:text-dark-on-surface-variant">
+                                                <span>Page {validListPage} of {totalListPages}</span>
+                                                <div className="flex items-center gap-1">
+                                                    <button
+                                                        type="button"
+                                                        disabled={validListPage === 1}
+                                                        onClick={() => setListPage(p => Math.max(1, p - 1))}
+                                                        className="p-1 rounded border border-outline/30 dark:border-dark-outline-variant disabled:opacity-40 cursor-pointer"
+                                                    >
+                                                        <ChevronLeft className="w-3.5 h-3.5" />
+                                                    </button>
+                                                    <span className="px-2 font-semibold text-on-surface dark:text-dark-on-surface">
+                                                        {validListPage}
+                                                    </span>
+                                                    <button
+                                                        type="button"
+                                                        disabled={validListPage >= totalListPages}
+                                                        onClick={() => setListPage(p => Math.min(totalListPages, p + 1))}
+                                                        className="p-1 rounded border border-outline/30 dark:border-dark-outline-variant disabled:opacity-40 cursor-pointer"
+                                                    >
+                                                        <ChevronRight className="w-3.5 h-3.5" />
+                                                    </button>
                                                 </div>
-                                            )}
-
-                                            {/* Resolution Notes (if any) */}
-                                            {item.resolution_notes && (
-                                                <div className="p-2 rounded bg-emerald-500/10 border border-emerald-500/20 text-xs text-emerald-800 dark:text-emerald-300">
-                                                    <span className="font-bold">Resolution Note: </span>
-                                                    <span>{item.resolution_notes}</span>
-                                                </div>
-                                            )}
-
-                                            {/* Footer Timestamp */}
-                                            <div className="flex items-center justify-between text-[10px] text-outline pt-1">
-                                                <span>Filed on {new Date(item.created_at).toLocaleString()}</span>
                                             </div>
-                                        </div>
-                                    ))
+                                        )}
+                                    </>
                                 )}
                             </div>
                         )}
@@ -872,13 +907,14 @@ export const ComplaintModal: React.FC<ComplaintModalProps> = ({
 
                 {/* Zoomable Image Modal */}
                 {previewImage && (
-                    <div className="fixed inset-0 z-[80] flex items-center justify-center p-4 bg-black/80 backdrop-blur-xs">
-                        <div className="relative max-w-4xl w-full max-h-[90vh] bg-black/40 rounded-xl overflow-hidden flex flex-col items-center">
+                    <div className="fixed inset-0 z-[80] flex items-center justify-center p-4 bg-inverse-surface/80 backdrop-blur-xs">
+                        <div className="relative max-w-4xl w-full max-h-[90vh] bg-surface-container dark:bg-dark-surface-container border border-outline-variant rounded overflow-hidden flex flex-col items-center">
                             <button
+                                type="button"
                                 onClick={() => setPreviewImage(null)}
-                                className="absolute top-3 right-3 z-10 p-2 rounded-full bg-black/60 text-white hover:bg-black/80 transition-colors cursor-pointer"
+                                className="absolute top-3 right-3 z-10 p-2 rounded bg-inverse-surface text-inverse-on-surface hover:opacity-90 transition-opacity cursor-pointer"
                             >
-                                <X className="w-5 h-5" />
+                                <X className="w-4 h-4" />
                             </button>
                             <ZoomableImage
                                 src={previewImage}

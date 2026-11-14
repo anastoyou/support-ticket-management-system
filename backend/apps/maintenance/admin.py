@@ -1,7 +1,10 @@
 from django.http import JsonResponse
-from django.urls import path
+from django.urls import path, reverse
+from django.shortcuts import redirect
+from django.utils.html import format_html
+from django.utils.safestring import mark_safe
 from django.contrib import admin
-from .models import Priority, Status, WorkNature, NatureWorker, Ticket, Allocation, WorkLog, TicketHistory, StatusChangeRule
+from .models import Priority, Status, WorkNature, NatureWorker, Ticket, Allocation, WorkLog, TicketHistory, StatusChangeRule, WorkerLeave
 
 from unfold.admin import ModelAdmin
 
@@ -91,3 +94,105 @@ class StatusChangeRuleAdmin(ModelAdmin):
 
     ordering = ("from_status", "to_status",
                 )
+
+
+@admin.register(WorkerLeave)
+class WorkerLeaveAdmin(ModelAdmin):
+    list_display = (
+        'leave_id', 'worker', 'leave_type', 'start_date', 'end_date',
+        'is_half_day', 'half_day_slot', 'hours', 'status', 'approved_by', 'action_buttons', 'created_at'
+    )
+    list_filter = ('status', 'leave_type', 'is_half_day', 'start_date')
+    search_fields = (
+        'worker__username', 'worker__first_name', 'worker__last_name',
+        'worker__employee_no', 'reason', 'admin_notes'
+    )
+    actions = ['approve_selected_leaves', 'reject_selected_leaves']
+
+    def action_buttons(self, obj):
+        if obj.status == 'pending':
+            approve_url = reverse(
+                'admin:workerleave-quick-approve', args=[obj.pk])
+            reject_url = reverse(
+                'admin:workerleave-quick-reject', args=[obj.pk])
+            return format_html(
+                '<a class="button" style="background:#10B981; color:#ffffff; font-weight:600; padding:4px 10px; border-radius:4px; text-decoration:none; margin-right:6px; display:inline-block;" href="{}">&#10003; Approve</a>'
+                '<a class="button" style="background:#EF4444; color:#ffffff; font-weight:600; padding:4px 10px; border-radius:4px; text-decoration:none; display:inline-block;" href="{}">&#10005; Reject</a>',
+                approve_url, reject_url
+            )
+        elif obj.status == 'rejected':
+            approve_url = reverse(
+                'admin:workerleave-quick-approve', args=[obj.pk])
+            return format_html(
+                '<a class="button" style="background:#059669; color:#ffffff; font-weight:600; padding:3px 8px; border-radius:4px; text-decoration:none; display:inline-block;" href="{}">Re-Approve</a>',
+                approve_url
+            )
+        elif obj.status == 'approved':
+            return mark_safe('<span style="color:#059669; font-weight:600; font-size:12px;">&#10003; Approved</span>')
+        elif obj.status == 'cancelled':
+            return mark_safe('<span style="color:#64748B; font-weight:500; font-size:12px;">Cancelled</span>')
+        return mark_safe('<span style="opacity:0.65; font-size:12px;">-</span>')
+    action_buttons.short_description = "Approve / Reject Action"
+
+    def get_urls(self):
+        urls = super().get_urls()
+        custom_urls = [
+            path('<int:leave_id>/quick-approve/', self.admin_site.admin_view(
+                self.quick_approve_view), name='workerleave-quick-approve'),
+            path('<int:leave_id>/quick-reject/', self.admin_site.admin_view(
+                self.quick_reject_view), name='workerleave-quick-reject'),
+        ]
+        return custom_urls + urls
+
+    def quick_approve_view(self, request, leave_id):
+        leave = WorkerLeave.objects.filter(pk=leave_id).first()
+        if not leave:
+            self.message_user(request, "Leave request not found.", level='ERROR')
+            return redirect('admin:maintenance_workerleave_changelist')
+
+        conflicting = WorkerLeave.objects.filter(
+            worker=leave.worker,
+            status='approved',
+            start_date__lte=leave.end_date,
+            end_date__gte=leave.start_date,
+        ).exclude(pk=leave.pk)
+
+        has_conflict = False
+        for c in conflicting:
+            if not leave.is_half_day or not c.is_half_day:
+                has_conflict = True
+                break
+            elif not leave.half_day_slot or not c.half_day_slot or leave.half_day_slot == c.half_day_slot:
+                has_conflict = True
+                break
+
+        if has_conflict:
+            self.message_user(
+                request,
+                f"Cannot approve leave #{leave_id}: An already approved leave overlaps with this period ({leave.start_date} to {leave.end_date}).",
+                level='ERROR'
+            )
+            return redirect('admin:maintenance_workerleave_changelist')
+
+        leave.status = 'approved'
+        leave.approved_by = request.user
+        leave.save()
+        self.message_user(request, f"Leave #{leave_id} approved successfully.")
+        return redirect('admin:maintenance_workerleave_changelist')
+
+    def quick_reject_view(self, request, leave_id):
+        WorkerLeave.objects.filter(pk=leave_id).update(
+            status='rejected', approved_by=request.user)
+        self.message_user(request, f"Leave #{leave_id} rejected.")
+        return redirect('admin:maintenance_workerleave_changelist')
+
+    def approve_selected_leaves(self, request, queryset):
+        count = queryset.update(status='approved', approved_by=request.user)
+        self.message_user(
+            request, f"{count} leave request(s) approved successfully.")
+    approve_selected_leaves.short_description = "Approve selected leave requests"
+
+    def reject_selected_leaves(self, request, queryset):
+        count = queryset.update(status='rejected', approved_by=request.user)
+        self.message_user(request, f"{count} leave request(s) rejected.")
+    reject_selected_leaves.short_description = "Reject selected leave requests"

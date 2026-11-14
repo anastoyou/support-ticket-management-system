@@ -3,11 +3,26 @@ import { useLocation } from 'react-router-dom';
 import { useSelector } from 'react-redux';
 import type { RootState } from '../../../store';
 import { StatCard } from './StatCard';
-import { Wrench, Clock, Receipt, CheckCircle2, Award, PlusCircle, AlertTriangle } from 'lucide-react';
+import { Wrench, Clock, Receipt, CheckCircle2, Award, PlusCircle, AlertTriangle, Palmtree } from 'lucide-react';
 import { getCompletionBadgeClasses, TimeSheetModal } from '../../../components/timesheet/TimeSheetModal';
+import { LeaveRequestModal } from '../../../components/timesheet/LeaveRequestModal';
 import Can from '@/hooks/Can';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api';
+
+interface TodayLeaveInfo {
+    leave_id: number;
+    leave_type: string;
+    leave_type_display: string;
+    status: 'pending' | 'approved' | 'rejected' | 'cancelled';
+    is_half_day: boolean;
+    half_day_slot?: string;
+    half_day_slot_display?: string;
+    hours: number;
+    start_date: string;
+    end_date: string;
+    reason: string;
+}
 
 interface TechnicianDashboardProps {
     data: any;
@@ -52,6 +67,8 @@ export const TechnicianDashboard: React.FC<TechnicianDashboardProps> = ({ data, 
 
     const [todayHours, setTodayHours] = useState<number>(0);
     const [todayPct, setTodayPct] = useState<number>(0);
+    const [todayLeave, setTodayLeave] = useState<TodayLeaveInfo | null>(null);
+    const [isLeaveModalOpen, setIsLeaveModalOpen] = useState<boolean>(false);
 
     const fetchTodayTimesheet = useCallback(async () => {
         if (!token) return;
@@ -64,6 +81,7 @@ export const TechnicianDashboard: React.FC<TechnicianDashboardProps> = ({ data, 
                 const resData = await res.json();
                 setTodayHours(resData.total_booked_hours || 0);
                 setTodayPct(resData.completion_percentage || 0);
+                setTodayLeave(resData.is_on_leave ? resData.leave : null);
             }
         } catch (err) {
             console.error('Failed to fetch today timesheet summary:', err);
@@ -100,25 +118,42 @@ export const TechnicianDashboard: React.FC<TechnicianDashboardProps> = ({ data, 
                     My Assigned Jobs
                 </a>
 
-                <div className="flex items-end justify-end gap-2 flex-wrap w-full pt-3">
+                <div className="flex items-center justify-end gap-2 flex-wrap w-full pt-3">
+                    {/* Dedicated Apply Leave Button */}
+                    <button
+                        type="button"
+                        onClick={() => setIsLeaveModalOpen(true)}
+                        className="
+                            bg-amber-500 hover:bg-amber-600
+                            text-white text-xs font-semibold
+                            px-3.5 py-1.5 rounded
+                            inline-flex items-center gap-1.5
+                            shadow-xs transition-colors cursor-pointer
+                        "
+                        title="Apply for Leave or view leave history"
+                    >
+                        <Palmtree className="w-3.5 h-3.5" />
+                        <span>Apply Leave</span>
+                    </button>
 
                     <Can permission={['can_change_my_log_time']}>
+                        {/* Pure Dedicated Time Sheet Button */}
                         <button
                             type="button"
                             onClick={() => setIsTimeSheetOpen(true)}
                             className="
-                hidden sm:flex
-                relative overflow-hidden
-                bg-surface-container hover:bg-surface-container-high
-                border border-outline/60
-                text-on-surface text-xs font-medium
-                px-3 py-1.5 rounded
-                items-center gap-1.5
-                transition-colors cursor-pointer
-                group
-            "
+                                relative overflow-hidden
+                                bg-surface-container hover:bg-surface-container-high
+                                border border-outline/60
+                                text-on-surface text-xs font-medium
+                                px-3 py-1.5 rounded
+                                inline-flex items-center gap-1.5
+                                transition-colors cursor-pointer
+                                group
+                            "
                             title="Open Time Sheet to log hours and sessions"
                         >
+                            {/* Fill bar for logged work % */}
                             <span
                                 className={`absolute inset-y-0 left-0 overflow-hidden transition-all duration-1000 ease-out ${getCompletionBadgeClasses(todayPct)}`}
                                 style={{
@@ -126,10 +161,10 @@ export const TechnicianDashboard: React.FC<TechnicianDashboardProps> = ({ data, 
                                 }}
                             >
                                 <span className="
-                    absolute inset-y-0 -left-1/2 w-1/2
-                    bg-gradient-to-r from-transparent via-white/40 to-transparent
-                    animate-[shimmer_2s_ease-in-out_infinite]
-                " />
+                                    absolute inset-y-0 -left-1/2 w-1/2
+                                    bg-gradient-to-r from-transparent via-white/40 to-transparent
+                                    animate-[shimmer_2s_ease-in-out_infinite]
+                                " />
                             </span>
 
                             <span className="relative z-10 flex items-center gap-1.5">
@@ -144,10 +179,53 @@ export const TechnicianDashboard: React.FC<TechnicianDashboardProps> = ({ data, 
                             </span>
                         </button>
                     </Can>
-
-
                 </div>
             </div>
+
+            {/* Active Leave Banner if Worker is on Leave Today */}
+            {todayLeave && (
+                <div className="bg-amber-500/10 border border-amber-500/30 rounded p-3.5 flex flex-wrap items-center justify-between gap-3 text-xs">
+                    <div className="flex items-center gap-3">
+                        <div className="w-8 h-8 rounded-full bg-amber-500/20 text-amber-700 dark:text-amber-300 flex items-center justify-center font-bold shrink-0">
+                            <Palmtree className="w-4 h-4" />
+                        </div>
+                        <div>
+                            <div className="flex items-center gap-2 flex-wrap">
+                                <span className="font-bold text-amber-950 dark:text-amber-100">
+                                    You are on {todayLeave.leave_type_display} Today
+                                </span>
+                                <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full capitalize ${
+                                    todayLeave.status === 'approved'
+                                        ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300'
+                                        : todayLeave.status === 'pending'
+                                        ? 'bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300'
+                                        : 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300'
+                                }`}>
+                                    {todayLeave.status}
+                                </span>
+                                <span className="text-[10px] bg-amber-500/15 text-amber-900 dark:text-amber-200 px-2 py-0.5 rounded font-medium">
+                                    {todayLeave.is_half_day
+                                        ? (todayLeave.half_day_slot_display || (todayLeave.half_day_slot === 'first_half' ? '1st Half: Morning to Afternoon (5h)' : '2nd Half: Afternoon to Evening (5h)'))
+                                        : 'Full Day (10h)'}
+                                </span>
+                            </div>
+                            {todayLeave.reason && (
+                                <p className="text-[11px] text-amber-900/80 dark:text-amber-200/80 mt-1 italic">
+                                    "{todayLeave.reason}"
+                                </p>
+                            )}
+                        </div>
+                    </div>
+                    <button
+                        type="button"
+                        onClick={() => setIsLeaveModalOpen(true)}
+                        className="bg-amber-600 hover:bg-amber-700 text-white font-semibold px-3 py-1.5 rounded transition-colors cursor-pointer text-xs flex items-center gap-1.5 shadow-xs shrink-0"
+                    >
+                        <Palmtree className="w-3.5 h-3.5" />
+                        <span>Manage Leave</span>
+                    </button>
+                </div>
+            )}
 
             {/* Personal KPI Cards */}
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -283,25 +361,24 @@ export const TechnicianDashboard: React.FC<TechnicianDashboardProps> = ({ data, 
                         {/* Background progress fill */}
                         <div
                             className="
-                absolute inset-1 rounded-full
-                pointer-events-none
-                transition-all duration-500
-            "
+                                absolute inset-1 rounded-full
+                                pointer-events-none
+                                transition-all duration-500
+                            "
                             style={{
                                 background: `linear-gradient(
-                    to top,
-                    color-mix(in srgb, var(--color-primary) 16%, transparent)
-                    ${Math.min(100, Math.max(0, todayPct))}%,
-                    transparent
-                    ${Math.min(100, Math.max(0, todayPct))}%
-                )`
+                                    to top,
+                                    color-mix(in srgb, var(--color-primary) 16%, transparent)
+                                    ${Math.min(100, Math.max(0, todayPct))}%,
+                                    transparent
+                                    ${Math.min(100, Math.max(0, todayPct))}%
+                                )`
                             }}
                         />
 
                         {/* Main content */}
                         <div className="relative z-10 flex flex-col items-center justify-center gap-1 pointer-events-none">
                             <Clock className="w-6 h-6 text-primary transition-transform duration-300 group-hover:scale-110" />
-
                             <span className="text-sm font-bold text-on-surface leading-none tabular-nums">
                                 {todayHours}h
                             </span>
@@ -310,18 +387,18 @@ export const TechnicianDashboard: React.FC<TechnicianDashboardProps> = ({ data, 
                         {/* Percentage badge */}
                         <span
                             className="
-                absolute -top-1.5 -right-2
-                min-w-[36px] h-[23px]
-                px-2 rounded-full
-                flex items-center justify-center
-                bg-primary text-on-primary
-                border-2 border-surface-container
-                text-[10px] font-bold
-                shadow-md tabular-nums
-                z-20
-                transition-transform duration-300
-                group-hover:scale-110
-            "
+                                absolute -top-1.5 -right-2
+                                min-w-[36px] h-[23px]
+                                px-2 rounded-full
+                                flex items-center justify-center
+                                bg-primary text-on-primary
+                                border-2 border-surface-container
+                                text-[10px] font-bold
+                                shadow-md tabular-nums
+                                z-20
+                                transition-transform duration-300
+                                group-hover:scale-110
+                            "
                         >
                             {todayPct >= 100 ? '100%' : `${todayPct}%`}
                         </span>
@@ -350,6 +427,12 @@ export const TechnicianDashboard: React.FC<TechnicianDashboardProps> = ({ data, 
                 }}
                 onSessionsUpdated={fetchTodayTimesheet}
             />
-        </div >
+
+            <LeaveRequestModal
+                isOpen={isLeaveModalOpen}
+                onClose={() => setIsLeaveModalOpen(false)}
+                onLeaveUpdated={fetchTodayTimesheet}
+            />
+        </div>
     );
 };

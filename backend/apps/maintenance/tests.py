@@ -5,7 +5,7 @@ from django.contrib.auth.models import Permission
 from django.contrib.contenttypes.models import ContentType
 from apps.stores.models import Department, SubDepartment, Store, Area
 from apps.accounts.models import Role, CustomUser
-from apps.maintenance.models import Priority, Status, WorkNature, Ticket, TicketChatMessage
+from apps.maintenance.models import Priority, Status, WorkNature, Ticket, TicketChatMessage, WorkerLeave
 from apps.common.models import MediaCategory, Media
 from apps.finance.models import ExpenseType, Expense
 from apps.maintenance.serializers import TicketWriteSerializer
@@ -1022,3 +1022,144 @@ class TimeSheetLoggingTestCase(TestCase):
         resp_after = self.client.get("/api/maintenance/worklog/timesheet/?date=2026-11-08")
         self.assertEqual(len(resp_after.data['sessions']), 1)
         self.assertTrue(resp_after.data['sessions'][0]['is_ticket'])
+
+
+class WorkerLeaveOverlapTests(APITestCase):
+    def setUp(self):
+        self.role_tech = Role.objects.create(role_name="Technician")
+        self.role_admin = Role.objects.create(role_name="Admin")
+
+        self.worker = CustomUser.objects.create_user(
+            username="tech_overlap", email="tech@test.com", password="pwd",
+            full_name="Tech Overlap", role=self.role_tech
+        )
+        self.admin = CustomUser.objects.create_user(
+            username="admin_overlap", email="admin@test.com", password="pwd",
+            full_name="Admin Overlap", role=self.role_admin, is_superuser=True
+        )
+        self.client.force_authenticate(user=self.worker)
+
+    def test_cannot_apply_overlapping_annual_leave(self):
+        # 1. First leave: Annual leave from 2026-12-01 to 2026-12-05
+        resp1 = self.client.post("/api/maintenance/leaves/", {
+            "leave_type": "annual",
+            "start_date": "2026-12-01",
+            "end_date": "2026-12-05",
+            "reason": "Family vacation",
+        }, format="json")
+        self.assertEqual(resp1.status_code, 201)
+
+        # 2. Try applying overlapping annual leave (2026-12-03 to 2026-12-07)
+        resp2 = self.client.post("/api/maintenance/leaves/", {
+            "leave_type": "annual",
+            "start_date": "2026-12-03",
+            "end_date": "2026-12-07",
+            "reason": "Another request",
+        }, format="json")
+        self.assertEqual(resp2.status_code, 400)
+        self.assertIn("non_field_errors", resp2.data)
+        self.assertIn("already have", resp2.data["non_field_errors"][0])
+
+        # 3. Try applying sick leave inside the annual leave range (2026-12-02)
+        resp3 = self.client.post("/api/maintenance/leaves/", {
+            "leave_type": "sick",
+            "start_date": "2026-12-02",
+            "is_half_day": False,
+            "reason": "Doctor appointment",
+        }, format="json")
+        self.assertEqual(resp3.status_code, 400)
+        self.assertIn("already have", resp3.data["non_field_errors"][0])
+
+    def test_half_day_slot_overlap_and_different_slots(self):
+        # 1. Apply for first_half sick leave on 2026-12-10
+        resp1 = self.client.post("/api/maintenance/leaves/", {
+            "leave_type": "sick",
+            "start_date": "2026-12-10",
+            "is_half_day": True,
+            "half_day_slot": "first_half",
+            "reason": "Morning dental checkup",
+        }, format="json")
+        self.assertEqual(resp1.status_code, 201)
+
+        # 2. Try applying again for first_half on the same day -> Must fail
+        resp2 = self.client.post("/api/maintenance/leaves/", {
+            "leave_type": "casual",
+            "start_date": "2026-12-10",
+            "is_half_day": True,
+            "half_day_slot": "first_half",
+            "reason": "Duplicate morning request",
+        }, format="json")
+        self.assertEqual(resp2.status_code, 400)
+        self.assertIn("already have", resp2.data["non_field_errors"][0])
+
+        # 3. Try applying for full-day on that same day -> Must fail
+        resp3 = self.client.post("/api/maintenance/leaves/", {
+            "leave_type": "sick",
+            "start_date": "2026-12-10",
+            "is_half_day": False,
+            "reason": "Full day upgrade attempt",
+        }, format="json")
+        self.assertEqual(resp3.status_code, 400)
+
+        # 4. Applying for second_half (afternoon) on the same day -> Allowed!
+        resp4 = self.client.post("/api/maintenance/leaves/", {
+            "leave_type": "casual",
+            "start_date": "2026-12-10",
+            "is_half_day": True,
+            "half_day_slot": "second_half",
+            "reason": "Afternoon personal errand",
+        }, format="json")
+        self.assertEqual(resp4.status_code, 201)
+
+    def test_cancelled_or_rejected_leave_does_not_block_reapply(self):
+        # 1. Apply for sick leave on 2026-12-15
+        resp1 = self.client.post("/api/maintenance/leaves/", {
+            "leave_type": "sick",
+            "start_date": "2026-12-15",
+            "is_half_day": False,
+            "reason": "Feeling unwell",
+        }, format="json")
+        self.assertEqual(resp1.status_code, 201)
+        leave_id = resp1.data['leave_id']
+
+        # 2. Cancel it
+        resp_cancel = self.client.post(f"/api/maintenance/leaves/{leave_id}/cancel/")
+        self.assertEqual(resp_cancel.status_code, 200)
+        self.assertEqual(resp_cancel.data['status'], 'cancelled')
+
+        # 3. Now re-apply on the same date -> Should succeed!
+        resp_reapply = self.client.post("/api/maintenance/leaves/", {
+            "leave_type": "casual",
+            "start_date": "2026-12-15",
+            "is_half_day": False,
+            "reason": "Personal matters instead",
+        }, format="json")
+        self.assertEqual(resp_reapply.status_code, 201)
+
+    def test_admin_changelist_view(self):
+        WorkerLeave.objects.create(
+            worker=self.worker, leave_type='annual',
+            start_date='2026-12-01', end_date='2026-12-05',
+            status='approved', approved_by=self.admin
+        )
+        WorkerLeave.objects.create(
+            worker=self.worker, leave_type='sick',
+            start_date='2026-12-08', end_date='2026-12-08',
+            status='pending'
+        )
+        WorkerLeave.objects.create(
+            worker=self.worker, leave_type='casual',
+            start_date='2026-12-09', end_date='2026-12-09',
+            status='cancelled'
+        )
+        WorkerLeave.objects.create(
+            worker=self.worker, leave_type='sick',
+            start_date='2026-12-11', end_date='2026-12-11',
+            status='rejected', approved_by=self.admin
+        )
+
+        self.admin.is_staff = True
+        self.admin.save()
+        self.client.force_login(user=self.admin)
+        resp = self.client.get('/admin/maintenance/workerleave/')
+        self.assertEqual(resp.status_code, 200)

@@ -6,9 +6,10 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
     Clock, Calendar as CalendarIcon, ChevronLeft, ChevronRight,
     X, MapPin, Edit2, Search, Lock, AlertCircle, Trash2,
-    ExternalLink, Sun, Moon, Printer
+    ExternalLink, Sun, Moon, Printer, Palmtree
 } from 'lucide-react';
 import { TimesheetPrintModal } from './TimesheetPrintModal';
+import { LeaveRequestModal } from './LeaveRequestModal';
 import Can from '@/hooks/Can';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api';
@@ -77,6 +78,11 @@ interface LockedConflictInfo {
     start: number;
     end: number;
     is_ticket: boolean;
+    is_leave?: boolean;
+    leave_type?: string;
+    leave_type_display?: string;
+    leave_slot?: string;
+    leave_status?: string;
     ticket_id?: number | null;
     ticket_work_order_no?: string | null;
     ticket_title?: string | null;
@@ -455,7 +461,18 @@ export const TimeSheetModal: React.FC<TimeSheetModalProps> = ({
     };
     const [calendarViewYear, setCalendarViewYear] = useState<number>(new Date().getFullYear());
     const [calendarViewMonth, setCalendarViewMonth] = useState<number>(new Date().getMonth());
-    const [monthDaysStats, setMonthDaysStats] = useState<Record<string, { total_hours: number; completion_percentage: number }>>({});
+    const [monthDaysStats, setMonthDaysStats] = useState<Record<string, {
+        total_hours: number;
+        completion_percentage: number;
+        is_complete?: boolean;
+        is_leave?: boolean;
+        is_half_day?: boolean;
+        half_day_slot?: string;
+        leave_type?: string;
+        leave_type_display?: string;
+        leave_status?: 'pending' | 'approved' | 'rejected' | 'cancelled';
+        leave_reason?: string;
+    }>>({});
 
     // Available Stores (by default 0 selected unless fixedLocationId provided)
     const [stores, setStores] = useState<StoreItem[]>([]);
@@ -507,6 +524,8 @@ export const TimeSheetModal: React.FC<TimeSheetModalProps> = ({
     const [sessions, setSessions] = useState<BookedSession[]>([]);
     const [totalBookedHours, setTotalBookedHours] = useState<number>(0);
     const [completionPercentage, setCompletionPercentage] = useState<number>(0);
+    const [dayLeave, setDayLeave] = useState<any | null>(null);
+    const [isLeaveModalOpen, setIsLeaveModalOpen] = useState(false);
     const [loadingDay, setLoadingDay] = useState(false);
     const [saving, setSaving] = useState(false);
 
@@ -561,9 +580,7 @@ export const TimeSheetModal: React.FC<TimeSheetModalProps> = ({
             setWindowStart(DAYTIME_WINDOW_START);
             const defaultDate = initialDate || todayKey;
             let targetDate = defaultDate;
-            if (minDateKey && defaultDate < minDateKey) {
-                targetDate = minDateKey;
-            } else if (defaultDate > todayKey) {
+            if (defaultDate > todayKey) {
                 targetDate = todayKey;
             }
             setSelectedDateKey(targetDate);
@@ -660,6 +677,7 @@ export const TimeSheetModal: React.FC<TimeSheetModalProps> = ({
                 setSessions(data.sessions || []);
                 setTotalBookedHours(data.total_booked_hours || 0);
                 setCompletionPercentage(data.completion_percentage || 0);
+                setDayLeave(data.is_on_leave ? data.leave : null);
             }
         } catch (err) {
             console.error('Failed to fetch timesheet:', err);
@@ -752,8 +770,50 @@ export const TimeSheetModal: React.FC<TimeSheetModalProps> = ({
                 }
             }
         });
+
+        // Automatically lock periods marked with approved or pending leave
+        if (dayLeave) {
+            if (!dayLeave.is_half_day) {
+                // Full Day Leave: Lock all 24 hours of the day (0 to 1500)
+                intervals.push({
+                    id: -999,
+                    start: 0,
+                    end: 1500,
+                    is_ticket: false,
+                    is_leave: true,
+                    leave_type: dayLeave.leave_type,
+                    leave_type_display: dayLeave.leave_type_display,
+                    leave_slot: 'full_day',
+                    leave_status: dayLeave.status,
+                    work_done: `On Leave: ${dayLeave.leave_type_display}`,
+                    is_locked: true,
+                });
+            } else {
+                // Half Day Leave: Lock the specific marked half-day slot
+                // 'first_half': Morning to Afternoon (08:00 AM to 01:00 PM) -> 480 to 780
+                // 'second_half': Afternoon to Evening (01:00 PM to 06:00 PM) -> 780 to 1080
+                const slotStart = dayLeave.half_day_slot === 'second_half' ? 780 : 480;
+                const slotEnd = dayLeave.half_day_slot === 'second_half' ? 1080 : 780;
+                const slotName = dayLeave.half_day_slot === 'second_half' ? '2nd Half: Afternoon' : '1st Half: Morning';
+
+                intervals.push({
+                    id: -998,
+                    start: slotStart,
+                    end: slotEnd,
+                    is_ticket: false,
+                    is_leave: true,
+                    leave_type: dayLeave.leave_type,
+                    leave_type_display: dayLeave.leave_type_display,
+                    leave_slot: dayLeave.half_day_slot,
+                    leave_status: dayLeave.status,
+                    work_done: `${dayLeave.leave_type_display} (${slotName})`,
+                    is_locked: true,
+                });
+            }
+        }
+
         return intervals;
-    }, [sessions, editingSessionId]);
+    }, [sessions, editingSessionId, dayLeave]);
 
     const isPeriodLocked = useCallback((start: number, end: number) => {
         return effectiveLockedIntervals.some((iv) => intervalOverlap(start, end, iv.start, iv.end));
@@ -1078,6 +1138,14 @@ export const TimeSheetModal: React.FC<TimeSheetModalProps> = ({
         // If locked -> surface the session in the bottom bar with an Edit button & hide the time sheet!
         const conflict = getLockedConflict(segStart, segEnd);
         if (conflict) {
+            if (conflict.is_leave) {
+                setActiveConflict(conflict);
+                setMessage({
+                    text: `This time slot is reserved for your ${conflict.leave_type_display || 'Leave'} (${conflict.leave_slot === 'full_day' ? 'Full Day' : conflict.leave_slot === 'first_half' ? 'First Half: Morning' : 'Second Half: Afternoon'}). Work hours cannot be logged during leave.`,
+                    error: true
+                });
+                return;
+            }
             const foundSess = sessions.find((s) => Number(s.id) === Number(conflict.id) || (s.worklog_id && Number(s.worklog_id) === Number(conflict.id))) || null;
             if (foundSess) {
                 setSelectedSessionForView(foundSess);
@@ -1164,7 +1232,14 @@ export const TimeSheetModal: React.FC<TimeSheetModalProps> = ({
         if (isPeriodLocked(start, end)) {
             const conflict = getLockedConflict(start, end);
             if (conflict) setActiveConflict(conflict);
-            setMessage({ text: 'Selection overlaps an existing booked time sheet.', error: true });
+            if (conflict?.is_leave) {
+                setMessage({
+                    text: `Cannot save work log: Selection overlaps your ${conflict.leave_type_display || 'Leave'} hours.`,
+                    error: true
+                });
+            } else {
+                setMessage({ text: 'Selection overlaps an existing booked time sheet.', error: true });
+            }
             return;
         }
 
@@ -1549,16 +1624,15 @@ export const TimeSheetModal: React.FC<TimeSheetModalProps> = ({
                         dark:text-on-surface truncate">
                                             {fullDateText}
                                         </span>
-                                        {/* 
-                                        {selectedDateKey === todayKey && (
-                                            <span className="flex-shrink-0 text-[9px] font-bold
-                            uppercase tracking-wide
-                            bg-amber-100 text-amber-800
-                            dark:bg-amber-400/15 dark:text-amber-400
-                            px-2 py-0.5 rounded-full">
-                                                Today
+                                        {dayLeave && (
+                                            <span
+                                                className="flex-shrink-0 text-[10px] font-bold inline-flex items-center gap-1 bg-amber-100 text-amber-900 dark:bg-amber-950/60 dark:text-amber-300 px-2 py-0.5 rounded-full border border-amber-300 dark:border-amber-800"
+                                                title={`On Leave: ${dayLeave.leave_type_display} (${dayLeave.is_half_day ? 'Half Day 5h' : 'Full Day 10h'})`}
+                                            >
+                                                <Palmtree className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400 shrink-0" />
+                                                <span>{dayLeave.leave_type_display || 'On Leave'}</span>
                                             </span>
-                                        )} */}
+                                        )}
                                     </div>
 
                                     <div className="flex items-center gap-1.5 mt-1">
@@ -1585,6 +1659,8 @@ export const TimeSheetModal: React.FC<TimeSheetModalProps> = ({
                 transition-colors" />
                             </div>
                         </button>
+
+                        {/* Leave Request & Tracking button */}
 
                         {/* Print button */}
                         <Can permission={'accounts.view_customuser'} >
@@ -1628,6 +1704,50 @@ export const TimeSheetModal: React.FC<TimeSheetModalProps> = ({
                             <X className="w-4 h-4" />
                         </button>
                     </div>
+
+                    {/* Active Leave Banner on Selected Day */}
+                    {/* {dayLeave && (
+                        <div className={`mx-3 mb-2 p-3 rounded-xl border flex items-center justify-between gap-3 ${dayLeave.status === 'approved'
+                            ? 'bg-amber-500/10 border-amber-500/30 text-amber-950 dark:text-amber-200'
+                            : 'bg-slate-500/10 border-slate-500/20 text-slate-800 dark:text-slate-200'
+                            }`}>
+                            <div className="flex items-center gap-2.5 min-w-0">
+                                <div className="w-8 h-8 rounded-lg bg-amber-500/20 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0">
+                                    <Palmtree className="w-4 h-4" />
+                                </div>
+                                <div className="min-w-0">
+                                    <div className="flex items-center gap-2 flex-wrap">
+                                        <span className="text-xs font-bold uppercase tracking-wider">
+                                            {dayLeave.leave_type_display}
+                                        </span>
+                                        <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full capitalize ${dayLeave.status === 'approved' ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300' :
+                                            dayLeave.status === 'pending' ? 'bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300' :
+                                                'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300'
+                                            }`}>
+                                            {dayLeave.status}
+                                        </span>
+                                        {dayLeave.is_half_day && (
+                                            <span className="text-[10px] opacity-90 font-medium px-1.5 py-0.2 rounded bg-amber-500/15 text-amber-800 dark:text-amber-300">
+                                                {dayLeave.half_day_slot_display || (dayLeave.half_day_slot === 'first_half' ? '1st Half (Morning to Afternoon)' : dayLeave.half_day_slot === 'second_half' ? '2nd Half (Afternoon to Evening)' : 'Half Day')} &bull; 5h
+                                            </span>
+                                        )}
+                                    </div>
+                                    {dayLeave.reason && (
+                                        <p className="text-[11px] opacity-80 truncate mt-0.5">
+                                            {dayLeave.reason}
+                                        </p>
+                                    )}
+                                </div>
+                            </div>
+                            <button
+                                type="button"
+                                onClick={() => setIsLeaveModalOpen(true)}
+                                className="text-xs font-semibold px-2.5 py-1.5 rounded-lg bg-surface-container-high hover:bg-surface-container border border-outline/50 shrink-0 cursor-pointer transition-colors"
+                            >
+                                Manage
+                            </button>
+                        </div>
+                    )} */}
 
                     {/* Location Selection Popup Modal */}
                     {isStoreDropdownOpen && (
@@ -2006,6 +2126,8 @@ export const TimeSheetModal: React.FC<TimeSheetModalProps> = ({
                                 let colorClass = '';
                                 if (curr.groupType === 'selection') {
                                     colorClass = 'bg-yellow-300 dark:bg-yellow-400 border-yellow-500 text-yellow-950 font-semibold shadow-xs z-10';
+                                } else if (curr.groupType === 'locked' && curr.conflict?.is_leave) {
+                                    colorClass = 'bg-amber-100/90 dark:bg-amber-950/60 border-amber-300 dark:border-amber-700/60 text-amber-950 dark:text-amber-100 font-medium cursor-not-allowed';
                                 } else if (curr.groupType === 'locked' && color) {
                                     const isThisViewed = Boolean(
                                         selectedSessionForView &&
@@ -2108,7 +2230,15 @@ export const TimeSheetModal: React.FC<TimeSheetModalProps> = ({
                                                 min-w-0 w-full
                                                 text-[9px] sm:text-[10px]
                                             ">
-                                            {curr.groupType === 'locked' && color ? (
+                                            {curr.groupType === 'locked' && curr.conflict?.is_leave ? (
+                                                <div className="min-w-0 flex-1 truncate flex items-center gap-1 font-bold text-amber-900 dark:text-amber-200">
+                                                    <Palmtree className="w-3 h-3 text-amber-600 dark:text-amber-400 shrink-0" />
+                                                    <span className="truncate">{curr.conflict.leave_type_display || 'Leave'}</span>
+                                                    <span className="text-[8px] bg-amber-200/80 dark:bg-amber-900/60 text-amber-950 dark:text-amber-100 px-1 rounded font-semibold shrink-0">
+                                                        {curr.conflict.leave_slot === 'full_day' ? 'Full' : 'Half'}
+                                                    </span>
+                                                </div>
+                                            ) : curr.groupType === 'locked' && color ? (
                                                 <>
                                                     <div className="min-w-0 flex-1 truncate">
                                                         {curr.conflict?.is_ticket && curr.conflict?.ticket_id ? (
@@ -2872,6 +3002,18 @@ export const TimeSheetModal: React.FC<TimeSheetModalProps> = ({
                                     </button>
                                 </div>
                             </>
+                        ) : dayLeave && !dayLeave.is_half_day ? (
+                            <div className="flex items-center gap-2.5 py-1 text-xs text-amber-300">
+                                <Palmtree className="w-5 h-5 text-amber-400 shrink-0" />
+                                <div>
+                                    <span className="font-bold block text-white">
+                                        Full-Day {dayLeave.leave_type_display} (Worklogs Disabled)
+                                    </span>
+                                    <span className="text-[11px] text-slate-400 block mt-0.5">
+                                        You are on scheduled leave on this date. Work hours cannot be recorded.
+                                    </span>
+                                </div>
+                            </div>
                         ) : null}
                     </div>
                 )}
@@ -2908,17 +3050,7 @@ export const TimeSheetModal: React.FC<TimeSheetModalProps> = ({
                             <div className="px-3 py-2 bg-slate-50 dark:bg-surface-container border-b border-slate-100 dark:border-outline-variant flex justify-between items-center text-xs">
                                 <button
                                     type="button"
-                                    disabled={(() => {
-                                        if (!minDateKey) return false;
-                                        const [minY, minM] = minDateKey.split('-').map(Number);
-                                        return calendarViewYear < minY || (calendarViewYear === minY && calendarViewMonth <= minM - 1);
-                                    })()}
                                     onClick={() => {
-                                        if (minDateKey) {
-                                            const [minY, minM] = minDateKey.split('-').map(Number);
-                                            const isBeforeOrEqualMin = calendarViewYear < minY || (calendarViewYear === minY && calendarViewMonth <= minM - 1);
-                                            if (isBeforeOrEqualMin) return;
-                                        }
                                         let newMonth = calendarViewMonth - 1;
                                         let newYear = calendarViewYear;
                                         if (newMonth < 0) {
@@ -2928,12 +3060,7 @@ export const TimeSheetModal: React.FC<TimeSheetModalProps> = ({
                                         setCalendarViewMonth(newMonth);
                                         setCalendarViewYear(newYear);
                                     }}
-                                    className={`border border-slate-200 bg-white rounded-lg p-1 font-bold ${(() => {
-                                        if (!minDateKey) return 'hover:bg-slate-100 text-slate-700';
-                                        const [minY, minM] = minDateKey.split('-').map(Number);
-                                        const isBeforeOrEqualMin = calendarViewYear < minY || (calendarViewYear === minY && calendarViewMonth <= minM - 1);
-                                        return isBeforeOrEqualMin ? 'opacity-30 cursor-not-allowed text-slate-300' : 'hover:bg-slate-100 text-slate-700';
-                                    })()}`}
+                                    className="border border-slate-200 bg-white dark:bg-dark-surface rounded-lg p-1 font-bold hover:bg-slate-100 text-slate-700 dark:text-on-surface cursor-pointer"
                                 >
                                     &lt;
                                 </button>
@@ -2962,7 +3089,7 @@ export const TimeSheetModal: React.FC<TimeSheetModalProps> = ({
                                     className={`border border-slate-200 bg-white rounded-lg p-1 font-bold ${(() => {
                                         const now = new Date();
                                         const isCurrentOrFuture = calendarViewYear > now.getFullYear() || (calendarViewYear === now.getFullYear() && calendarViewMonth >= now.getMonth());
-                                        return isCurrentOrFuture ? 'opacity-30 cursor-not-allowed text-slate-300' : 'hover:bg-slate-100 text-slate-700';
+                                        return isCurrentOrFuture ? 'opacity-30 cursor-not-allowed text-slate-300' : 'hover:bg-slate-100 text-slate-700 cursor-pointer';
                                     })()}`}
                                 >
                                     &gt;
@@ -2989,10 +3116,9 @@ export const TimeSheetModal: React.FC<TimeSheetModalProps> = ({
                                     const cellDate = new Date(calendarViewYear, calendarViewMonth, day);
                                     const cellKey = toDateKey(cellDate);
                                     const isFuture = cellKey > todayKey;
-                                    const isBeforeMin = minDateKey ? cellKey < minDateKey : false;
 
-                                    // Hide day selection of tomorrow and future days, as well as days before ticket approval
-                                    if (isFuture || isBeforeMin) {
+                                    // Hide day selection of tomorrow and future days
+                                    if (isFuture) {
                                         return <div key={cellKey} className="h-11" />;
                                     }
 
@@ -3022,40 +3148,64 @@ export const TimeSheetModal: React.FC<TimeSheetModalProps> = ({
                                                 }`}
                                         >
                                             <div className="w-full flex justify-between items-center px-0.5">
-                                                <span className="text-[11px] font-bold text-slate-800">
-                                                    {day}
+                                                <span className="text-[11px] font-bold text-slate-800 flex items-center gap-1">
+                                                    <span>{day}</span>
+                                                    {dayStat?.is_leave && (
+                                                        <Palmtree className="w-3 h-3 text-amber-600 shrink-0 inline-block" />
+                                                    )}
                                                 </span>
                                                 {isToday && (
                                                     <span className="w-1.5 h-1.5 rounded-full bg-amber-500" title="Today" />
                                                 )}
                                             </div>
-                                            <span className={`text-[8px] font-extrabold px-1 rounded-md w-full text-center border ${badgeClass}`}>
-                                                {pct}%
-                                            </span>
+                                            {dayStat?.is_leave ? (
+                                                <span
+                                                    className={`text-[8px] font-extrabold px-0.5 rounded w-full flex items-center justify-center gap-0.5 text-center truncate ${dayStat.is_half_day
+                                                        ? 'bg-amber-300 text-amber-950 border border-amber-400'
+                                                        : 'bg-amber-400 text-amber-950 border border-amber-500 shadow-xs'
+                                                        }`}
+                                                    title={`${dayStat.leave_type_display || 'Leave'} (${dayStat.is_half_day ? 'Half Day 5h' : 'Full Day 10h'}) - Worklogs Disabled`}
+                                                >
+                                                    <Palmtree className="w-2.5 h-2.5 shrink-0" />
+                                                    <span>{dayStat.is_half_day ? '50% Half' : '100% Full'}</span>
+                                                </span>
+                                            ) : (
+                                                <span className={`text-[8px] font-extrabold px-1 rounded-md w-full text-center border ${badgeClass}`}>
+                                                    {pct}%
+                                                </span>
+                                            )}
                                         </button>
                                     );
                                 })}
                             </div>
 
+                            {/* Calendar Leave Legend */}
+                            <div className="px-3 py-1.5 bg-amber-50/80 dark:bg-amber-950/40 border-t border-amber-200/50 flex items-center gap-1.5 text-[10px] text-amber-900 dark:text-amber-200 font-medium">
+                                <Palmtree className="w-3 h-3 text-amber-600 shrink-0" />
+                                <span>Tree icon indicates scheduled leave</span>
+                            </div>
+
                             <div className="px-3 py-2 bg-slate-50 dark:bg-surface-container-low border-t border-slate-100 flex justify-between items-center text-xs">
-                                <button
-                                    type="button"
-                                    onClick={() => {
-                                        const target = (minDateKey && todayKey < minDateKey) ? minDateKey : todayKey;
-                                        setSelectedDateKey(target);
-                                        setCalendarViewYear(new Date().getFullYear());
-                                        setCalendarViewMonth(new Date().getMonth());
-                                        setSelection(null);
-                                        setActiveConflict(null);
-                                        setSelectedSessionForView(null);
-                                        setEditingSessionId(null);
-                                        setWindowStart(DAY_WINDOW_START);
-                                        setIsCalendarOpen(false);
-                                    }}
-                                    className="font-bold text-amber-700 hover:underline text-[11px]"
-                                >
-                                    Select Today
-                                </button>
+                                <div className="flex items-center gap-3">
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            setSelectedDateKey(todayKey);
+                                            setCalendarViewYear(new Date().getFullYear());
+                                            setCalendarViewMonth(new Date().getMonth());
+                                            setSelection(null);
+                                            setActiveConflict(null);
+                                            setSelectedSessionForView(null);
+                                            setEditingSessionId(null);
+                                            setWindowStart(DAY_WINDOW_START);
+                                            setIsCalendarOpen(false);
+                                        }}
+                                        className="font-bold text-amber-700 hover:underline text-[11px]"
+                                    >
+                                        Select Today
+                                    </button>
+
+                                </div>
                                 <button
                                     type="button"
                                     onClick={() => setIsCalendarOpen(false)}
@@ -3087,6 +3237,19 @@ export const TimeSheetModal: React.FC<TimeSheetModalProps> = ({
                         initialToDate={selectedDateKey}
                     />
                 )}
+
+                <LeaveRequestModal
+                    isOpen={isLeaveModalOpen}
+                    onClose={() => setIsLeaveModalOpen(false)}
+                    initialDate={selectedDateKey}
+                    onLeaveUpdated={() => {
+                        fetchDayTimesheet();
+                        fetchMonthStats(calendarViewYear, calendarViewMonth);
+                        if (onSessionsUpdated) {
+                            onSessionsUpdated();
+                        }
+                    }}
+                />
             </div>
         </div>
     );

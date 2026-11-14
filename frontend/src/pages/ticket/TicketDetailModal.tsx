@@ -3980,11 +3980,6 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
                             fixedLocationId={ticketDetails.store?.store_id ? String(ticketDetails.store.store_id) : (typeof ticketDetails.store === 'string' ? ticketDetails.store : undefined)}
                             fixedLocationName={(ticketDetails.store as any)?.short_code || ticketDetails.store?.store_name || (typeof ticketDetails.store === 'string' ? ticketDetails.store : undefined)}
                             lockLocation={true}
-                            minDateKey={
-                                ticketDetails.approved_date
-                                    ? ticketDetails.approved_date.split('T')[0]
-                                    : (ticketDetails.created_date ? ticketDetails.created_date.split('T')[0] : undefined)
-                            }
                             initialCalendarOpen={true}
                         />
                     )
@@ -4304,11 +4299,6 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
                             fixedLocationId={ticketDetails.store?.store_id ? String(ticketDetails.store.store_id) : (typeof ticketDetails.store === 'string' ? ticketDetails.store : undefined)}
                             fixedLocationName={(ticketDetails.store as any)?.short_code || ticketDetails.store?.store_name || (typeof ticketDetails.store === 'string' ? ticketDetails.store : undefined)}
                             lockLocation={true}
-                            minDateKey={
-                                ticketDetails.approved_date
-                                    ? ticketDetails.approved_date.split('T')[0]
-                                    : (ticketDetails.created_date ? ticketDetails.created_date.split('T')[0] : undefined)
-                            }
                             initialCalendarOpen={false}
                         />
                     )

@@ -410,7 +410,8 @@ class Allocation(models.Model):
             ("change_planned_hours", "Can change planned hours"),
             ("view_remarks", "Can view remarks"),
             ("change_remarks", "Can change remarks"),
-            ("can_add_worker_in_location_approval", "Can add worker in Location Approval"),
+            ("can_add_worker_in_location_approval",
+             "Can add worker in Location Approval"),
             ("can_add_worker_in_completed", "Can add worker in Completed"),
             ("can_add_worker_in_reconciled", "Can add worker in Reconciled"),
             ("can_add_worker_in_rejected", "Can add worker in Rejected"),
@@ -690,14 +691,16 @@ class ComplaintIssueType(models.Model):
 
     issue_type_id = models.AutoField(primary_key=True)
     name = models.CharField(max_length=200)
-    role_type = models.CharField(max_length=50, choices=ROLE_TYPE_CHOICES, default='all')
+    role_type = models.CharField(
+        max_length=50, choices=ROLE_TYPE_CHOICES, default='all')
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
         ordering = ['name']
         constraints = [
-            models.UniqueConstraint(fields=['name', 'role_type'], name='unique_complaint_issue_role')
+            models.UniqueConstraint(
+                fields=['name', 'role_type'], name='unique_complaint_issue_role')
         ]
 
     def __str__(self):
@@ -731,7 +734,8 @@ class Complaint(models.Model):
         ComplaintIssueType, on_delete=models.SET_NULL, null=True, blank=True, related_name='complaints')
     custom_issue = models.CharField(max_length=255, null=True, blank=True)
     description = models.TextField()
-    status = models.CharField(max_length=30, choices=STATUS_CHOICES, default='pending')
+    status = models.CharField(
+        max_length=30, choices=STATUS_CHOICES, default='pending')
     resolution_notes = models.TextField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -739,16 +743,72 @@ class Complaint(models.Model):
     class Meta:
         ordering = ['-created_at']
         permissions = [
-            ("can_view_manager_complaint", "Can view manager complaints against workers"),
-            ("can_view_worker_complaint", "Can view worker complaints against managers"),
+            ("can_view_manager_complaint",
+             "Can view manager complaints against workers"),
+            ("can_view_worker_complaint",
+             "Can view worker complaints against managers"),
             ("can_view_all_complaint", "Can view all complaints across profiles"),
             ("all_complaint_view", "Can view all complaints across profiles"),
             ("can_create_complaint", "Can create complaint"),
         ]
 
     def __str__(self):
-        issue_name = self.issue_type.name if self.issue_type else (self.custom_issue or "Complaint")
+        issue_name = self.issue_type.name if self.issue_type else (
+            self.custom_issue or "Complaint")
         return f"Complaint #{self.complaint_id} ({self.get_complaint_type_display()}): {issue_name} against {self.against_user}"
+
+
+class WorkerLeave(models.Model):
+    LEAVE_TYPES = [
+        ('annual', 'Annual Leave'),
+        ('sick', 'Sick Leave'),
+        ('casual', 'Casual Leave'),
+        ('unpaid', 'Unpaid Leave'),
+    ]
+    STATUS_CHOICES = [
+        ('pending', 'Pending Approval'),
+        ('approved', 'Approved'),
+        ('rejected', 'Rejected'),
+        ('cancelled', 'Cancelled'),
+    ]
+    HALF_DAY_SLOTS = [
+        ('first_half', 'First Half (Morning to Afternoon)'),
+        ('second_half', 'Second Half (Afternoon to Evening)'),
+    ]
+
+    leave_id = models.AutoField(primary_key=True)
+    worker = models.ForeignKey(
+        'accounts.CustomUser', on_delete=models.CASCADE, related_name='leaves'
+    )
+    leave_type = models.CharField(
+        max_length=20, choices=LEAVE_TYPES, default='annual')
+    start_date = models.DateField()
+    end_date = models.DateField()
+    is_half_day = models.BooleanField(default=False)
+    half_day_slot = models.CharField(
+        max_length=20, choices=HALF_DAY_SLOTS, blank=True, default=''
+    )
+    hours = models.DecimalField(max_digits=5, decimal_places=2, default=10.0)
+    reason = models.TextField(blank=True, default='')
+    status = models.CharField(
+        max_length=20, choices=STATUS_CHOICES, default='pending')
+    approved_by = models.ForeignKey(
+        'accounts.CustomUser', on_delete=models.SET_NULL, null=True, blank=True, related_name='approved_worker_leaves'
+    )
+    admin_notes = models.TextField(blank=True, default='')
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-start_date', '-created_at']
+        permissions = [
+            ("can_manage_leaves", "Can manage worker leaves"),
+            ("can_request_leave", "Can request leave"),
+        ]
+
+    def __str__(self):
+        w_name = self.worker.full_name or self.worker.username if self.worker else 'Worker'
+        return f"{w_name} - {self.get_leave_type_display()} ({self.start_date} to {self.end_date})"
 
 
 @receiver(models.signals.pre_save, sender=Ticket)
