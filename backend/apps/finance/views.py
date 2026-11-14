@@ -631,14 +631,14 @@ class ExpenseViewSet(viewsets.ModelViewSet):
                 updated_expense.status = 'In Review'
             updated_expense.save(update_fields=['approved', 'approved_by'] + (
                 ['status'] if hasattr(updated_expense, 'status') else []))
-            
+
             # Start/restart approval workflow so a fresh Pending instance is created at Step 1
             wf = ApprovalWorkflow.objects.filter(
                 entity_type='Expense', is_active=True).first()
             if wf:
                 ApprovalService.start_workflow(
                     updated_expense, user, ip_address=self.request.META.get('REMOTE_ADDR'))
-            
+
             create_audit_event('Expense', updated_expense.pk, 'EXPENSE_RESUBMITTED_AFTER_EDIT', actor=user, payload={
                                'comments': 'Resubmitted to approval after edit'}, ip_address=self.request.META.get('REMOTE_ADDR'))
         else:
@@ -676,7 +676,8 @@ class ExpenseViewSet(viewsets.ModelViewSet):
         role_name = (user.role.role_name.lower().strip() if hasattr(
             user, 'role') and user.role else '') if user else ''
         expense_worker_id = getattr(expense.worker, 'pk', expense.worker_id)
-        expense_added_by_id = getattr(expense.added_by, 'pk', expense.added_by_id)
+        expense_added_by_id = getattr(
+            expense.added_by, 'pk', expense.added_by_id)
         is_owner = user.pk in (expense_worker_id, expense_added_by_id)
         is_admin = (
             user.is_superuser or
@@ -898,12 +899,50 @@ class ExpenseViewSet(viewsets.ModelViewSet):
         from django.db.models.functions import Coalesce
 
         params = request.query_params
-        is_comparison = bool(params.get('period1_from') and params.get('period2_from'))
+        is_comparison = bool(params.get('period1_from')
+                             and params.get('period2_from'))
 
         status_filter = params.get('status')
         store_filter = params.get('store')
 
-        all_active_batches = list(LedgerBatch.objects.all().prefetch_related('sub_departments'))
+        # Scope report by current user's department or explicit department filter
+        user = request.user
+        user_dept_ids = []
+        if user and not user.is_anonymous:
+            user_dept_ids = list(user.sub_departments.filter(
+                department__isnull=False).values_list('department_id', flat=True).distinct())
+            if not user_dept_ids and hasattr(user, 'department') and user.department:
+                user_dept_ids = [user.department.pk]
+            elif not user_dept_ids and hasattr(user, 'department_id') and user.department_id:
+                user_dept_ids = [user.department_id]
+
+        dept_param = params.get('department') or params.get('department_id')
+        target_dept_ids = []
+        if dept_param and str(dept_param).lower() != 'all':
+            if str(dept_param).isdigit():
+                target_dept_ids = [int(dept_param)]
+            else:
+                from apps.stores.models import Department
+                dept_obj = Department.objects.filter(
+                    department_name__iexact=str(dept_param).strip()).first()
+                if dept_obj:
+                    target_dept_ids = [dept_obj.department_id]
+        elif user_dept_ids:
+            target_dept_ids = user_dept_ids
+
+        from apps.stores.models import Department
+        dept_names = list(Department.objects.filter(department_id__in=target_dept_ids).values_list(
+            'department_name', flat=True)) if target_dept_ids else []
+        department_label = ', '.join(
+            dept_names) if dept_names else 'All Departments'
+
+        batch_qs = LedgerBatch.objects.all().prefetch_related('sub_departments__department')
+        if target_dept_ids:
+            batch_qs = batch_qs.filter(
+                Q(sub_departments__department_id__in=target_dept_ids) |
+                Q(sub_departments__isnull=True)
+            ).distinct()
+        all_active_batches = list(batch_qs)
         subdept_to_batch = {}
         batch_id_to_name = {}
         for b in all_active_batches:
@@ -911,7 +950,8 @@ class ExpenseViewSet(viewsets.ModelViewSet):
             for sd in b.sub_departments.all():
                 subdept_to_batch[sd.sub_department_id] = b.batch_name
 
-        available_batches = [{'batch_id': b.batch_id, 'batch_name': b.batch_name} for b in all_active_batches]
+        available_batches = [
+            {'batch_id': b.batch_id, 'batch_name': b.batch_name} for b in all_active_batches]
 
         def _fetch_period_data(from_date, to_date):
             if not from_date or not to_date:
@@ -920,9 +960,16 @@ class ExpenseViewSet(viewsets.ModelViewSet):
                 expense_date__gte=from_date,
                 expense_date__lte=to_date
             )
+            if target_dept_ids:
+                qs = qs.filter(
+                    Q(ticket__department_id__in=target_dept_ids) |
+                    Q(worker__sub_departments__department_id__in=target_dept_ids) |
+                    Q(expense_type__department_id__in=target_dept_ids)
+                ).distinct()
             if status_filter and status_filter.lower() != 'all':
                 if status_filter.lower() in ('approved', 'true', '1'):
-                    qs = qs.filter(Q(approved=True) | Q(expense_type__approve_required=False))
+                    qs = qs.filter(Q(approved=True) | Q(
+                        expense_type__approve_required=False))
                 elif status_filter.lower() == 'paid':
                     qs = qs.filter(Q(is_paid=True) | Q(claim__status='Paid'))
 
@@ -945,24 +992,32 @@ class ExpenseViewSet(viewsets.ModelViewSet):
             if batch_filter and batch_filter.lower() != 'all':
                 batch_obj = None
                 if str(batch_filter).isdigit():
-                    batch_obj = next((b for b in all_active_batches if b.batch_id == int(batch_filter)), None)
+                    batch_obj = next(
+                        (b for b in all_active_batches if b.batch_id == int(batch_filter)), None)
                 if not batch_obj:
-                    batch_obj = next((b for b in all_active_batches if b.batch_name.lower() == str(batch_filter).lower()), None)
+                    batch_obj = next((b for b in all_active_batches if b.batch_name.lower() == str(
+                        batch_filter).lower()), None)
 
                 if batch_obj:
-                    matching_subdepts = list(batch_obj.sub_departments.values_list('sub_department_id', flat=True))
+                    matching_subdepts = list(batch_obj.sub_departments.values_list(
+                        'sub_department_id', flat=True))
                     qs = qs.filter(
                         Q(ticket__nature__sub_department_id__in=matching_subdepts) |
-                        Q(ticket__nature__sub_department__isnull=True, ledgers__ledger_batch=batch_obj)
+                        Q(ticket__nature__sub_department__isnull=True,
+                          ledgers__ledger_batch=batch_obj)
                     ).distinct()
                 else:
                     qs = qs.none()
 
             qs = qs.annotate(
-                location_name=Coalesce('responsible_store__store_name', 'ticket__store__store_name', Value('General / Other')),
-                loc_id=Coalesce('responsible_store__store_id', 'ticket__store__store_id', Value('general')),
-                store_type=Coalesce('responsible_store__type', 'ticket__store__type', Value('OTHER')),
-                category_name=Coalesce('expense_type__parent__expense_name', 'expense_type__expense_name', Value('General')),
+                location_name=Coalesce('responsible_store__store_name',
+                                       'ticket__store__store_name', Value('General / Other')),
+                loc_id=Coalesce('responsible_store__store_id',
+                                'ticket__store__store_id', Value('general')),
+                store_type=Coalesce('responsible_store__type',
+                                    'ticket__store__type', Value('OTHER')),
+                category_name=Coalesce(
+                    'expense_type__parent__expense_name', 'expense_type__expense_name', Value('General')),
                 subdept_id=F('ticket__nature__sub_department_id')
             )
 
@@ -982,7 +1037,8 @@ class ExpenseViewSet(viewsets.ModelViewSet):
                 b_name = subdept_to_batch.get(sub_id, 'General Maintenance')
 
                 all_categories.add(cat)
-                category_totals[cat] = category_totals.get(cat, Decimal('0.000')) + amt
+                category_totals[cat] = category_totals.get(
+                    cat, Decimal('0.000')) + amt
                 grand_total += amt
 
                 if lid not in loc_map:
@@ -995,7 +1051,8 @@ class ExpenseViewSet(viewsets.ModelViewSet):
                         'expense_count': 0
                     }
 
-                loc_map[lid]['categories'][cat] = loc_map[lid]['categories'].get(cat, Decimal('0.000')) + amt
+                loc_map[lid]['categories'][cat] = loc_map[lid]['categories'].get(
+                    cat, Decimal('0.000')) + amt
                 loc_map[lid]['total_amount'] += amt
                 loc_map[lid]['expense_count'] += 1
 
@@ -1010,7 +1067,8 @@ class ExpenseViewSet(viewsets.ModelViewSet):
                 b_entry = batch_map[b_name]
                 b_entry['total_amount'] += amt
                 b_entry['expense_count'] += 1
-                b_entry['categories'][cat] = b_entry['categories'].get(cat, Decimal('0.000')) + amt
+                b_entry['categories'][cat] = b_entry['categories'].get(
+                    cat, Decimal('0.000')) + amt
 
                 if lid not in b_entry['locations_map']:
                     b_entry['locations_map'][lid] = {
@@ -1021,7 +1079,8 @@ class ExpenseViewSet(viewsets.ModelViewSet):
                         'total_amount': Decimal('0.000'),
                         'expense_count': 0
                     }
-                b_entry['locations_map'][lid]['categories'][cat] = b_entry['locations_map'][lid]['categories'].get(cat, Decimal('0.000')) + amt
+                b_entry['locations_map'][lid]['categories'][cat] = b_entry['locations_map'][lid]['categories'].get(
+                    cat, Decimal('0.000')) + amt
                 b_entry['locations_map'][lid]['total_amount'] += amt
                 b_entry['locations_map'][lid]['expense_count'] += 1
 
@@ -1058,6 +1117,12 @@ class ExpenseViewSet(viewsets.ModelViewSet):
                 work_date__lte=to_date
             ).select_related('ticket__store', 'ticket__nature', 'worker').prefetch_related('stores')
 
+            if target_dept_ids:
+                work_logs_qs = work_logs_qs.filter(
+                    Q(worker__sub_departments__department_id__in=target_dept_ids) |
+                    Q(ticket__department_id__in=target_dept_ids)
+                ).distinct()
+
             if store_filter and store_filter.lower() != 'all':
                 work_logs_qs = work_logs_qs.filter(
                     Q(ticket__store_id=store_filter) |
@@ -1073,7 +1138,8 @@ class ExpenseViewSet(viewsets.ModelViewSet):
                 )
 
             if batch_filter and batch_filter.lower() != 'all' and batch_obj:
-                matching_subdepts = list(batch_obj.sub_departments.values_list('sub_department_id', flat=True))
+                matching_subdepts = list(batch_obj.sub_departments.values_list(
+                    'sub_department_id', flat=True))
                 work_logs_qs = work_logs_qs.filter(
                     ticket__nature__sub_department_id__in=matching_subdepts
                 )
@@ -1091,7 +1157,8 @@ class ExpenseViewSet(viewsets.ModelViewSet):
                 if log.ticket and log.ticket.store_id:
                     target_stores.append(str(log.ticket.store_id))
                 elif log.stores.exists():
-                    target_stores.extend([str(s.store_id) for s in log.stores.all()])
+                    target_stores.extend([str(s.store_id)
+                                         for s in log.stores.all()])
                 else:
                     target_stores.append('general')
 
@@ -1103,12 +1170,14 @@ class ExpenseViewSet(viewsets.ModelViewSet):
                 b_name = subdept_to_batch.get(sub_id, 'General Maintenance')
 
                 for st_id in target_stores:
-                    daily_worker_batch_stores[(w_id, d_str)][(b_name, st_id)] += split_hrs
+                    daily_worker_batch_stores[(w_id, d_str)][(
+                        b_name, st_id)] += split_hrs
                     if st_id not in store_batch_map:
                         store_batch_map[st_id] = b_name
 
                 if (w_id, d_str) not in worker_date_rates:
-                    worker_date_rates[(w_id, d_str)] = get_worker_rate(w_id, log.work_date, log.hourly_rate)
+                    worker_date_rates[(w_id, d_str)] = get_worker_rate(
+                        w_id, log.work_date, log.hourly_rate)
 
             store_allocated_hours = defaultdict(float)
             store_actual_hours = defaultdict(float)
@@ -1124,10 +1193,12 @@ class ExpenseViewSet(viewsets.ModelViewSet):
                 return float(int(val * 2 + 0.5) / 2.0) if val > 0 else 0.0
 
             def _distribute_day_hours(raw_alloc_map, target_total):
-                rounded_map = {k: _round_half(v) for k, v in raw_alloc_map.items()}
+                rounded_map = {k: _round_half(v)
+                               for k, v in raw_alloc_map.items()}
                 diff = round(target_total - sum(rounded_map.values()), 1)
                 if diff != 0 and rounded_map:
-                    max_k = max(raw_alloc_map.keys(), key=lambda k: raw_alloc_map[k])
+                    max_k = max(raw_alloc_map.keys(),
+                                key=lambda k: raw_alloc_map[k])
                     rounded_map[max_k] = max(0.0, rounded_map[max_k] + diff)
                 return rounded_map
 
@@ -1136,8 +1207,9 @@ class ExpenseViewSet(viewsets.ModelViewSet):
                 if day_total <= 0:
                     continue
 
-                multiplier = (10.0 / day_total) if day_total < 10.0 else 1.0
-                target_total = 10.0 if day_total < 10.0 else day_total
+                target_total = 10.0 if day_total < 10.0 else _round_half(
+                    day_total)
+                multiplier = (target_total / day_total)
                 rate = worker_date_rates.get((w_id, d_str), 0.0)
 
                 raw_alloc = {k: v * multiplier for k, v in bst_map.items()}
@@ -1156,14 +1228,17 @@ class ExpenseViewSet(viewsets.ModelViewSet):
                     batch_store_actual_hours[(b_name, st_id)] += act_hrs
                     batch_store_allocated_hours[(b_name, st_id)] += alloc_hrs
                     batch_store_actual_labour[(b_name, st_id)] += act_labour
-                    batch_store_allocated_labour[(b_name, st_id)] += alloc_labour
+                    batch_store_allocated_labour[(
+                        b_name, st_id)] += alloc_labour
 
             # Ensure all stores with allocated hours/labour are included in loc_map and batch_map
             all_work_store_ids = set(store_allocated_hours.keys())
-            missing_store_ids = [sid for sid in all_work_store_ids if sid not in loc_map and sid != 'general']
+            missing_store_ids = [
+                sid for sid in all_work_store_ids if sid not in loc_map and sid != 'general']
             store_objs_by_id = {}
             if missing_store_ids:
-                store_objs_by_id = {str(s.store_id): s for s in Store.objects.filter(store_id__in=missing_store_ids)}
+                store_objs_by_id = {str(s.store_id): s for s in Store.objects.filter(
+                    store_id__in=missing_store_ids)}
                 for sid in missing_store_ids:
                     st_obj = store_objs_by_id.get(sid)
                     st_name = st_obj.store_name if st_obj else f'Store {sid}'
@@ -1213,22 +1288,29 @@ class ExpenseViewSet(viewsets.ModelViewSet):
             # Assign allocated_hours, actual_hours, voucher_amount, labour_amount, total_amount to each location in loc_map
             for sid, loc_item in loc_map.items():
                 sid_str = str(sid)
-                loc_item['allocated_hours'] = _round_half(store_allocated_hours.get(sid_str, 0.0))
-                loc_item['actual_hours'] = _round_half(store_actual_hours.get(sid_str, 0.0))
+                loc_item['allocated_hours'] = _round_half(
+                    store_allocated_hours.get(sid_str, 0.0))
+                loc_item['actual_hours'] = _round_half(
+                    store_actual_hours.get(sid_str, 0.0))
                 v_amt = loc_item['total_amount']
-                loc_labour = float(round(store_allocated_labour.get(sid_str, 0.0), 3))
+                loc_labour = float(
+                    round(store_allocated_labour.get(sid_str, 0.0), 3))
                 loc_item['voucher_amount'] = float(round(v_amt, 3))
                 loc_item['labour_amount'] = loc_labour
-                loc_item['total_amount'] = float(round(v_amt + Decimal(str(loc_labour)), 3))
+                loc_item['total_amount'] = float(
+                    round(v_amt + Decimal(str(loc_labour)), 3))
 
             sorted_categories = sorted(list(all_categories))
-            locations_list = sorted(list(loc_map.values()), key=lambda x: x['location_name'])
+            locations_list = sorted(
+                list(loc_map.values()), key=lambda x: x['location_name'])
 
             for loc in locations_list:
                 for c in sorted_categories:
-                    loc['categories'][c] = float(round(loc['categories'].get(c, Decimal('0.000')), 3))
+                    loc['categories'][c] = float(
+                        round(loc['categories'].get(c, Decimal('0.000')), 3))
 
-            formatted_cat_totals = {c: float(round(category_totals.get(c, Decimal('0.000')), 3)) for c in sorted_categories}
+            formatted_cat_totals = {c: float(round(category_totals.get(
+                c, Decimal('0.000')), 3)) for c in sorted_categories}
 
             STORE_TYPE_LABELS = {
                 'SUPER_MARKET': 'Super Market',
@@ -1258,20 +1340,28 @@ class ExpenseViewSet(viewsets.ModelViewSet):
                         'categories': {c: 0.0 for c in sorted_categories}
                     }
                 type_map[st]['locations_count'] += 1
-                type_map[st]['total_amount'] = float(round(type_map[st]['total_amount'] + loc['total_amount'], 3))
-                type_map[st]['voucher_amount'] = float(round(type_map[st]['voucher_amount'] + loc.get('voucher_amount', 0.0), 3))
-                type_map[st]['labour_amount'] = float(round(type_map[st]['labour_amount'] + loc.get('labour_amount', 0.0), 3))
-                type_map[st]['allocated_hours'] = float(round(type_map[st]['allocated_hours'] + loc.get('allocated_hours', 0.0), 2))
-                type_map[st]['actual_hours'] = float(round(type_map[st]['actual_hours'] + loc.get('actual_hours', 0.0), 2))
+                type_map[st]['total_amount'] = float(
+                    round(type_map[st]['total_amount'] + loc['total_amount'], 3))
+                type_map[st]['voucher_amount'] = float(
+                    round(type_map[st]['voucher_amount'] + loc.get('voucher_amount', 0.0), 3))
+                type_map[st]['labour_amount'] = float(
+                    round(type_map[st]['labour_amount'] + loc.get('labour_amount', 0.0), 3))
+                type_map[st]['allocated_hours'] = float(
+                    round(type_map[st]['allocated_hours'] + loc.get('allocated_hours', 0.0), 2))
+                type_map[st]['actual_hours'] = float(
+                    round(type_map[st]['actual_hours'] + loc.get('actual_hours', 0.0), 2))
                 for c in sorted_categories:
-                    type_map[st]['categories'][c] = float(round(type_map[st]['categories'][c] + loc['categories'].get(c, 0.0), 3))
+                    type_map[st]['categories'][c] = float(
+                        round(type_map[st]['categories'][c] + loc['categories'].get(c, 0.0), 3))
 
-            store_types_summary = sorted(list(type_map.values()), key=lambda x: -x['total_amount'])
+            store_types_summary = sorted(
+                list(type_map.values()), key=lambda x: -x['total_amount'])
 
             # Compile Ledger Batches summary and locations
             batches_list = []
             for b_name, b_entry in sorted(batch_map.items(), key=lambda item: -item[1]['total_amount']):
-                b_locs = sorted(list(b_entry['locations_map'].values()), key=lambda x: x['location_name'])
+                b_locs = sorted(
+                    list(b_entry['locations_map'].values()), key=lambda x: x['location_name'])
                 batch_alloc_hours = 0.0
                 batch_act_hours = 0.0
                 batch_voucher_amount = 0.0
@@ -1281,12 +1371,16 @@ class ExpenseViewSet(viewsets.ModelViewSet):
                 for bloc in b_locs:
                     bloc_id = str(bloc['store_id'])
                     bloc_v_amt = bloc['total_amount']
-                    bloc_labour = float(round(batch_store_allocated_labour.get((b_name, bloc_id), 0.0), 3))
+                    bloc_labour = float(
+                        round(batch_store_allocated_labour.get((b_name, bloc_id), 0.0), 3))
                     bloc['voucher_amount'] = float(round(bloc_v_amt, 3))
                     bloc['labour_amount'] = bloc_labour
-                    bloc['total_amount'] = float(round(bloc_v_amt + Decimal(str(bloc_labour)), 3))
-                    bloc['allocated_hours'] = _round_half(batch_store_allocated_hours.get((b_name, bloc_id), 0.0))
-                    bloc['actual_hours'] = _round_half(batch_store_actual_hours.get((b_name, bloc_id), 0.0))
+                    bloc['total_amount'] = float(
+                        round(bloc_v_amt + Decimal(str(bloc_labour)), 3))
+                    bloc['allocated_hours'] = _round_half(
+                        batch_store_allocated_hours.get((b_name, bloc_id), 0.0))
+                    bloc['actual_hours'] = _round_half(
+                        batch_store_actual_hours.get((b_name, bloc_id), 0.0))
 
                     batch_alloc_hours += bloc['allocated_hours']
                     batch_act_hours += bloc['actual_hours']
@@ -1295,9 +1389,11 @@ class ExpenseViewSet(viewsets.ModelViewSet):
                     batch_total_amount += bloc['total_amount']
 
                     for c in sorted_categories:
-                        bloc['categories'][c] = float(round(bloc['categories'].get(c, Decimal('0.000')), 3))
+                        bloc['categories'][c] = float(
+                            round(bloc['categories'].get(c, Decimal('0.000')), 3))
 
-                b_cat_totals = {c: float(round(b_entry['categories'].get(c, Decimal('0.000')), 3)) for c in sorted_categories}
+                b_cat_totals = {c: float(round(b_entry['categories'].get(
+                    c, Decimal('0.000')), 3)) for c in sorted_categories}
                 batches_list.append({
                     'batch_name': b_name,
                     'total_amount': float(round(batch_total_amount, 3)),
@@ -1321,14 +1417,18 @@ class ExpenseViewSet(viewsets.ModelViewSet):
             except Exception:
                 month_label = f"{from_date} to {to_date}"
 
-            total_voucher_sum = sum(l.get('voucher_amount', 0.0) for l in locations_list)
-            total_labour_sum = sum(l.get('labour_amount', 0.0) for l in locations_list)
-            total_grand = float(round(Decimal(str(total_voucher_sum)) + Decimal(str(total_labour_sum)), 3))
+            total_voucher_sum = sum(l.get('voucher_amount', 0.0)
+                                    for l in locations_list)
+            total_labour_sum = sum(l.get('labour_amount', 0.0)
+                                   for l in locations_list)
+            total_grand = float(
+                round(Decimal(str(total_voucher_sum)) + Decimal(str(total_labour_sum)), 3))
 
             return {
                 'from_date': from_date,
                 'to_date': to_date,
                 'month_label': month_label,
+                'department_name': department_label,
                 'locations': locations_list,
                 'store_types_summary': store_types_summary,
                 'ledger_batches_summary': batches_list,
@@ -1355,7 +1455,8 @@ class ExpenseViewSet(viewsets.ModelViewSet):
             if not p1 or not p2:
                 return Response({'detail': 'Invalid period date parameters provided.'}, status=status.HTTP_400_BAD_REQUEST)
 
-            all_loc_ids = set([l['store_id'] for l in p1['locations']] + [l['store_id'] for l in p2['locations']])
+            all_loc_ids = set([l['store_id'] for l in p1['locations']] +
+                              [l['store_id'] for l in p2['locations']])
             p1_dict = {l['store_id']: l for l in p1['locations']}
             p2_dict = {l['store_id']: l for l in p2['locations']}
 
@@ -1363,21 +1464,26 @@ class ExpenseViewSet(viewsets.ModelViewSet):
 
             comparison_rows = []
             for lid in sorted(all_loc_ids, key=lambda x: (p2_dict.get(x) or p1_dict.get(x) or {}).get('location_name', '')):
-                loc_name = (p1_dict.get(lid) or p2_dict.get(lid) or {}).get('location_name', 'Unknown Location')
-                l1 = p1_dict.get(lid) or {'location_name': loc_name, 'total_amount': 0.0, 'categories': {}}
-                l2 = p2_dict.get(lid) or {'location_name': loc_name, 'total_amount': 0.0, 'categories': {}}
+                loc_name = (p1_dict.get(lid) or p2_dict.get(lid) or {}).get(
+                    'location_name', 'Unknown Location')
+                l1 = p1_dict.get(lid) or {
+                    'location_name': loc_name, 'total_amount': 0.0, 'categories': {}}
+                l2 = p2_dict.get(lid) or {
+                    'location_name': loc_name, 'total_amount': 0.0, 'categories': {}}
 
                 amt1 = l1['total_amount']
                 amt2 = l2['total_amount']
                 variance = round(amt2 - amt1, 3)
-                pct = round(((amt2 - amt1) / amt1 * 100), 2) if amt1 > 0 else (100.0 if amt2 > 0 else 0.0)
+                pct = round(((amt2 - amt1) / amt1 * 100),
+                            2) if amt1 > 0 else (100.0 if amt2 > 0 else 0.0)
 
                 cat_breakdown = []
                 for c in all_cats:
                     c1 = l1['categories'].get(c, 0.0)
                     c2 = l2['categories'].get(c, 0.0)
                     c_var = round(c2 - c1, 3)
-                    c_pct = round(((c2 - c1) / c1 * 100), 2) if c1 > 0 else (100.0 if c2 > 0 else 0.0)
+                    c_pct = round(((c2 - c1) / c1 * 100),
+                                  2) if c1 > 0 else (100.0 if c2 > 0 else 0.0)
                     cat_breakdown.append({
                         'category_name': c,
                         'period1_amount': c1,
@@ -1391,8 +1497,10 @@ class ExpenseViewSet(viewsets.ModelViewSet):
                 l2_alloc = l2.get('allocated_hours', 0.0)
                 l1_labour = l1.get('labour_amount', 0.0)
                 l2_labour = l2.get('labour_amount', 0.0)
-                l1_voucher = l1.get('voucher_amount', l1.get('total_amount', 0.0))
-                l2_voucher = l2.get('voucher_amount', l2.get('total_amount', 0.0))
+                l1_voucher = l1.get(
+                    'voucher_amount', l1.get('total_amount', 0.0))
+                l2_voucher = l2.get(
+                    'voucher_amount', l2.get('total_amount', 0.0))
                 comparison_rows.append({
                     'store_id': lid,
                     'location_name': l1['location_name'],
@@ -1415,12 +1523,16 @@ class ExpenseViewSet(viewsets.ModelViewSet):
             p1_grand = p1['grand_total']
             p2_grand = p2['grand_total']
             grand_var = round(p2_grand - p1_grand, 3)
-            grand_pct = round(((p2_grand - p1_grand) / p1_grand * 100), 2) if p1_grand > 0 else 0.0
+            grand_pct = round(
+                ((p2_grand - p1_grand) / p1_grand * 100), 2) if p1_grand > 0 else 0.0
 
             # Summary of Store Types Comparison
-            p1_types = {t['store_type']: t for t in p1.get('store_types_summary', [])}
-            p2_types = {t['store_type']: t for t in p2.get('store_types_summary', [])}
-            all_types = sorted(list(set(list(p1_types.keys()) + list(p2_types.keys()))))
+            p1_types = {t['store_type']: t for t in p1.get(
+                'store_types_summary', [])}
+            p2_types = {t['store_type']: t for t in p2.get(
+                'store_types_summary', [])}
+            all_types = sorted(
+                list(set(list(p1_types.keys()) + list(p2_types.keys()))))
             comp_store_types = []
             for t in all_types:
                 t1 = p1_types.get(t, {})
@@ -1428,8 +1540,10 @@ class ExpenseViewSet(viewsets.ModelViewSet):
                 a1 = t1.get('total_amount', 0.0)
                 a2 = t2.get('total_amount', 0.0)
                 v = round(a2 - a1, 3)
-                p = round(((a2 - a1) / a1 * 100), 2) if a1 > 0 else (100.0 if a2 > 0 else 0.0)
-                lbl = t1.get('store_type_label') or t2.get('store_type_label') or t.replace('_', ' ').title()
+                p = round(((a2 - a1) / a1 * 100),
+                          2) if a1 > 0 else (100.0 if a2 > 0 else 0.0)
+                lbl = t1.get('store_type_label') or t2.get(
+                    'store_type_label') or t.replace('_', ' ').title()
                 comp_store_types.append({
                     'store_type': t,
                     'store_type_label': lbl,
@@ -1442,9 +1556,12 @@ class ExpenseViewSet(viewsets.ModelViewSet):
                 })
 
             # Summary of Ledger Batches Comparison
-            p1_batches = {b['batch_name']: b for b in p1.get('ledger_batches_summary', [])}
-            p2_batches = {b['batch_name']: b for b in p2.get('ledger_batches_summary', [])}
-            all_batches = sorted(list(set(list(p1_batches.keys()) + list(p2_batches.keys()))))
+            p1_batches = {b['batch_name']: b for b in p1.get(
+                'ledger_batches_summary', [])}
+            p2_batches = {b['batch_name']: b for b in p2.get(
+                'ledger_batches_summary', [])}
+            all_batches = sorted(
+                list(set(list(p1_batches.keys()) + list(p2_batches.keys()))))
             comp_batches = []
             for bname in all_batches:
                 b1 = p1_batches.get(bname, {})
@@ -1452,7 +1569,8 @@ class ExpenseViewSet(viewsets.ModelViewSet):
                 ba1 = b1.get('total_amount', 0.0)
                 ba2 = b2.get('total_amount', 0.0)
                 bv = round(ba2 - ba1, 3)
-                bp = round(((ba2 - ba1) / ba1 * 100), 2) if ba1 > 0 else (100.0 if ba2 > 0 else 0.0)
+                bp = round(((ba2 - ba1) / ba1 * 100),
+                           2) if ba1 > 0 else (100.0 if ba2 > 0 else 0.0)
 
                 # Locations under this batch
                 p1_blocs = {l['store_id']: l for l in b1.get('locations', [])}
@@ -1460,20 +1578,25 @@ class ExpenseViewSet(viewsets.ModelViewSet):
                 b_loc_ids = set(list(p1_blocs.keys()) + list(p2_blocs.keys()))
                 comp_blocs = []
                 for lid in sorted(b_loc_ids, key=lambda x: (p2_blocs.get(x) or p1_blocs.get(x) or {}).get('location_name', '')):
-                    loc_name = (p1_blocs.get(lid) or p2_blocs.get(lid) or {}).get('location_name', 'Unknown')
-                    bl1 = p1_blocs.get(lid) or {'location_name': loc_name, 'total_amount': 0.0, 'categories': {}}
-                    bl2 = p2_blocs.get(lid) or {'location_name': loc_name, 'total_amount': 0.0, 'categories': {}}
+                    loc_name = (p1_blocs.get(lid) or p2_blocs.get(
+                        lid) or {}).get('location_name', 'Unknown')
+                    bl1 = p1_blocs.get(lid) or {
+                        'location_name': loc_name, 'total_amount': 0.0, 'categories': {}}
+                    bl2 = p2_blocs.get(lid) or {
+                        'location_name': loc_name, 'total_amount': 0.0, 'categories': {}}
                     bla1 = bl1['total_amount']
                     bla2 = bl2['total_amount']
                     bl_v = round(bla2 - bla1, 3)
-                    bl_p = round(((bla2 - bla1) / bla1 * 100), 2) if bla1 > 0 else (100.0 if bla2 > 0 else 0.0)
+                    bl_p = round(((bla2 - bla1) / bla1 * 100),
+                                 2) if bla1 > 0 else (100.0 if bla2 > 0 else 0.0)
 
                     cat_breakdown = []
                     for c in all_cats:
                         c1 = bl1['categories'].get(c, 0.0)
                         c2 = bl2['categories'].get(c, 0.0)
                         c_var = round(c2 - c1, 3)
-                        c_pct = round(((c2 - c1) / c1 * 100), 2) if c1 > 0 else (100.0 if c2 > 0 else 0.0)
+                        c_pct = round(((c2 - c1) / c1 * 100),
+                                      2) if c1 > 0 else (100.0 if c2 > 0 else 0.0)
                         cat_breakdown.append({
                             'category_name': c,
                             'period1_amount': c1,
@@ -1482,13 +1605,16 @@ class ExpenseViewSet(viewsets.ModelViewSet):
                             'percent_change': c_pct
                         })
 
-                    st = bl1.get('store_type') or bl2.get('store_type') or 'OTHER'
+                    st = bl1.get('store_type') or bl2.get(
+                        'store_type') or 'OTHER'
                     bl1_alloc = bl1.get('allocated_hours', 0.0)
                     bl2_alloc = bl2.get('allocated_hours', 0.0)
                     bl1_labour = bl1.get('labour_amount', 0.0)
                     bl2_labour = bl2.get('labour_amount', 0.0)
-                    bl1_voucher = bl1.get('voucher_amount', bl1.get('total_amount', 0.0))
-                    bl2_voucher = bl2.get('voucher_amount', bl2.get('total_amount', 0.0))
+                    bl1_voucher = bl1.get(
+                        'voucher_amount', bl1.get('total_amount', 0.0))
+                    bl2_voucher = bl2.get(
+                        'voucher_amount', bl2.get('total_amount', 0.0))
                     comp_blocs.append({
                         'store_id': lid,
                         'location_name': loc_name,
@@ -1531,6 +1657,7 @@ class ExpenseViewSet(viewsets.ModelViewSet):
 
             return Response({
                 'is_comparison': True,
+                'department_name': department_label,
                 'available_batches': available_batches,
                 'period1': {
                     'from_date': p1['from_date'],
@@ -1582,6 +1709,7 @@ class ExpenseViewSet(viewsets.ModelViewSet):
         data = _fetch_period_data(from_date, to_date)
         return Response({
             'is_comparison': False,
+            'department_name': department_label,
             'available_batches': available_batches,
             **data
         }, status=status.HTTP_200_OK)
@@ -1676,11 +1804,13 @@ class WorkerClaimViewSet(viewsets.ModelViewSet):
         bundle_id = None
         if search:
             search_str = search.strip()
-            exact_bundle_match = re.search(r'^(?:bundle|claim|b)?[\s\-_#]*(\d+)$', search_str, re.IGNORECASE)
+            exact_bundle_match = re.search(
+                r'^(?:bundle|claim|b)?[\s\-_#]*(\d+)$', search_str, re.IGNORECASE)
             if exact_bundle_match:
                 bundle_id = int(exact_bundle_match.group(1))
             else:
-                prefix_match = re.search(r'(?:bundle|claim|b)[\s\-_#]+(\d+)', search_str, re.IGNORECASE) or re.search(r'#(\d+)', search_str)
+                prefix_match = re.search(
+                    r'(?:bundle|claim|b)[\s\-_#]+(\d+)', search_str, re.IGNORECASE) or re.search(r'#(\d+)', search_str)
                 if prefix_match:
                     bundle_id = int(prefix_match.group(1))
                 elif re.search(r'\b\d+\b', search_str):
@@ -1696,7 +1826,8 @@ class WorkerClaimViewSet(viewsets.ModelViewSet):
         if status_param and status_param.upper() != 'ALL':
             status_lower = status_param.lower().strip()
             if status_lower in ('in review', 'submitted', 'pending', 'pending approval'):
-                status_q = Q(status__iexact='In Review') | Q(status__iexact='Submitted')
+                status_q = Q(status__iexact='In Review') | Q(
+                    status__iexact='Submitted')
             else:
                 status_q = Q(status__iexact=status_param.strip())
             if bundle_id:
@@ -1714,7 +1845,8 @@ class WorkerClaimViewSet(viewsets.ModelViewSet):
                 ledger_q = Q()
             if ledger_q:
                 if bundle_id:
-                    queryset = queryset.filter(ledger_q | Q(claim_id=bundle_id)).distinct()
+                    queryset = queryset.filter(
+                        ledger_q | Q(claim_id=bundle_id)).distinct()
                 else:
                     queryset = queryset.filter(ledger_q).distinct()
 
@@ -1722,7 +1854,8 @@ class WorkerClaimViewSet(viewsets.ModelViewSet):
             "from_date") or self.request.query_params.get("date_from")
         if from_date:
             if bundle_id:
-                queryset = queryset.filter(Q(claim_date__date__gte=from_date) | Q(claim_id=bundle_id))
+                queryset = queryset.filter(
+                    Q(claim_date__date__gte=from_date) | Q(claim_id=bundle_id))
             else:
                 queryset = queryset.filter(claim_date__date__gte=from_date)
 
@@ -1730,7 +1863,8 @@ class WorkerClaimViewSet(viewsets.ModelViewSet):
             "to_date") or self.request.query_params.get("date_to")
         if to_date:
             if bundle_id:
-                queryset = queryset.filter(Q(claim_date__date__lte=to_date) | Q(claim_id=bundle_id))
+                queryset = queryset.filter(
+                    Q(claim_date__date__lte=to_date) | Q(claim_id=bundle_id))
             else:
                 queryset = queryset.filter(claim_date__date__lte=to_date)
 
@@ -1740,7 +1874,8 @@ class WorkerClaimViewSet(viewsets.ModelViewSet):
             if bundle_id:
                 q_search |= Q(claim_id=bundle_id)
 
-            is_pure_bundle_query = bool(re.search(r'^(?:bundle|claim|b)?[\s\-_#]*\d+$', search_str, re.IGNORECASE))
+            is_pure_bundle_query = bool(
+                re.search(r'^(?:bundle|claim|b)?[\s\-_#]*\d+$', search_str, re.IGNORECASE))
             if not is_pure_bundle_query:
                 q_search |= (
                     Q(worker__first_name__icontains=search_str) |
@@ -1779,7 +1914,8 @@ class WorkerClaimViewSet(viewsets.ModelViewSet):
 
         ordering = self.request.query_params.get("ordering")
         if bundle_id:
-            order_fields = ['search_priority'] + ([ordering] if ordering else ['-claim_date', '-claim_id'])
+            order_fields = ['search_priority'] + \
+                ([ordering] if ordering else ['-claim_date', '-claim_id'])
         elif ordering:
             order_fields = [ordering]
         else:

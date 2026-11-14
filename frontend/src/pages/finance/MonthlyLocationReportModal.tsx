@@ -47,6 +47,7 @@ interface LedgerBatchSummaryItem {
 }
 
 interface LocationReportData {
+  department_name?: string;
   from_date?: string;
   to_date?: string;
   month_label?: string;
@@ -122,6 +123,7 @@ interface ComparisonLedgerBatchItem {
 
 interface ComparisonReportData {
   is_comparison: true;
+  department_name?: string;
   available_batches?: { batch_id: number; batch_name: string }[];
   period1: {
     from_date: string;
@@ -189,10 +191,10 @@ const STORE_TYPE_LABELS: Record<string, string> = {
 };
 
 /**
- * Formats allocated work hours into rounded hours and minutes:
+ * Formats allocated work hours into decimal format:
  * - Whole hours: "9", "51", "29", "0"
- * - Half hours: "8:30", "28:30", "23:30"
- * - Rounds fractional values (e.g. .38 -> :30, .75 -> nearest hour)
+ * - Half / fractional hours: "8.5", "28.5", "62.5"
+ * - Snaps fractional values to nearest half-hour decimal (e.g. 62.5 instead of 62:30)
  */
 export function formatWorkHours(val?: number | string | null): string {
   if (val === undefined || val === null || val === '') return '0';
@@ -204,10 +206,9 @@ export function formatWorkHours(val?: number | string | null): string {
 
   // Round to nearest 0.5 (half hour)
   const rounded = Math.round(abs * 2) / 2;
-  const hours = Math.floor(rounded);
-  const isHalf = (rounded % 1) !== 0;
+  const isDecimal = (rounded % 1) !== 0;
 
-  const res = isHalf ? `${hours}:30` : `${hours}`;
+  const res = isDecimal ? rounded.toFixed(1) : `${rounded}`;
   return isNeg ? `-${res}` : res;
 }
 
@@ -1007,7 +1008,7 @@ export const MonthlyLocationReportModal: React.FC<MonthlyLocationReportModalProp
                 </div>
                 <div class="title-area">
                   <h1>${title}</h1>
-                  <p>${subtitle}</p>
+                  <p>${(isComp ? comparisonData?.department_name : singleData?.department_name) ? `${(isComp ? comparisonData?.department_name : singleData?.department_name)} — ` : ''}${subtitle}</p>
                 </div>
               </div>
 
@@ -1980,7 +1981,7 @@ export const MonthlyLocationReportModal: React.FC<MonthlyLocationReportModalProp
                             Monthly Location Expense Report
                           </h3>
                           <p className="text-xs sm:text-sm font-medium text-on-surface-variant">
-                            Grand Hypermarket — Maintenance & Facilities Operations
+                            Grand Hypermarket — {singleData?.department_name ? `${singleData.department_name} Operations` : 'Maintenance & Facilities Operations'}
                           </p>
                         </div>
                       </div>
@@ -2388,7 +2389,7 @@ export const MonthlyLocationReportModal: React.FC<MonthlyLocationReportModalProp
                             Location Expense Comparison Statement
                           </h3>
                           <p className="text-xs sm:text-sm font-medium text-on-surface-variant">
-                            {comparisonData.period1.month_label} vs {comparisonData.period2.month_label}
+                            {comparisonData?.department_name ? `${comparisonData.department_name} — ` : ''}{comparisonData.period1.month_label} vs {comparisonData.period2.month_label}
                           </p>
                         </div>
                       </div>
