@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import { Search, ChevronDown, Check, X, Loader2, Trash2 } from 'lucide-react';
 
 export interface SelectOption {
@@ -49,8 +50,22 @@ export const SearchableSelect: React.FC<SearchableSelectProps> = ({
   const [isOpen, setIsOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [placement, setPlacement] = useState<'top' | 'bottom'>('bottom');
+  const [isMobile, setIsMobile] = useState(() => {
+    if (typeof window === 'undefined') return false;
+    return window.innerWidth < 640;
+  });
   const containerRef = useRef<HTMLDivElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
+
+  // Monitor screen size for mobile responsiveness
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const checkMobile = () => {
+      setIsMobile(window.innerWidth < 640);
+    };
+    window.addEventListener('resize', checkMobile);
+    return () => window.removeEventListener('resize', checkMobile);
+  }, []);
 
   const selectedOption = useMemo(() => {
     return options.find(opt => String(opt.value) === String(value));
@@ -65,45 +80,69 @@ export const SearchableSelect: React.FC<SearchableSelectProps> = ({
     );
   }, [options, searchTerm, disableLocalFilter]);
 
-  // Handle click outside to close dropdown
+  // Handle click outside to close dropdown (desktop only, mobile uses modal backdrop)
   useEffect(() => {
+    if (!isOpen || isMobile) return;
     const handleClickOutside = (event: MouseEvent) => {
       if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
         setIsOpen(false);
       }
     };
-    if (isOpen) {
-      document.addEventListener('mousedown', handleClickOutside);
-    }
+    document.addEventListener('mousedown', handleClickOutside);
     return () => {
       document.removeEventListener('mousedown', handleClickOutside);
     };
+  }, [isOpen, isMobile]);
+
+  // Lock body scroll on mobile when popup is open
+  useEffect(() => {
+    if (isOpen && isMobile) {
+      const originalOverflow = document.body.style.overflow;
+      document.body.style.overflow = 'hidden';
+      return () => {
+        document.body.style.overflow = originalOverflow;
+      };
+    }
+  }, [isOpen, isMobile]);
+
+  // Close on Escape key
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setIsOpen(false);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isOpen]);
 
-  // Determine placement (top vs bottom) and focus search input when dropdown opens
+  // Determine placement (top vs bottom) and focus search input when dropdown opens (desktop)
   useEffect(() => {
     if (isOpen) {
-      if (dropdownPosition === 'top') {
-        setPlacement('top');
-      } else if (dropdownPosition === 'bottom') {
-        setPlacement('bottom');
-      } else if (containerRef.current) {
-        const rect = containerRef.current.getBoundingClientRect();
-        const spaceBelow = window.innerHeight - rect.bottom;
-        const spaceAbove = rect.top;
-        if (spaceBelow < 260 && spaceAbove > 220) {
+      if (!isMobile) {
+        if (dropdownPosition === 'top') {
           setPlacement('top');
-        } else {
+        } else if (dropdownPosition === 'bottom') {
           setPlacement('bottom');
+        } else if (containerRef.current) {
+          const rect = containerRef.current.getBoundingClientRect();
+          const spaceBelow = window.innerHeight - rect.bottom;
+          const spaceAbove = rect.top;
+          if (spaceBelow < 260 && spaceAbove > 220) {
+            setPlacement('top');
+          } else {
+            setPlacement('bottom');
+          }
         }
+        setTimeout(() => {
+          searchInputRef.current?.focus();
+        }, 50);
       }
-      setTimeout(() => {
-        searchInputRef.current?.focus();
-      }, 50);
     } else {
       setSearchTerm('');
     }
-  }, [isOpen, dropdownPosition]);
+  }, [isOpen, dropdownPosition, isMobile]);
 
   const handleSelect = (val: string | number) => {
     onChange(String(val));
@@ -141,8 +180,8 @@ export const SearchableSelect: React.FC<SearchableSelectProps> = ({
         <ChevronDown className={`w-3.5 h-3.5 opacity-75 shrink-0 transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`} />
       </button>
 
-      {/* Dropdown Menu */}
-      {isOpen && !disabled && (
+      {/* Desktop Dropdown Menu */}
+      {isOpen && !disabled && !isMobile && (
         <div className={`absolute ${dropdownClassName || 'left-0 right-0'} ${placement === 'top' ? 'bottom-full mb-1.5' : 'top-full mt-1.5'} z-[100] bg-surface dark:bg-surface-container-high border border-outline-variant rounded shadow-xl overflow-hidden flex flex-col max-h-80 animate-in fade-in zoom-in-95 duration-150 backdrop-blur-md`}>
           {/* Search Box */}
           <div className="p-2 border-b border-outline-variant/60 bg-surface-container-low flex items-center gap-2">
@@ -220,6 +259,121 @@ export const SearchableSelect: React.FC<SearchableSelectProps> = ({
             )}
           </div>
         </div>
+      )}
+
+      {/* Mobile Popup Modal (Bottom Sheet / Popup Dialog) */}
+      {isOpen && !disabled && isMobile && typeof document !== 'undefined' && createPortal(
+        <div
+          className="fixed inset-0 z-[9999] bg-black/60 backdrop-blur-xs flex flex-col justify-end p-0 animate-in fade-in duration-200"
+          onClick={() => setIsOpen(false)}
+        >
+          {/* Popup Container (Bottom Sheet with safe-area spacing) */}
+          <div
+            className="relative w-full max-h-[85vh] bg-surface dark:bg-surface-container-high border-t border-outline-variant rounded-t-2xl shadow-2xl flex flex-col overflow-hidden animate-in slide-in-from-bottom duration-200"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Grab Handle */}
+            <div className="w-10 h-1 bg-outline-variant/70 rounded-full mx-auto mt-2.5 mb-1 shrink-0" />
+
+            {/* Header */}
+            <div className="flex items-center justify-between px-4 py-2.5 border-b border-outline-variant/60 shrink-0">
+              <div className="flex items-center gap-2 min-w-0">
+                <span className="font-semibold text-sm text-on-surface truncate">
+                  {selectedOption ? selectedOption.label : placeholder}
+                </span>
+                <span className="text-[11px] text-on-surface-variant font-medium px-2 py-0.5 rounded-full bg-surface-container shrink-0 tabular-nums">
+                  {filteredOptions.length}
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsOpen(false)}
+                className="p-1.5 -mr-1 rounded-full hover:bg-surface-container text-on-surface-variant hover:text-on-surface transition-colors cursor-pointer"
+                aria-label="Close"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Search Box */}
+            <div className="p-3 border-b border-outline-variant/40 bg-surface-container-low flex items-center gap-2 shrink-0">
+              {loading ? (
+                <Loader2 className="w-4 h-4 text-primary animate-spin shrink-0" />
+              ) : (
+                <Search className="w-4 h-4 text-on-surface-variant shrink-0" />
+              )}
+              <input
+                type="text"
+                placeholder="Search..."
+                value={searchTerm}
+                onChange={e => {
+                  const val = e.target.value;
+                  setSearchTerm(val);
+                  onSearchChange?.(val);
+                }}
+                className="w-full bg-transparent text-sm text-on-surface placeholder:text-on-surface-variant/60 outline-none"
+              />
+              {searchTerm && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSearchTerm('');
+                    onSearchChange?.('');
+                  }}
+                  className="p-1 hover:bg-surface-container rounded-full text-on-surface-variant hover:text-on-surface cursor-pointer"
+                  aria-label="Clear search"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              )}
+            </div>
+
+            {/* Options List */}
+            <div className="overflow-y-auto overscroll-contain py-1 max-h-[55vh] divide-y divide-outline-variant/20 scrollbar-thin pb-6">
+              {filteredOptions.length === 0 ? (
+                <div className="py-10 text-center text-on-surface-variant text-xs italic">
+                  No matching options
+                </div>
+              ) : (
+                filteredOptions.map((opt) => {
+                  const isSelected = String(opt.value) === String(value);
+                  return (
+                    <div
+                      key={opt.value}
+                      onClick={() => !opt.disabled && handleSelect(opt.value)}
+                      className={`px-4 py-3 min-h-[46px] flex items-center justify-between text-sm transition-colors cursor-pointer active:bg-primary/10 ${
+                        opt.disabled
+                          ? 'opacity-40 cursor-not-allowed'
+                          : isSelected
+                            ? 'bg-primary/10 text-primary font-semibold'
+                            : 'text-on-surface active:bg-surface-container-high'
+                      }`}
+                    >
+                      <span className="truncate flex-1 pr-3">{opt.label}</span>
+                      <div className="flex items-center gap-2 shrink-0">
+                        {isSelected && <Check className="w-4 h-4 text-primary shrink-0" />}
+                        {opt.canDelete && onDeleteOption && (
+                          <button
+                            type="button"
+                            title={opt.deleteTooltip || 'Delete unused option'}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onDeleteOption(opt.value, e);
+                            }}
+                            className="p-1.5 text-on-surface-variant/50 hover:text-error hover:bg-error/10 rounded transition-colors"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          </div>
+        </div>,
+        document.body
       )}
     </div>
   );

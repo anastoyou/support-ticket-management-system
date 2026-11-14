@@ -210,7 +210,7 @@ export const TimesheetPrintModal: React.FC<TimesheetPrintModalProps> = ({
                             title="Print Timesheet Report formatted for A4"
                         >
                             <Printer className="w-4 h-4" />
-                            <span>{isPrinting ? 'Preparing A4...' : 'Print A4'}</span>
+                            <span>{isPrinting ? 'Preparing...' : 'Print'}</span>
                         </button>
                         <button
                             type="button"

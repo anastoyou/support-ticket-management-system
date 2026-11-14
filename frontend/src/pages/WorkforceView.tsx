@@ -1061,17 +1061,10 @@ export const WorkforceView: React.FC = () => {
                 </div>
                 <div>
                   <h2 className="text-xs font-semibold text-on-surface">Employee Leave Approvals</h2>
-                  <p className="text-[11px] text-on-surface-variant">Review, approve, and track employee leave requests</p>
                 </div>
               </div>
 
-              <button
-                type="button"
-                onClick={() => navigate('/workforce/employees')}
-                className="border border-outline bg-surface-container hover:bg-surface-container-high text-on-surface text-xs font-medium px-3 py-1.5 rounded transition-colors cursor-pointer"
-              >
-                Back to Employees List
-              </button>
+
             </div>
           ) : (
             <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
@@ -1304,7 +1297,7 @@ export const WorkforceView: React.FC = () => {
                           className="flex-1 py-1.5 px-2.5 rounded-lg border border-amber-300 dark:border-amber-600/50 bg-amber-50 dark:bg-amber-950/30 text-amber-800 dark:text-amber-300 hover:bg-amber-100 text-xs font-bold flex items-center justify-center gap-1.5 transition cursor-pointer"
                         >
                           <Calendar className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
-                          <span>Timesheet Calendar</span>
+                          <span>Timesheet</span>
                         </button>
                         <button
                           type="button"
@@ -1313,7 +1306,7 @@ export const WorkforceView: React.FC = () => {
                           title="Print Timesheet (A4)"
                         >
                           <Printer className="w-3.5 h-3.5" />
-                          <span>Print A4</span>
+                          <span>Print</span>
                         </button>
                       </div>
                     </div>
