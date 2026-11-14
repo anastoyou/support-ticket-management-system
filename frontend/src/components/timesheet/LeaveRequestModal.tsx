@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
     X, Calendar as CalendarIcon, CheckCircle2, AlertCircle,
-    Loader2, Palmtree, Clock, Ban, CalendarDays, Plus,
+    Loader2, CircleOff, Clock, Ban, CalendarDays, Plus,
     Sun, Sunrise, Sunset, ShieldAlert, ArrowRight,
     ChevronLeft, ChevronRight, ListFilter
 } from 'lucide-react';
@@ -266,7 +266,7 @@ export const LeaveRequestModal: React.FC<LeaveRequestModalProps> = ({
                     cellBg: 'bg-sky-50 dark:bg-sky-950/40 text-sky-900 dark:text-sky-200',
                     badgeBg: 'bg-sky-100 dark:bg-sky-900/60 text-sky-800 dark:text-sky-200 border-sky-300 dark:border-sky-700',
                     dot: 'bg-sky-500',
-                    icon: Palmtree,
+                    icon: CircleOff,
                 };
             case 'sick':
                 return {
@@ -624,15 +624,13 @@ export const LeaveRequestModal: React.FC<LeaveRequestModalProps> = ({
                     <div className="flex items-center justify-between px-5 py-3.5 border-b border-outline-variant dark:border-dark-outline-variant bg-surface-container-low dark:bg-dark-surface-container-low shrink-0">
                         <div className="flex items-center gap-3">
                             <div className="w-9 h-9 rounded bg-amber-500/15 text-amber-600 dark:text-amber-400 flex items-center justify-center font-bold">
-                                <Palmtree className="w-5 h-5" />
+                                <CircleOff className="w-5 h-5" />
                             </div>
                             <div>
-                                <h3 className="text-sm font-semibold tracking-tight text-on-surface dark:text-dark-on-surface">
-                                    Leave Management Portal
+                                <h3 className="text-md font-semibold tracking-tight text-on-surface dark:text-dark-on-surface">
+                                    Leave Management
                                 </h3>
-                                <p className="text-xs text-on-surface-variant dark:text-dark-on-surface-variant">
-                                    Apply, track, and manage your annual, sick, and casual leaves
-                                </p>
+
                             </div>
                         </div>
 
@@ -668,7 +666,7 @@ export const LeaveRequestModal: React.FC<LeaveRequestModalProps> = ({
                                 }`}
                         >
                             <CalendarDays className="w-3.5 h-3.5" />
-                            <span>My Leaves &amp; History</span>
+                            <span>Leaves History</span>
                             {leaves.length > 0 && (
                                 <span className="ml-1 px-1.5 py-0.2 bg-primary text-on-primary rounded-full text-[10px] font-bold">
                                     {leaves.length}
@@ -735,9 +733,9 @@ export const LeaveRequestModal: React.FC<LeaveRequestModalProps> = ({
                                                             </span>
                                                         )}
                                                     </div>
-                                                    <p className="text-[11px] font-normal text-on-surface-variant dark:text-dark-on-surface-variant mt-1 leading-tight">
+                                                    {/* <p className="text-[11px] font-normal text-on-surface-variant dark:text-dark-on-surface-variant mt-1 leading-tight">
                                                         {t.description}
-                                                    </p>
+                                                    </p> */}
                                                 </button>
                                             );
                                         })}
@@ -851,6 +849,24 @@ export const LeaveRequestModal: React.FC<LeaveRequestModalProps> = ({
                                         </div>
                                     )}
                                 </div>
+                                {overlappingLeave && (
+                                    <div className="p-3 animate-bounce bg-red-50 dark:bg-red-950/40 border border-red-300 dark:border-red-800 rounded flex items-start gap-2.5 text-red-900 dark:text-red-200 text-xs animate-in fade-in duration-200">
+                                        <ShieldAlert className="w-4 h-4 shrink-0 text-red-600 dark:text-red-400 mt-0.5" />
+                                        <div className="min-w-0 flex-1">
+                                            <div className="font-bold text-red-950 dark:text-red-100 flex items-center justify-between">
+                                                <span>Already have an active Leave </span>
+
+                                            </div>
+                                            <p className="mt-1 leading-snug">
+                                                <strong>
+                                                    {overlappingLeave.leave_type_display}
+                                                    {overlappingLeave.is_half_day ? ` (${overlappingLeave.half_day_slot_display || 'Half Day'})` : ' (Full Day)'}
+                                                </strong>{' '}
+                                                for <span className="font-mono font-semibold">{overlappingLeave.start_date === overlappingLeave.end_date ? overlappingLeave.start_date : `${overlappingLeave.start_date} to ${overlappingLeave.end_date}`}</span>.
+                                            </p>
+                                        </div>
+                                    </div>
+                                )}
 
                                 {/* Step 3: Reason & Notes */}
                                 <div>
@@ -866,65 +882,10 @@ export const LeaveRequestModal: React.FC<LeaveRequestModalProps> = ({
                                     />
                                 </div>
 
-                                {/* Summary Box */}
-                                <div className="p-3 rounded bg-amber-500/10 border border-amber-500/30 flex items-center justify-between text-xs">
-                                    <div className="flex items-center gap-2 min-w-0">
-                                        <Palmtree className="w-4 h-4 text-amber-600 shrink-0" />
-                                        <div className="min-w-0">
-                                            <span className="font-bold text-amber-950 dark:text-amber-200">
-                                                {currentConfig.label}
-                                            </span>
-                                            <span className="text-[11px] text-amber-800 dark:text-amber-300 ml-1.5">
-                                                {currentConfig.rangeAllowed
-                                                    ? `${calculatedDays} Days (${calculatedHours} hrs)`
-                                                    : halfDaySlot === 'first_half'
-                                                        ? '1st Half: Morning to Afternoon (5 hrs)'
-                                                        : halfDaySlot === 'second_half'
-                                                            ? '2nd Half: Afternoon to Evening (5 hrs)'
-                                                            : 'Full Day (10 hrs)'}
-                                            </span>
-                                            <div className="text-[10px] text-amber-900/80 dark:text-amber-300/80 font-mono mt-0.5">
-                                                {currentConfig.rangeAllowed
-                                                    ? `${startDate} → ${endDate}`
-                                                    : startDate}
-                                            </div>
-                                        </div>
-                                    </div>
-                                    <div className="text-right shrink-0">
-                                        <span className="text-base font-extrabold text-amber-900 dark:text-amber-200">
-                                            {calculatedHours}h
-                                        </span>
-                                        <span className="block text-[9px] text-amber-800/80 dark:text-amber-300/80 font-medium">
-                                            Deduction
-                                        </span>
-                                    </div>
-                                </div>
+
 
                                 {/* Overlap Warning Banner */}
-                                {overlappingLeave && (
-                                    <div className="p-3 bg-red-50 dark:bg-red-950/40 border border-red-300 dark:border-red-800 rounded flex items-start gap-2.5 text-red-900 dark:text-red-200 text-xs animate-in fade-in duration-200">
-                                        <ShieldAlert className="w-4 h-4 shrink-0 text-red-600 dark:text-red-400 mt-0.5" />
-                                        <div className="min-w-0 flex-1">
-                                            <div className="font-bold text-red-950 dark:text-red-100 flex items-center justify-between">
-                                                <span>Overlapping Leave Period Detected</span>
-                                                <span className="text-[10px] uppercase font-bold px-1.5 py-0.5 rounded bg-red-200/80 dark:bg-red-900/60 text-red-900 dark:text-red-200">
-                                                    {overlappingLeave.status_display}
-                                                </span>
-                                            </div>
-                                            <p className="mt-1 leading-snug">
-                                                You already have an active{' '}
-                                                <strong>
-                                                    {overlappingLeave.leave_type_display}
-                                                    {overlappingLeave.is_half_day ? ` (${overlappingLeave.half_day_slot_display || 'Half Day'})` : ' (Full Day)'}
-                                                </strong>{' '}
-                                                for <span className="font-mono font-semibold">{overlappingLeave.start_date === overlappingLeave.end_date ? overlappingLeave.start_date : `${overlappingLeave.start_date} to ${overlappingLeave.end_date}`}</span>.
-                                            </p>
-                                            <p className="text-[11px] text-red-800/80 dark:text-red-300/80 mt-1">
-                                                You cannot apply for another leave for the same period. Please select different dates or manage your existing request in the History tab.
-                                            </p>
-                                        </div>
-                                    </div>
-                                )}
+
 
                                 {/* Action Buttons */}
                                 <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-outline-variant dark:border-dark-outline-variant">
@@ -958,8 +919,8 @@ export const LeaveRequestModal: React.FC<LeaveRequestModalProps> = ({
                                             </>
                                         ) : (
                                             <>
-                                                <Palmtree className="w-3.5 h-3.5" />
-                                                <span>{overlappingLeave ? 'Period Already Booked' : 'Submit Leave Request'}</span>
+                                                <CircleOff className="w-3.5 h-3.5" />
+                                                <span>{overlappingLeave ? 'Already Booked' : 'Submit Leave'}</span>
                                             </>
                                         )}
                                     </button>
@@ -977,7 +938,7 @@ export const LeaveRequestModal: React.FC<LeaveRequestModalProps> = ({
                                     </div>
                                 ) : leaves.length === 0 ? (
                                     <div className="p-8 text-center border border-dashed border-outline-variant dark:border-dark-outline-variant rounded bg-surface-container-low/40">
-                                        <Palmtree className="w-8 h-8 mx-auto text-on-surface-variant mb-2 opacity-50" />
+                                        <CircleOff className="w-8 h-8 mx-auto text-on-surface-variant mb-2 opacity-50" />
                                         <p className="font-semibold text-on-surface dark:text-dark-on-surface">No leave records registered</p>
                                         <p className="text-[11px] text-on-surface-variant dark:text-dark-on-surface-variant mt-0.5">
                                             You haven't requested any leaves or scheduled days off yet.
@@ -1020,7 +981,7 @@ export const LeaveRequestModal: React.FC<LeaveRequestModalProps> = ({
                                                         }`}
                                                 >
                                                     <CalendarIcon className="w-3.5 h-3.5" />
-                                                    <span>Calendar View</span>
+
                                                 </button>
                                                 <button
                                                     type="button"
@@ -1031,7 +992,7 @@ export const LeaveRequestModal: React.FC<LeaveRequestModalProps> = ({
                                                         }`}
                                                 >
                                                     <ListFilter className="w-3.5 h-3.5" />
-                                                    <span>List View</span>
+
                                                 </button>
                                             </div>
                                         </div>
@@ -1190,7 +1151,7 @@ export const LeaveRequestModal: React.FC<LeaveRequestModalProps> = ({
                                                                                             </>
                                                                                         ) : (
                                                                                             <>
-                                                                                                <Palmtree className="w-2.5 h-2.5 shrink-0" />
+                                                                                                <CircleOff className="w-2.5 h-2.5 shrink-0" />
                                                                                                 <span className="truncate">{lvStyle.label}</span>
                                                                                             </>
                                                                                         )}
@@ -1360,7 +1321,7 @@ export const LeaveRequestModal: React.FC<LeaveRequestModalProps> = ({
                                                         </div>
                                                     ) : (
                                                         <div className="text-center py-4 text-on-surface-variant">
-                                                            <Palmtree className="w-6 h-6 mx-auto mb-1.5 opacity-40 text-on-surface-variant" />
+                                                            <CircleOff className="w-6 h-6 mx-auto mb-1.5 opacity-40 text-on-surface-variant" />
                                                             <p className="text-xs font-semibold text-on-surface dark:text-dark-on-surface">
                                                                 No leave marked on this date
                                                             </p>

@@ -6,7 +6,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
     Clock, Calendar as CalendarIcon, ChevronLeft, ChevronRight,
     X, MapPin, Edit2, Search, Lock, AlertCircle, Trash2,
-    ExternalLink, Sun, Moon, Printer, Palmtree
+    ExternalLink, Sun, Moon, Printer, CircleOff
 } from 'lucide-react';
 import { TimesheetPrintModal } from './TimesheetPrintModal';
 import { LeaveRequestModal } from './LeaveRequestModal';
@@ -1629,7 +1629,7 @@ export const TimeSheetModal: React.FC<TimeSheetModalProps> = ({
                                                 className="flex-shrink-0 text-[10px] font-bold inline-flex items-center gap-1 bg-amber-100 text-amber-900 dark:bg-amber-950/60 dark:text-amber-300 px-2 py-0.5 rounded-full border border-amber-300 dark:border-amber-800"
                                                 title={`On Leave: ${dayLeave.leave_type_display} (${dayLeave.is_half_day ? 'Half Day 5h' : 'Full Day 10h'})`}
                                             >
-                                                <Palmtree className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400 shrink-0" />
+                                                <CircleOff className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400 shrink-0" />
                                                 <span>{dayLeave.leave_type_display || 'On Leave'}</span>
                                             </span>
                                         )}
@@ -1713,7 +1713,7 @@ export const TimeSheetModal: React.FC<TimeSheetModalProps> = ({
                             }`}>
                             <div className="flex items-center gap-2.5 min-w-0">
                                 <div className="w-8 h-8 rounded-lg bg-amber-500/20 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0">
-                                    <Palmtree className="w-4 h-4" />
+                                    <CircleOff className="w-4 h-4" />
                                 </div>
                                 <div className="min-w-0">
                                     <div className="flex items-center gap-2 flex-wrap">
@@ -2232,7 +2232,7 @@ export const TimeSheetModal: React.FC<TimeSheetModalProps> = ({
                                             ">
                                             {curr.groupType === 'locked' && curr.conflict?.is_leave ? (
                                                 <div className="min-w-0 flex-1 truncate flex items-center gap-1 font-bold text-amber-900 dark:text-amber-200">
-                                                    <Palmtree className="w-3 h-3 text-amber-600 dark:text-amber-400 shrink-0" />
+                                                    <CircleOff className="w-3 h-3 text-amber-600 dark:text-amber-400 shrink-0" />
                                                     <span className="truncate">{curr.conflict.leave_type_display || 'Leave'}</span>
                                                     <span className="text-[8px] bg-amber-200/80 dark:bg-amber-900/60 text-amber-950 dark:text-amber-100 px-1 rounded font-semibold shrink-0">
                                                         {curr.conflict.leave_slot === 'full_day' ? 'Full' : 'Half'}
@@ -3004,7 +3004,7 @@ export const TimeSheetModal: React.FC<TimeSheetModalProps> = ({
                             </>
                         ) : dayLeave && !dayLeave.is_half_day ? (
                             <div className="flex items-center gap-2.5 py-1 text-xs text-amber-300">
-                                <Palmtree className="w-5 h-5 text-amber-400 shrink-0" />
+                                <CircleOff className="w-5 h-5 text-amber-400 shrink-0" />
                                 <div>
                                     <span className="font-bold block text-white">
                                         Full-Day {dayLeave.leave_type_display} (Worklogs Disabled)
@@ -3151,7 +3151,7 @@ export const TimeSheetModal: React.FC<TimeSheetModalProps> = ({
                                                 <span className="text-[11px] font-bold text-slate-800 flex items-center gap-1">
                                                     <span>{day}</span>
                                                     {dayStat?.is_leave && (
-                                                        <Palmtree className="w-3 h-3 text-amber-600 shrink-0 inline-block" />
+                                                        <CircleOff className="w-3 h-3 text-amber-600 shrink-0 inline-block" />
                                                     )}
                                                 </span>
                                                 {isToday && (
@@ -3166,7 +3166,7 @@ export const TimeSheetModal: React.FC<TimeSheetModalProps> = ({
                                                         }`}
                                                     title={`${dayStat.leave_type_display || 'Leave'} (${dayStat.is_half_day ? 'Half Day 5h' : 'Full Day 10h'}) - Worklogs Disabled`}
                                                 >
-                                                    <Palmtree className="w-2.5 h-2.5 shrink-0" />
+                                                    <CircleOff className="w-2.5 h-2.5 shrink-0" />
                                                     <span>{dayStat.is_half_day ? '50% Half' : '100% Full'}</span>
                                                 </span>
                                             ) : (
@@ -3181,8 +3181,8 @@ export const TimeSheetModal: React.FC<TimeSheetModalProps> = ({
 
                             {/* Calendar Leave Legend */}
                             <div className="px-3 py-1.5 bg-amber-50/80 dark:bg-amber-950/40 border-t border-amber-200/50 flex items-center gap-1.5 text-[10px] text-amber-900 dark:text-amber-200 font-medium">
-                                <Palmtree className="w-3 h-3 text-amber-600 shrink-0" />
-                                <span>Tree icon indicates scheduled leave</span>
+                                <CircleOff className="w-3 h-3 text-amber-600 shrink-0" />
+                                <span>CircleOff icon indicates scheduled leave</span>
                             </div>
 
                             <div className="px-3 py-2 bg-slate-50 dark:bg-surface-container-low border-t border-slate-100 flex justify-between items-center text-xs">

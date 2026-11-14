@@ -7,7 +7,7 @@ import {
   User, DollarSign, Award, Calendar, Building2, Wrench,
   UserCheck, UserX, CheckCircle2, UserLock, ChevronLeft, ChevronRight,
   Link as LinkIcon, Copy, Check, RefreshCw, FileText, Filter, Users,
-  LayoutList, LayoutGrid, Menu, Printer, Palmtree
+  LayoutList, LayoutGrid, Menu, Printer, CircleOff
 } from 'lucide-react';
 import { TimeSheetModal } from '../components/timesheet/TimeSheetModal';
 import { TimesheetPrintModal } from '../components/timesheet/TimesheetPrintModal';
@@ -1057,7 +1057,7 @@ export const WorkforceView: React.FC = () => {
             <div className="flex items-center justify-between gap-3">
               <div className="flex items-center gap-2.5">
                 <div className="w-8 h-8 rounded-full bg-amber-500/15 text-amber-600 flex items-center justify-center font-bold shrink-0">
-                  <Palmtree className="w-4 h-4" />
+                  <CircleOff className="w-4 h-4" />
                 </div>
                 <div>
                   <h2 className="text-xs font-semibold text-on-surface">Employee Leave Approvals</h2>
@@ -1215,7 +1215,7 @@ export const WorkforceView: React.FC = () => {
                   : 'text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high'
                   }`}
               >
-                <Palmtree className="w-3.5 h-3.5" />
+                <CircleOff className="w-3.5 h-3.5" />
                 <span>Leave Approvals</span>
                 {pendingLeavesCount > 0 ? (
                   <span className="px-1.5 py-0.2 rounded-full text-[10px] font-bold bg-amber-600 text-white animate-pulse">

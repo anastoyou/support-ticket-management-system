@@ -293,7 +293,7 @@ export const ComplaintsView: React.FC = () => {
     };
 
     return (
-        <div className="p-6 min-h-screen flex flex-col gap-6 bg-surface dark:bg-dark-surface text-on-surface dark:text-dark-on-surface">
+        <div className=" min-h-screen flex flex-col  bg-surface dark:bg-dark-surface text-on-surface dark:text-dark-on-surface">
             {/* Header */}
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-outline-variant dark:border-dark-outline-variant pb-4">
                 <div>

@@ -4,7 +4,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
     CheckCircle2, XCircle, AlertCircle, Clock, Calendar,
     User, Search, RefreshCw, Filter, Check, X,
-    ChevronLeft, ChevronRight, Palmtree, Sun, Sunrise, Sunset,
+    ChevronLeft, ChevronRight, CircleOff, Sun, Sunrise, Sunset,
     ShieldAlert, MessageSquare, Building2, Wrench, FileText,
     CheckCheck, AlertTriangle, Eye, ArrowUpDown, ChevronDown
 } from 'lucide-react';
@@ -278,7 +278,7 @@ export const EmployeeLeaveAdminView: React.FC = () => {
             case 'annual':
                 return {
                     label: 'Annual Leave',
-                    icon: Palmtree,
+                    icon: CircleOff,
                     className: 'bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-950/40 dark:text-blue-300 dark:border-blue-800',
                 };
             case 'sick':
@@ -347,11 +347,10 @@ export const EmployeeLeaveAdminView: React.FC = () => {
                         initial={{ opacity: 0, y: -8 }}
                         animate={{ opacity: 1, y: 0 }}
                         exit={{ opacity: 0, y: -8 }}
-                        className={`p-3 rounded border text-xs font-semibold flex items-center justify-between gap-3 shadow-md ${
-                            feedback.type === 'success'
+                        className={`p-3 rounded border text-xs font-semibold flex items-center justify-between gap-3 shadow-md ${feedback.type === 'success'
                                 ? 'bg-emerald-50 border-emerald-300 text-emerald-900 dark:bg-emerald-950/60 dark:text-emerald-200'
                                 : 'bg-red-50 border-red-300 text-red-900 dark:bg-red-950/60 dark:text-red-200'
-                        }`}
+                            }`}
                     >
                         <div className="flex items-center gap-2">
                             {feedback.type === 'success' ? (
@@ -376,11 +375,10 @@ export const EmployeeLeaveAdminView: React.FC = () => {
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                 <div
                     onClick={() => setStatusFilter('pending')}
-                    className={`p-3.5 rounded border transition-all cursor-pointer ${
-                        statusFilter === 'pending'
+                    className={`p-3.5 rounded border transition-all cursor-pointer ${statusFilter === 'pending'
                             ? 'bg-amber-500/10 border-amber-500/50 ring-2 ring-amber-500/30'
                             : 'bg-surface-container border-outline-variant hover:bg-surface-container-high'
-                    }`}
+                        }`}
                 >
                     <div className="flex items-center justify-between">
                         <span className="text-[11px] font-semibold text-on-surface-variant">
@@ -404,11 +402,10 @@ export const EmployeeLeaveAdminView: React.FC = () => {
 
                 <div
                     onClick={() => setStatusFilter('approved')}
-                    className={`p-3.5 rounded border transition-all cursor-pointer ${
-                        statusFilter === 'approved'
+                    className={`p-3.5 rounded border transition-all cursor-pointer ${statusFilter === 'approved'
                             ? 'bg-emerald-500/10 border-emerald-500/50 ring-2 ring-emerald-500/30'
                             : 'bg-surface-container border-outline-variant hover:bg-surface-container-high'
-                    }`}
+                        }`}
                 >
                     <div className="flex items-center justify-between">
                         <span className="text-[11px] font-semibold text-on-surface-variant">
@@ -431,7 +428,7 @@ export const EmployeeLeaveAdminView: React.FC = () => {
                             Workers Away Today
                         </span>
                         <div className="w-7 h-7 rounded-full bg-sky-500/15 text-sky-600 flex items-center justify-center">
-                            <Palmtree className="w-3.5 h-3.5" />
+                            <CircleOff className="w-3.5 h-3.5" />
                         </div>
                     </div>
                     <div className="mt-2">
@@ -443,11 +440,10 @@ export const EmployeeLeaveAdminView: React.FC = () => {
 
                 <div
                     onClick={() => setStatusFilter('rejected')}
-                    className={`p-3.5 rounded border transition-all cursor-pointer ${
-                        statusFilter === 'rejected'
+                    className={`p-3.5 rounded border transition-all cursor-pointer ${statusFilter === 'rejected'
                             ? 'bg-red-500/10 border-red-500/50 ring-2 ring-red-500/30'
                             : 'bg-surface-container border-outline-variant hover:bg-surface-container-high'
-                    }`}
+                        }`}
                 >
                     <div className="flex items-center justify-between">
                         <span className="text-[11px] font-semibold text-on-surface-variant">
@@ -559,21 +555,19 @@ export const EmployeeLeaveAdminView: React.FC = () => {
                                 key={tab.id}
                                 type="button"
                                 onClick={() => setStatusFilter(tab.id)}
-                                className={`px-3 py-1 rounded text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer shrink-0 ${
-                                    isActive
+                                className={`px-3 py-1 rounded text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer shrink-0 ${isActive
                                         ? 'bg-primary text-on-primary shadow-xs'
                                         : 'bg-surface-container-low hover:bg-surface-container-high text-on-surface-variant hover:text-on-surface border border-outline-variant'
-                                }`}
+                                    }`}
                             >
                                 <span>{tab.label}</span>
                                 {tab.count !== null && (
-                                    <span className={`text-[10px] font-bold px-1.5 py-0.2 rounded-full ${
-                                        isActive
+                                    <span className={`text-[10px] font-bold px-1.5 py-0.2 rounded-full ${isActive
                                             ? 'bg-white/20 text-white'
                                             : tab.isAlert
-                                            ? 'bg-amber-100 text-amber-900 dark:bg-amber-950/60 dark:text-amber-300'
-                                            : 'bg-surface-container-high text-on-surface-variant'
-                                    }`}>
+                                                ? 'bg-amber-100 text-amber-900 dark:bg-amber-950/60 dark:text-amber-300'
+                                                : 'bg-surface-container-high text-on-surface-variant'
+                                        }`}>
                                         {tab.count}
                                     </span>
                                 )}
@@ -593,7 +587,7 @@ export const EmployeeLeaveAdminView: React.FC = () => {
                 ) : leaves.length === 0 ? (
                     <div className="p-12 text-center text-on-surface-variant space-y-2">
                         <div className="w-12 h-12 rounded-full bg-surface-container-high flex items-center justify-center mx-auto text-on-surface-variant">
-                            <Palmtree className="w-6 h-6" />
+                            <CircleOff className="w-6 h-6" />
                         </div>
                         <h4 className="text-sm font-semibold text-on-surface">No Leave Requests Found</h4>
                         <p className="text-xs text-on-surface-variant max-w-sm mx-auto">
@@ -641,9 +635,8 @@ export const EmployeeLeaveAdminView: React.FC = () => {
                                         return (
                                             <tr
                                                 key={item.leave_id}
-                                                className={`transition-colors hover:bg-surface-container-high/60 ${
-                                                    isSelected ? 'bg-primary/5 dark:bg-primary/10' : ''
-                                                }`}
+                                                className={`transition-colors hover:bg-surface-container-high/60 ${isSelected ? 'bg-primary/5 dark:bg-primary/10' : ''
+                                                    }`}
                                             >
                                                 {/* Checkbox column for pending */}
                                                 {statusFilter === 'pending' && (

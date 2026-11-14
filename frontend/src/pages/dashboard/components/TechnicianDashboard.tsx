@@ -10,20 +10,6 @@ import Can from '@/hooks/Can';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api';
 
-interface TodayLeaveInfo {
-    leave_id: number;
-    leave_type: string;
-    leave_type_display: string;
-    status: 'pending' | 'approved' | 'rejected' | 'cancelled';
-    is_half_day: boolean;
-    half_day_slot?: string;
-    half_day_slot_display?: string;
-    hours: number;
-    start_date: string;
-    end_date: string;
-    reason: string;
-}
-
 interface TechnicianDashboardProps {
     data: any;
     loading: boolean;
@@ -67,7 +53,6 @@ export const TechnicianDashboard: React.FC<TechnicianDashboardProps> = ({ data, 
 
     const [todayHours, setTodayHours] = useState<number>(0);
     const [todayPct, setTodayPct] = useState<number>(0);
-    const [todayLeave, setTodayLeave] = useState<TodayLeaveInfo | null>(null);
     const [isLeaveModalOpen, setIsLeaveModalOpen] = useState<boolean>(false);
 
     const fetchTodayTimesheet = useCallback(async () => {
@@ -81,7 +66,6 @@ export const TechnicianDashboard: React.FC<TechnicianDashboardProps> = ({ data, 
                 const resData = await res.json();
                 setTodayHours(resData.total_booked_hours || 0);
                 setTodayPct(resData.completion_percentage || 0);
-                setTodayLeave(resData.is_on_leave ? resData.leave : null);
             }
         } catch (err) {
             console.error('Failed to fetch today timesheet summary:', err);
@@ -118,7 +102,7 @@ export const TechnicianDashboard: React.FC<TechnicianDashboardProps> = ({ data, 
                     My Assigned Jobs
                 </a>
 
-                <div className="flex items-center justify-end gap-2 flex-wrap w-full pt-3">
+                <div className="hidden sm:flex items-center justify-end gap-2 flex-wrap w-full pt-3">
                     {/* Dedicated Apply Leave Button */}
                     <button
                         type="button"
@@ -181,51 +165,6 @@ export const TechnicianDashboard: React.FC<TechnicianDashboardProps> = ({ data, 
                     </Can>
                 </div>
             </div>
-
-            {/* Active Leave Banner if Worker is on Leave Today */}
-            {todayLeave && (
-                <div className="bg-amber-500/10 border border-amber-500/30 rounded p-3.5 flex flex-wrap items-center justify-between gap-3 text-xs">
-                    <div className="flex items-center gap-3">
-                        <div className="w-8 h-8 rounded-full bg-amber-500/20 text-amber-700 dark:text-amber-300 flex items-center justify-center font-bold shrink-0">
-                            <Palmtree className="w-4 h-4" />
-                        </div>
-                        <div>
-                            <div className="flex items-center gap-2 flex-wrap">
-                                <span className="font-bold text-amber-950 dark:text-amber-100">
-                                    You are on {todayLeave.leave_type_display} Today
-                                </span>
-                                <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full capitalize ${
-                                    todayLeave.status === 'approved'
-                                        ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300'
-                                        : todayLeave.status === 'pending'
-                                        ? 'bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300'
-                                        : 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300'
-                                }`}>
-                                    {todayLeave.status}
-                                </span>
-                                <span className="text-[10px] bg-amber-500/15 text-amber-900 dark:text-amber-200 px-2 py-0.5 rounded font-medium">
-                                    {todayLeave.is_half_day
-                                        ? (todayLeave.half_day_slot_display || (todayLeave.half_day_slot === 'first_half' ? '1st Half: Morning to Afternoon (5h)' : '2nd Half: Afternoon to Evening (5h)'))
-                                        : 'Full Day (10h)'}
-                                </span>
-                            </div>
-                            {todayLeave.reason && (
-                                <p className="text-[11px] text-amber-900/80 dark:text-amber-200/80 mt-1 italic">
-                                    "{todayLeave.reason}"
-                                </p>
-                            )}
-                        </div>
-                    </div>
-                    <button
-                        type="button"
-                        onClick={() => setIsLeaveModalOpen(true)}
-                        className="bg-amber-600 hover:bg-amber-700 text-white font-semibold px-3 py-1.5 rounded transition-colors cursor-pointer text-xs flex items-center gap-1.5 shadow-xs shrink-0"
-                    >
-                        <Palmtree className="w-3.5 h-3.5" />
-                        <span>Manage Leave</span>
-                    </button>
-                </div>
-            )}
 
             {/* Personal KPI Cards */}
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -296,10 +235,28 @@ export const TechnicianDashboard: React.FC<TechnicianDashboardProps> = ({ data, 
                 </div>
             )}
 
-            {/* Mobile Device Floating Action Button (FAB) with Bottom-to-Top Fill (DESIGN.md tokens) */}
-            <Can permission={['can_change_my_log_time']} >
+            {/* Mobile Device Floating Action Buttons (FAB Cluster) */}
+            <div className="sm:hidden fixed bottom-6 right-4 z-40 flex flex-col items-end gap-2 select-none">
+                {/* Apply Leave Button */}
+                <button
+                    type="button"
+                    onClick={() => setIsLeaveModalOpen(true)}
+                    className="
+                        bg-amber-500 hover:bg-amber-600 active:bg-amber-700
+                        text-white text-xs font-semibold
+                        h-9 px-3.5 rounded-full
+                        inline-flex items-center gap-1.5
+                        shadow-md shadow-amber-500/25
+                        transition-transform duration-150 active:scale-95 cursor-pointer
+                    "
+                    title="Apply for Leave or view leave history"
+                >
+                    <Palmtree className="w-3.5 h-3.5" />
+                    <span>Apply Leave</span>
+                </button>
 
-                <div className="sm:hidden fixed bottom-7 right-6 z-40 flex flex-col items-center gap-2 select-none">
+                {/* Time Sheet Button */}
+                <Can permission={['can_change_my_log_time']}>
                     <button
                         type="button"
                         onClick={() => {
@@ -308,103 +265,35 @@ export const TechnicianDashboard: React.FC<TechnicianDashboardProps> = ({ data, 
                             setIsTimeSheetOpen(true);
                         }}
                         className="
-            group relative w-[76px] h-[76px]
-            rounded-full overflow-visible
-            bg-surface-container
-            border border-outline-variant
-            shadow-xl shadow-black/20
-            flex items-center justify-center
-            transition-all duration-300 ease-out
-            hover:shadow-2xl hover:-translate-y-1
-            active:scale-90
-            focus-visible:outline-none
-            focus-visible:ring-2
-            focus-visible:ring-primary
-            focus-visible:ring-offset-2
-            animate-[bounce_2s_ease-in-out_3]
-        "
+                            relative overflow-hidden
+                            bg-surface-container hover:bg-surface-container-high
+                            border border-outline-variant
+                            text-on-surface text-xs font-medium
+                            h-10 px-3.5 rounded-full
+                            inline-flex items-center gap-2
+                            shadow-lg shadow-black/20
+                            transition-transform duration-150 active:scale-95 cursor-pointer
+                        "
                         aria-label={`Open time sheet. ${todayHours} hours logged, ${todayPct}% complete.`}
                         title="Time Sheet"
                     >
-                        {/* Circular progress track */}
-                        <svg
-                            className="absolute inset-0 w-full h-full -rotate-90"
-                            viewBox="0 0 76 76"
-                            fill="none"
-                        >
-                            <circle
-                                cx="38"
-                                cy="38"
-                                r="34"
-                                stroke="currentColor"
-                                strokeWidth="3"
-                                className="text-outline-variant/40"
-                            />
-
-                            {/* Progress indicator */}
-                            <circle
-                                cx="38"
-                                cy="38"
-                                r="34"
-                                stroke="currentColor"
-                                strokeWidth="3"
-                                strokeLinecap="round"
-                                strokeDasharray={2 * Math.PI * 34}
-                                strokeDashoffset={
-                                    2 * Math.PI * 34 *
-                                    (1 - Math.min(100, Math.max(0, todayPct)) / 100)
-                                }
-                                className="text-primary transition-all duration-700 ease-out"
-                            />
-                        </svg>
-
-                        {/* Background progress fill */}
-                        <div
-                            className="
-                                absolute inset-1 rounded-full
-                                pointer-events-none
-                                transition-all duration-500
-                            "
+                        {/* Progress fill bar */}
+                        <span
+                            className={`absolute inset-y-0 left-0 overflow-hidden transition-all duration-700 ease-out opacity-25 ${getCompletionBadgeClasses(todayPct)}`}
                             style={{
-                                background: `linear-gradient(
-                                    to top,
-                                    color-mix(in srgb, var(--color-primary) 16%, transparent)
-                                    ${Math.min(100, Math.max(0, todayPct))}%,
-                                    transparent
-                                    ${Math.min(100, Math.max(0, todayPct))}%
-                                )`
+                                width: `${Math.min(100, Math.max(0, todayPct))}%`
                             }}
                         />
 
-                        {/* Main content */}
-                        <div className="relative z-10 flex flex-col items-center justify-center gap-1 pointer-events-none">
-                            <Clock className="w-6 h-6 text-primary transition-transform duration-300 group-hover:scale-110" />
-                            <span className="text-sm font-bold text-on-surface leading-none tabular-nums">
-                                {todayHours}h
-                            </span>
-                        </div>
+                        <Clock className="w-3.5 h-3.5 text-primary shrink-0 relative z-10" />
+                        <span className="relative z-10 font-bold">Time Sheet</span>
 
-                        {/* Percentage badge */}
-                        <span
-                            className="
-                                absolute -top-1.5 -right-2
-                                min-w-[36px] h-[23px]
-                                px-2 rounded-full
-                                flex items-center justify-center
-                                bg-primary text-on-primary
-                                border-2 border-surface-container
-                                text-[10px] font-bold
-                                shadow-md tabular-nums
-                                z-20
-                                transition-transform duration-300
-                                group-hover:scale-110
-                            "
-                        >
-                            {todayPct >= 100 ? '100%' : `${todayPct}%`}
+                        <span className="relative z-10 text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-primary text-on-primary tabular-nums">
+                            {todayPct}%
                         </span>
                     </button>
-                </div>
-            </Can>
+                </Can>
+            </div>
 
             <TimeSheetModal
                 isOpen={isTimeSheetOpen}
