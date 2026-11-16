@@ -10,7 +10,6 @@ import type { RootState } from '../store';
 import { usePermission } from '../hooks/usePermission';
 import type { PermissionKey } from '@/hooks/Can';
 import Can from '@/hooks/Can';
-import ConnectClaudeModal from './ConnectClaudeModal';
 
 export interface SubItem {
   title: string;
@@ -122,6 +121,37 @@ export const getFlatMenuItems = (items: MenuItem[] = menuItems): FlatMenuItem[] 
   return flat;
 };
 
+export const getMcpServerUrl = (): string => {
+
+
+
+  if (typeof window !== 'undefined' && window.location.protocol === 'https:') {
+    return `${window.location.origin}/mcp`;
+  }
+  const mediaUrl = import.meta.env.VITE_MEDIA_URL as string | undefined;
+  if (mediaUrl && mediaUrl.startsWith('https://')) {
+    try {
+      return `${new URL(mediaUrl).origin}/mcp`;
+    } catch {
+      // fall through
+    }
+  }
+  const apiUrl = import.meta.env.VITE_API_URL as string | undefined;
+  if (apiUrl && apiUrl.startsWith('http')) {
+    try {
+      return `${new URL(apiUrl).origin}/mcp`;
+    } catch {
+      // fall through
+    }
+  }
+  return typeof window !== 'undefined' ? `${window.location.origin}/mcp` : '/mcp';
+};
+
+const mcpUrl = getMcpServerUrl();
+const claudeConnectUrl =
+  `https://claude.ai/customize/connectors?modal=add-custom-connector` +
+  `&connectorName=${encodeURIComponent('Maintenance Tracker')}` +
+  `&connectorUrl=${encodeURIComponent(mcpUrl)}`;
 /**
  * Returns the next accessible menu path if the current path requires a permission
  * that the user does not possess.
@@ -240,228 +270,226 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
           <X className="w-4 h-4" />
         </button>
       </div>
-        <Can permission="common.can_use_ai">
-          {/* Connect with Claude CTA */}
-          <div className="px-3 pt-3 pb-1 shrink-0">
-            <button
-              type="button"
-              onClick={() => setClaudeModalOpen(true)}
-              className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-xs font-semibold bg-[#D97757]/12 hover:bg-[#D97757]/20 text-[#D97757] border border-[#D97757]/30 transition-colors cursor-pointer"
-            >
-              <Sparkles className="w-3.5 h-3.5 shrink-0" />
-              <span>Connect with Claude</span>
-            </button>
-          </div>
-        </Can>
+      <Can permission="common.can_use_ai">
+        <div className="px-3 pt-3 pb-1 shrink-0">
+          <a
+            href={claudeConnectUrl}
+            className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-xs font-semibold bg-[#D97757]/12 hover:bg-[#D97757]/20 text-[#D97757] border border-[#D97757]/30 transition-all duration-200 cursor-pointer shadow-sm"
+          >
+            <Sparkles className="w-3.5 h-3.5 shrink-0" />
+            <span>Connect with AI</span>
+          </a>
+        </div>
+      </Can>
 
-        {/* Menu List */}
-        <div className="flex-1 overflow-y-auto px-3 py-4 space-y-1 scrollbar-thin">
-          <div className="text-[10px] font-semibold uppercase tracking-wider text-on-surface-variant/70 px-3 pb-1">
-            Navigation
-          </div>
+      {/* Menu List */}
+      <div className="flex-1 overflow-y-auto px-3 py-4 space-y-1 scrollbar-thin">
+        <div className="text-[10px] font-semibold uppercase tracking-wider text-on-surface-variant/70 px-3 pb-1">
+          Navigation
+        </div>
 
-          {menuItems
-            .map(item => {
-              const filteredSubItems = item.subItems?.filter(sub => hasPermission(sub.permission));
-              return { ...item, subItems: filteredSubItems };
-            })
-            .filter(item => {
-              if (item.subItems) {
-                return item.subItems.length > 0;
-              }
-              return hasPermission(item.permission);
-            })
-            .map((item, idx) => {
-              const hasMultipleSubItems = item.subItems && item.subItems.length > 1;
-              const singleSubItem = item.subItems && item.subItems.length === 1 ? item.subItems[0] : null;
+        {menuItems
+          .map(item => {
+            const filteredSubItems = item.subItems?.filter(sub => hasPermission(sub.permission));
+            return { ...item, subItems: filteredSubItems };
+          })
+          .filter(item => {
+            if (item.subItems) {
+              return item.subItems.length > 0;
+            }
+            return hasPermission(item.permission);
+          })
+          .map((item, idx) => {
+            const hasMultipleSubItems = item.subItems && item.subItems.length > 1;
+            const singleSubItem = item.subItems && item.subItems.length === 1 ? item.subItems[0] : null;
 
-              // Target path, title & permission for 1-level single items
-              const targetPath = singleSubItem ? singleSubItem.path : item.path;
-              const targetTitle = singleSubItem ? singleSubItem.title : item.title;
-              const targetPermission = singleSubItem ? singleSubItem.permission : item.permission;
+            // Target path, title & permission for 1-level single items
+            const targetPath = singleSubItem ? singleSubItem.path : item.path;
+            const targetTitle = singleSubItem ? singleSubItem.title : item.title;
+            const targetPermission = singleSubItem ? singleSubItem.permission : item.permission;
 
-              const active = isPathActive(targetPath, item.subItems);
-              const expanded = expandedMenus[item.title] ?? active;
+            const active = isPathActive(targetPath, item.subItems);
+            const expanded = expandedMenus[item.title] ?? active;
 
-              return (
-                <div key={idx} className="space-y-0.5">
-                  {/* 2-LEVEL ACCORDION MENU (Sub-items > 1) */}
-                  {hasMultipleSubItems ? (
-                    <div>
-                      <button
-                        onClick={() => toggleExpand(item.title)}
-                        className={`w-full flex items-center justify-between px-3 py-2 rounded text-xs font-medium transition-colors ${active
-                          ? 'text-primary bg-primary/10 font-semibold'
-                          : 'text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high'
-                          }`}
-                      >
-                        <div className="flex items-center gap-2.5">
-                          <span className={active ? 'text-primary' : 'text-on-surface-variant'}>
-                            {item.icon}
-                          </span>
-                          <span>{item.title}</span>
-                        </div>
-                        <ChevronDown
-                          className={`w-3.5 h-3.5 text-on-surface-variant transition-transform duration-200 ${expanded ? 'transform rotate-180' : ''
-                            }`}
-                        />
-                      </button>
-
-                      {/* Submenu Accordion Container */}
-                      <AnimatePresence initial={false}>
-                        {expanded && (
-                          <motion.div
-                            initial={{ height: 0, opacity: 0 }}
-                            animate={{ height: 'auto', opacity: 1 }}
-                            exit={{ height: 0, opacity: 0 }}
-                            transition={{ duration: 0.15, ease: 'easeInOut' }}
-                            className="overflow-hidden ml-4 pl-3 border-l border-outline-variant space-y-0.5 my-1"
-                          >
-                            {item.subItems?.map((sub, subIdx) => {
-                              const subActive = location.pathname === sub.path;
-                              return (
-                                <Link
-                                  key={subIdx}
-                                  to={sub.path}
-                                  onClick={() => {
-                                    if (window.innerWidth < 768) onClose();
-                                  }}
-                                  className={`block px-2.5 py-1.5 rounded text-xs transition-colors ${subActive
-                                    ? 'text-primary bg-primary/10 font-semibold'
-                                    : 'text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high'
-                                    }`}
-                                >
-                                  {sub.permission ? (
-                                    <Can permission={sub.permission}>
-                                      {sub.title}
-                                    </Can>
-                                  ) : (
-                                    sub.title
-                                  )}
-                                </Link>
-                              );
-                            })}
-                          </motion.div>
-                        )}
-                      </AnimatePresence>
-                    </div>
-                  ) : (
-                    // SINGLE LEVEL ITEM (Direct link with <Can> wrapper)
-                    <Link
-                      to={targetPath || '#'}
-                      onClick={() => {
-                        if (window.innerWidth < 768) onClose();
-                      }}
-                      className={`flex items-center gap-2.5 px-3 py-2 rounded text-xs font-medium transition-colors ${location.pathname === targetPath
+            return (
+              <div key={idx} className="space-y-0.5">
+                {/* 2-LEVEL ACCORDION MENU (Sub-items > 1) */}
+                {hasMultipleSubItems ? (
+                  <div>
+                    <button
+                      onClick={() => toggleExpand(item.title)}
+                      className={`w-full flex items-center justify-between px-3 py-2 rounded text-xs font-medium transition-colors ${active
                         ? 'text-primary bg-primary/10 font-semibold'
                         : 'text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high'
                         }`}
                     >
-                      <span className={location.pathname === targetPath ? 'text-primary' : 'text-on-surface-variant'}>
-                        {item.icon}
-                      </span>
-                      {targetPermission ? (
-                        <Can permission={targetPermission}>
-                          <span>{targetTitle}</span>
-                        </Can>
-                      ) : (
-                        <span>{targetTitle}</span>
+                      <div className="flex items-center gap-2.5">
+                        <span className={active ? 'text-primary' : 'text-on-surface-variant'}>
+                          {item.icon}
+                        </span>
+                        <span>{item.title}</span>
+                      </div>
+                      <ChevronDown
+                        className={`w-3.5 h-3.5 text-on-surface-variant transition-transform duration-200 ${expanded ? 'transform rotate-180' : ''
+                          }`}
+                      />
+                    </button>
+
+                    {/* Submenu Accordion Container */}
+                    <AnimatePresence initial={false}>
+                      {expanded && (
+                        <motion.div
+                          initial={{ height: 0, opacity: 0 }}
+                          animate={{ height: 'auto', opacity: 1 }}
+                          exit={{ height: 0, opacity: 0 }}
+                          transition={{ duration: 0.15, ease: 'easeInOut' }}
+                          className="overflow-hidden ml-4 pl-3 border-l border-outline-variant space-y-0.5 my-1"
+                        >
+                          {item.subItems?.map((sub, subIdx) => {
+                            const subActive = location.pathname === sub.path;
+                            return (
+                              <Link
+                                key={subIdx}
+                                to={sub.path}
+                                onClick={() => {
+                                  if (window.innerWidth < 768) onClose();
+                                }}
+                                className={`block px-2.5 py-1.5 rounded text-xs transition-colors ${subActive
+                                  ? 'text-primary bg-primary/10 font-semibold'
+                                  : 'text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high'
+                                  }`}
+                              >
+                                {sub.permission ? (
+                                  <Can permission={sub.permission}>
+                                    {sub.title}
+                                  </Can>
+                                ) : (
+                                  sub.title
+                                )}
+                              </Link>
+                            );
+                          })}
+                        </motion.div>
                       )}
-                    </Link>
-                  )}
-                </div>
-              );
-            })}
-        </div>
-
-        {/* Footer / User Profile Card */}
-        {user && (
-          <div className="p-3 border-t border-outline-variant bg-surface-container-low shrink-0">
-            <button
-              onClick={() => setProfileExpanded(!profileExpanded)}
-              className="w-full flex items-center justify-between text-left focus:outline-none hover:bg-surface-container-high p-1.5 rounded transition-colors"
-            >
-              <div className="flex items-center gap-2.5 min-w-0">
-                <div className="w-8 h-8 rounded-full overflow-hidden border border-outline-variant bg-surface-container flex items-center justify-center shrink-0">
-                  {user.profile_image ? (
-                    <img src={user.profile_image} alt={user.full_name} className="w-full h-full object-cover" />
-                  ) : (
-                    <User className="w-4 h-4 text-on-surface-variant" />
-                  )}
-                </div>
-                <div className="min-w-0">
-                  <p className="text-xs font-semibold text-on-surface truncate leading-tight">
-                    {user.full_name}
-                  </p>
-                  <p className="text-[10px] text-on-surface-variant truncate font-medium uppercase tracking-wider leading-tight mt-0.5">
-                    {user.role || 'User'}
-                  </p>
-                </div>
-              </div>
-              <ChevronDown className={`w-3.5 h-3.5 text-on-surface-variant transition-transform duration-200 ${profileExpanded ? 'transform rotate-180' : ''}`} />
-            </button>
-
-            <AnimatePresence initial={false}>
-              {profileExpanded && (
-                <motion.div
-                  initial={{ height: 0, opacity: 0 }}
-                  animate={{ height: 'auto', opacity: 1 }}
-                  exit={{ height: 0, opacity: 0 }}
-                  transition={{ duration: 0.15, ease: 'easeInOut' }}
-                  className="overflow-hidden space-y-2 pt-2 mt-2 border-t border-outline-variant text-xs text-on-surface-variant"
-                >
-                  <div className="flex items-center gap-2  text-[10px]">
-                    <Shield className="w-3.5 h-3.5 text-primary shrink-0" />
-                    <span>Emp ID: <span className="font-semibold text-on-surface">{user.employee_no}</span></span>
+                    </AnimatePresence>
                   </div>
+                ) : (
+                  // SINGLE LEVEL ITEM (Direct link with <Can> wrapper)
+                  <Link
+                    to={targetPath || '#'}
+                    onClick={() => {
+                      if (window.innerWidth < 768) onClose();
+                    }}
+                    className={`flex items-center gap-2.5 px-3 py-2 rounded text-xs font-medium transition-colors ${location.pathname === targetPath
+                      ? 'text-primary bg-primary/10 font-semibold'
+                      : 'text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high'
+                      }`}
+                  >
+                    <span className={location.pathname === targetPath ? 'text-primary' : 'text-on-surface-variant'}>
+                      {item.icon}
+                    </span>
+                    {targetPermission ? (
+                      <Can permission={targetPermission}>
+                        <span>{targetTitle}</span>
+                      </Can>
+                    ) : (
+                      <span>{targetTitle}</span>
+                    )}
+                  </Link>
+                )}
+              </div>
+            );
+          })}
+      </div>
 
-                  {user.sub_departments && user.sub_departments.length > 0 && (
-                    <div className="flex items-start gap-2">
-                      <Wrench className="w-3.5 h-3.5 text-primary shrink-0 mt-0.5" />
-                      <div className="min-w-0 flex-1">
-                        <span className="text-[10px] text-on-surface-variant/70 block leading-none">Assigned Departments</span>
-                        <span className="font-medium text-on-surface block mt-0.5 text-[11px]">
-                          {user.sub_departments.join(', ')}
-                        </span>
-                      </div>
-                    </div>
-                  )}
+      {/* Footer / User Profile Card */}
+      {user && (
+        <div className="p-3 border-t border-outline-variant bg-surface-container-low shrink-0">
+          <button
+            onClick={() => setProfileExpanded(!profileExpanded)}
+            className="w-full flex items-center justify-between text-left focus:outline-none hover:bg-surface-container-high p-1.5 rounded transition-colors"
+          >
+            <div className="flex items-center gap-2.5 min-w-0">
+              <div className="w-8 h-8 rounded-full overflow-hidden border border-outline-variant bg-surface-container flex items-center justify-center shrink-0">
+                {user.profile_image ? (
+                  <img src={user.profile_image} alt={user.full_name} className="w-full h-full object-cover" />
+                ) : (
+                  <User className="w-4 h-4 text-on-surface-variant" />
+                )}
+              </div>
+              <div className="min-w-0">
+                <p className="text-xs font-semibold text-on-surface truncate leading-tight">
+                  {user.full_name}
+                </p>
+                <p className="text-[10px] text-on-surface-variant truncate font-medium uppercase tracking-wider leading-tight mt-0.5">
+                  {user.role || 'User'}
+                </p>
+              </div>
+            </div>
+            <ChevronDown className={`w-3.5 h-3.5 text-on-surface-variant transition-transform duration-200 ${profileExpanded ? 'transform rotate-180' : ''}`} />
+          </button>
 
-                  {user.natures && user.natures.length > 0 && (
-                    <div className="flex items-start gap-2">
-                      <Wrench className="w-3.5 h-3.5 text-tertiary shrink-0 mt-0.5" />
-                      <div className="min-w-0 flex-1">
-                        <span className="text-[10px] text-on-surface-variant/70 block leading-none">Work Skills</span>
-                        <span className="font-medium text-on-surface block mt-0.5 text-[11px]">
-                          {user.natures.join(', ')}
-                        </span>
-                      </div>
-                    </div>
-                  )}
+          <AnimatePresence initial={false}>
+            {profileExpanded && (
+              <motion.div
+                initial={{ height: 0, opacity: 0 }}
+                animate={{ height: 'auto', opacity: 1 }}
+                exit={{ height: 0, opacity: 0 }}
+                transition={{ duration: 0.15, ease: 'easeInOut' }}
+                className="overflow-hidden space-y-2 pt-2 mt-2 border-t border-outline-variant text-xs text-on-surface-variant"
+              >
+                <div className="flex items-center gap-2  text-[10px]">
+                  <Shield className="w-3.5 h-3.5 text-primary shrink-0" />
+                  <span>Emp ID: <span className="font-semibold text-on-surface">{user.employee_no}</span></span>
+                </div>
 
-                  {accessibleStores && accessibleStores.length > 0 && (
-                    <div className="pt-2.5 border-t border-outline-variant space-y-1.5">
-                      <span className="text-[9px] text-on-surface-variant/80 block uppercase tracking-wider font-semibold">
-                        Accessible Stores ({accessibleStores.length})
+                {user.sub_departments && user.sub_departments.length > 0 && (
+                  <div className="flex items-start gap-2">
+                    <Wrench className="w-3.5 h-3.5 text-primary shrink-0 mt-0.5" />
+                    <div className="min-w-0 flex-1">
+                      <span className="text-[10px] text-on-surface-variant/70 block leading-none">Assigned Departments</span>
+                      <span className="font-medium text-on-surface block mt-0.5 text-[11px]">
+                        {user.sub_departments.join(', ')}
                       </span>
-                      <ul className="max-h-32 overflow-y-auto space-y-1 pr-1 scrollbar-thin">
-                        {accessibleStores.map((s, idx) => (
-                          <li
-                            key={s.store_id || idx}
-                            className="flex items-center gap-1.5 px-2 py-1 bg-surface-container/60 rounded text-[11px] font-medium text-on-surface border border-outline-variant/40"
-                          >
-                            <Building2 className="w-3 h-3 text-primary shrink-0" />
-                            <span className="truncate">{s.store_name}</span>
-                          </li>
-                        ))}
-                      </ul>
                     </div>
-                  )}
-                </motion.div>
-              )}
-            </AnimatePresence>
-          </div>
-        )}
+                  </div>
+                )}
+
+                {user.natures && user.natures.length > 0 && (
+                  <div className="flex items-start gap-2">
+                    <Wrench className="w-3.5 h-3.5 text-tertiary shrink-0 mt-0.5" />
+                    <div className="min-w-0 flex-1">
+                      <span className="text-[10px] text-on-surface-variant/70 block leading-none">Work Skills</span>
+                      <span className="font-medium text-on-surface block mt-0.5 text-[11px]">
+                        {user.natures.join(', ')}
+                      </span>
+                    </div>
+                  </div>
+                )}
+
+                {accessibleStores && accessibleStores.length > 0 && (
+                  <div className="pt-2.5 border-t border-outline-variant space-y-1.5">
+                    <span className="text-[9px] text-on-surface-variant/80 block uppercase tracking-wider font-semibold">
+                      Accessible Stores ({accessibleStores.length})
+                    </span>
+                    <ul className="max-h-32 overflow-y-auto space-y-1 pr-1 scrollbar-thin">
+                      {accessibleStores.map((s, idx) => (
+                        <li
+                          key={s.store_id || idx}
+                          className="flex items-center gap-1.5 px-2 py-1 bg-surface-container/60 rounded text-[11px] font-medium text-on-surface border border-outline-variant/40"
+                        >
+                          <Building2 className="w-3 h-3 text-primary shrink-0" />
+                          <span className="truncate">{s.store_name}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
+      )}
     </div>
   );
 
@@ -498,12 +526,10 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
         )}
       </AnimatePresence>
 
-      <ConnectClaudeModal
-        isOpen={claudeModalOpen}
-        onClose={() => setClaudeModalOpen(false)}
-        employeeNo={user?.employee_no}
-        username={user?.username}
-      />
+
+
+
+      <a href={claudeConnectUrl} />
     </>
   );
 };
