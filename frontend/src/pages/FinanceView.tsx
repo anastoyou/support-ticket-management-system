@@ -9,7 +9,7 @@ import type { RootState } from '../store';
 import { TicketDetailModal } from './ticket/TicketDetailModal';
 import { DateRangePickerCard } from './ticket/DateRangePickerCard';
 import { SearchableSelect, type SelectOption } from '../components/SearchableSelect';
-import { ZoomableImage } from '@/components/ZoomableImage';
+import { ZoomableLightbox } from '@/components/ZoomableImage';
 
 import { API_URL, getUserId } from './finance/types';
 import type {
@@ -2886,32 +2886,10 @@ export const FinanceView: React.FC = () => {
       )}
 
       {/* POPUP MODAL: RECEIPT LIGHTBOX */}
-      {previewMediaUrl && (
-        <div className="fixed inset-0 z-[100] bg-black/85 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-150" onClick={() => setPreviewMediaUrl(null)}>
-          <div className="relative max-w-4xl w-full max-h-[90vh] bg-surface-container rounded border border-outline-variant/80 overflow-hidden p-3 shadow-2xl flex flex-col" onClick={e => e.stopPropagation()}>
-            <div className="flex items-center justify-between p-2 border-b border-outline-variant/80 mb-2 shrink-0">
-              <span className="text-xs font-semibold text-on-surface">{previewMediaUrl.title}</span>
-              <button onClick={() => setPreviewMediaUrl(null)} className="p-1.5 rounded text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high transition-colors cursor-pointer">
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-            {previewMediaUrl.url.toLowerCase().endsWith('.pdf') || previewMediaUrl.url.includes('/pdf') ? (
-              <iframe
-                src={previewMediaUrl.url.startsWith('http') ? previewMediaUrl.url : `${import.meta.env.VITE_API_URL || 'http://localhost:8000'}${previewMediaUrl.url}`}
-                title={previewMediaUrl.title}
-                className="w-full h-[75vh] border-0 rounded"
-              />
-            ) : (
-              <ZoomableImage
-                src={previewMediaUrl.url.startsWith('http') ? previewMediaUrl.url : `${import.meta.env.VITE_API_URL || 'http://localhost:8000'}${previewMediaUrl.url}`}
-                alt={previewMediaUrl.title}
-                containerClassName="w-full h-[75vh] bg-black/40 rounded"
-                className="max-h-[75vh] w-auto mx-auto object-contain rounded"
-              />
-            )}
-          </div>
-        </div>
-      )}
+      <ZoomableLightbox
+        media={previewMediaUrl}
+        onClose={() => setPreviewMediaUrl(null)}
+      />
     </div>
   );
 };

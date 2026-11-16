@@ -223,7 +223,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
   const location = useLocation();
   const [expandedMenus, setExpandedMenus] = useState<Record<string, boolean>>({});
   const [profileExpanded, setProfileExpanded] = useState(false);
-  const [claudeModalOpen, setClaudeModalOpen] = useState(false);
+  const [aiExpanded, setAiExpanded] = useState(false);
 
   const { user, accessibleStores } = useSelector((state: RootState) => state.auth);
   const { hasPermission } = usePermission();
@@ -271,14 +271,43 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
         </button>
       </div>
       <Can permission="common.can_use_ai">
-        <div className="px-3 pt-3 pb-1 shrink-0">
-          <a
-            href={claudeConnectUrl}
-            className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-xs font-semibold bg-[#D97757]/12 hover:bg-[#D97757]/20 text-[#D97757] border border-[#D97757]/30 transition-all duration-200 cursor-pointer shadow-sm"
-          >
-            <Sparkles className="w-3.5 h-3.5 shrink-0" />
-            <span>Connect with AI</span>
-          </a>
+        <div className="px-3 pt-2.5 pb-1 shrink-0">
+            <button
+              type="button"
+              onClick={() => setAiExpanded((prev) => !prev)}
+              aria-expanded={aiExpanded}
+              className="w-full flex items-center justify-between px-3 py-1.5 rounded text-xs font-medium text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high transition-colors cursor-pointer"
+            >
+            <div className="flex items-center gap-2.5">
+              <Sparkles className="w-3.5 h-3.5 text-[#D97757] shrink-0" />
+              <span>AI Assistant</span>
+            </div>
+            <ChevronDown
+              className={`w-3.5 h-3.5 text-on-surface-variant transition-transform duration-200 ${aiExpanded ? 'rotate-180' : ''}`}
+            />
+          </button>
+
+          <AnimatePresence initial={false}>
+            {aiExpanded && (
+              <motion.div
+                initial={{ height: 0, opacity: 0 }}
+                animate={{ height: 'auto', opacity: 1 }}
+                exit={{ height: 0, opacity: 0 }}
+                transition={{ duration: 0.15, ease: 'easeInOut' }}
+                className="overflow-hidden ml-4 pl-3 border-l border-outline-variant mt-1"
+              >
+                <a
+                  href={claudeConnectUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-xs font-semibold bg-[#D97757]/12 hover:bg-[#D97757]/20 text-[#D97757] border border-[#D97757]/30 transition-all duration-200 cursor-pointer shadow-sm"
+                >
+                  <Sparkles className="w-3.5 h-3.5 shrink-0" />
+                  <span>Connect with AI</span>
+                </a>
+              </motion.div>
+            )}
+          </AnimatePresence>
         </div>
       </Can>
 
@@ -525,11 +554,6 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
           </div>
         )}
       </AnimatePresence>
-
-
-
-
-      <a href={claudeConnectUrl} />
     </>
   );
 };
