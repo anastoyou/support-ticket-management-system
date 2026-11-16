@@ -1,4 +1,6 @@
-"""Django session login/logout views for the OAuth 2.1 authorization flow (Claude Web / MCP)."""
+"""Django session login/logout and OAuth authorization views (Claude Web / MCP)."""
+
+from urllib.parse import urlparse
 
 from django.conf import settings
 from django.contrib.auth import authenticate, get_user_model, login, logout
@@ -7,6 +9,7 @@ from django.db.models import Q
 from django.shortcuts import redirect, render
 from django.utils.http import url_has_allowed_host_and_scheme
 from django.views import View
+from oauth2_provider.views import AuthorizationView
 
 from apps.common.mcp_utils import is_mcp_user_allowed
 
@@ -84,3 +87,23 @@ def oauth_logout_view(request):
     """Log out the current OAuth browser session and redirect back to login."""
     logout(request)
     return redirect(settings.LOGIN_URL)
+
+
+class McpAuthorizationView(AuthorizationView):
+    """
+    AuthorizationView subclass that avoids HTTP 302 Location rewriting by upstream
+    reverse proxies (such as IIS ARR with 'Reverse rewrite host in response headers')
+    when redirecting back to an external OAuth callback URL like claude.ai.
+    """
+
+    def redirect(self, redirect_to, application):
+        response = super().redirect(redirect_to, application)
+        parsed = urlparse(redirect_to)
+        current_host = (self.request.get_host() or "").lower()
+        if parsed.netloc and parsed.netloc.lower() != current_host:
+            return render(
+                self.request,
+                "accounts/oauth_redirect.html",
+                {"redirect_url": redirect_to},
+            )
+        return response

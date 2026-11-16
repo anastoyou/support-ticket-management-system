@@ -23,7 +23,7 @@ from django.conf import settings
 from django.conf.urls.static import static
 from django.views.generic import TemplateView
 from oauth2_provider import urls as oauth2_urls
-from apps.accounts.oauth_views import OAuthLoginView, oauth_logout_view
+from apps.accounts.oauth_views import McpAuthorizationView, OAuthLoginView, oauth_logout_view
 
 # Monkeypatch DRF FileField to return relative URLs instead of absolute URLs,
 # preventing hardcoded localhost/127.0.0.1:8000 domains behind reverse proxies.
@@ -48,7 +48,8 @@ oauth2_urlpatterns = (
         path(
             'o/',
             include(
-                oauth2_urls.base_urlpatterns
+                [path('authorize/', McpAuthorizationView.as_view(), name='authorize')]
+                + oauth2_urls.base_urlpatterns
                 + oauth2_urls.management_urlpatterns
                 + oauth2_urls.dcr_urlpatterns
             ),
