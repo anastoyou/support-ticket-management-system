@@ -1,4 +1,5 @@
 import threading
+import time
 from urllib.parse import urlparse
 from django.conf import settings
 
@@ -53,4 +54,44 @@ class ThreadLocalRequestMiddleware:
         finally:
             if hasattr(_thread_locals, 'request'):
                 del _thread_locals.request
+        return response
+
+
+class McpLoggingMiddleware:
+    """Log detailed MCP JSON-RPC and OAuth 2.1 request/response exchanges."""
+
+    def __init__(self, get_response):
+        self.get_response = get_response
+
+    def __call__(self, request):
+        from apps.common.mcp_logging import (
+            is_mcp_or_oauth_path,
+            log_mcp_http_exchange,
+            prepare_mcp_request_capture,
+        )
+
+        if not is_mcp_or_oauth_path(request.path):
+            return self.get_response(request)
+
+        try:
+            prepare_mcp_request_capture(request)
+        except Exception:
+            pass
+
+        start_ns = getattr(request, '_mcp_start_ns', time.perf_counter())
+        try:
+            response = self.get_response(request)
+        except Exception as exc:
+            duration_ms = (time.perf_counter() - start_ns) * 1000.0
+            try:
+                log_mcp_http_exchange(request, None, duration_ms, exc=exc)
+            except Exception:
+                pass
+            raise
+
+        duration_ms = (time.perf_counter() - start_ns) * 1000.0
+        try:
+            log_mcp_http_exchange(request, response, duration_ms)
+        except Exception:
+            pass
         return response

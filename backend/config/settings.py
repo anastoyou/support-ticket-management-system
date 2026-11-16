@@ -96,6 +96,7 @@ MIDDLEWARE = [
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
     'apps.common.middleware.ThreadLocalRequestMiddleware',
+    'apps.common.middleware.McpLoggingMiddleware',
 ]
 
 ROOT_URLCONF = 'config.urls'
@@ -366,6 +367,10 @@ LOGGING = {
             'format': '{levelname} {asctime} - {message}',
             'style': '{',
         },
+        'mcp_detail': {
+            'format': '{levelname} {asctime} [{name}] - {message}',
+            'style': '{',
+        },
     },
     'handlers': {
         'console': {
@@ -380,6 +385,15 @@ LOGGING = {
             'maxBytes': 10 * 1024 * 1024,  # 10 MB
             'backupCount': 5,
             'formatter': 'verbose',
+            'encoding': 'utf-8',
+        },
+        'mcp_file': {
+            'level': 'INFO',
+            'class': 'logging.handlers.RotatingFileHandler',
+            'filename': LOGS_DIR / 'mcp.log',
+            'maxBytes': 10 * 1024 * 1024,  # 10 MB
+            'backupCount': 5,
+            'formatter': 'mcp_detail',
             'encoding': 'utf-8',
         },
         'errors_file': {
@@ -407,6 +421,26 @@ LOGGING = {
             'handlers': ['console', 'file', 'errors_file'],
             'level': 'INFO',
             'propagate': True,
+        },
+        'mcp.traffic': {
+            'handlers': ['mcp_file', 'errors_file', 'console'],
+            'level': 'INFO',
+            'propagate': False,
+        },
+        'mcp_server': {
+            'handlers': ['mcp_file', 'errors_file', 'console'],
+            'level': 'INFO',
+            'propagate': False,
+        },
+        'mcp': {
+            'handlers': ['mcp_file', 'errors_file', 'console'],
+            'level': 'INFO',
+            'propagate': False,
+        },
+        'oauth2_provider': {
+            'handlers': ['mcp_file', 'errors_file', 'console'],
+            'level': 'INFO',
+            'propagate': False,
         },
     },
 }

@@ -4,6 +4,7 @@ import logging
 from django.conf import settings
 
 logger = logging.getLogger(__name__)
+mcp_traffic_logger = logging.getLogger("mcp.traffic")
 
 
 def _user_role_and_groups(user):
@@ -54,6 +55,14 @@ def require_mcp_user(request):
     user = getattr(request, "user", None)
     allowed, reason = is_mcp_user_allowed(user)
     if not allowed:
+        username = getattr(user, "username", None) or "anonymous"
+        user_id = getattr(user, "pk", None)
+        mcp_traffic_logger.warning(
+            "MCP_AUTH_DENIED | user=%s (id=%s) | reason=%s",
+            username,
+            user_id,
+            reason or "Unauthorized",
+        )
         raise PermissionError(reason or "Unauthorized")
     return user
 
