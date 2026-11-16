@@ -348,8 +348,8 @@ export const EmployeeLeaveAdminView: React.FC = () => {
                         animate={{ opacity: 1, y: 0 }}
                         exit={{ opacity: 0, y: -8 }}
                         className={`p-3 rounded border text-xs font-semibold flex items-center justify-between gap-3 shadow-md ${feedback.type === 'success'
-                                ? 'bg-emerald-50 border-emerald-300 text-emerald-900 dark:bg-emerald-950/60 dark:text-emerald-200'
-                                : 'bg-red-50 border-red-300 text-red-900 dark:bg-red-950/60 dark:text-red-200'
+                            ? 'bg-emerald-50 border-emerald-300 text-emerald-900 dark:bg-emerald-950/60 dark:text-emerald-200'
+                            : 'bg-red-50 border-red-300 text-red-900 dark:bg-red-950/60 dark:text-red-200'
                             }`}
                     >
                         <div className="flex items-center gap-2">
@@ -372,7 +372,7 @@ export const EmployeeLeaveAdminView: React.FC = () => {
             </AnimatePresence>
 
             {/* Top KPI Summary Cards */}
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            {/* <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                 <div
                     onClick={() => setStatusFilter('pending')}
                     className={`p-3.5 rounded border transition-all cursor-pointer ${statusFilter === 'pending'
@@ -459,7 +459,7 @@ export const EmployeeLeaveAdminView: React.FC = () => {
                         </span>
                     </div>
                 </div>
-            </div>
+            </div> */}
 
             {/* Filter and Control Toolbar */}
             <div className="p-3.5 rounded bg-surface-container border border-outline-variant space-y-3">
@@ -556,17 +556,17 @@ export const EmployeeLeaveAdminView: React.FC = () => {
                                 type="button"
                                 onClick={() => setStatusFilter(tab.id)}
                                 className={`px-3 py-1 rounded text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer shrink-0 ${isActive
-                                        ? 'bg-primary text-on-primary shadow-xs'
-                                        : 'bg-surface-container-low hover:bg-surface-container-high text-on-surface-variant hover:text-on-surface border border-outline-variant'
+                                    ? 'bg-primary text-on-primary shadow-xs'
+                                    : 'bg-surface-container-low hover:bg-surface-container-high text-on-surface-variant hover:text-on-surface border border-outline-variant'
                                     }`}
                             >
                                 <span>{tab.label}</span>
                                 {tab.count !== null && (
                                     <span className={`text-[10px] font-bold px-1.5 py-0.2 rounded-full ${isActive
-                                            ? 'bg-white/20 text-white'
-                                            : tab.isAlert
-                                                ? 'bg-amber-100 text-amber-900 dark:bg-amber-950/60 dark:text-amber-300'
-                                                : 'bg-surface-container-high text-on-surface-variant'
+                                        ? 'bg-white/20 text-white'
+                                        : tab.isAlert
+                                            ? 'bg-amber-100 text-amber-900 dark:bg-amber-950/60 dark:text-amber-300'
+                                            : 'bg-surface-container-high text-on-surface-variant'
                                         }`}>
                                         {tab.count}
                                     </span>
