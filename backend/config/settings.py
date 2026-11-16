@@ -12,6 +12,7 @@ https://docs.djangoproject.com/en/6.0/ref/settings/
 
 from pathlib import Path
 import os
+from urllib.parse import urlparse
 from dotenv import load_dotenv
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
@@ -39,6 +40,12 @@ DEBUG = os.getenv('DEBUG', 'True') == 'True'
 
 ALLOWED_HOSTS = [h.strip() for h in os.getenv(
     'ALLOWED_HOSTS', 'localhost,127.0.0.1').split(',') if h.strip()]
+
+PUBLIC_BASE_URL = os.getenv('PUBLIC_BASE_URL', '').strip().rstrip('/')
+if PUBLIC_BASE_URL:
+    _parsed_public = urlparse(PUBLIC_BASE_URL)
+    if _parsed_public.hostname and _parsed_public.hostname not in ALLOWED_HOSTS:
+        ALLOWED_HOSTS.append(_parsed_public.hostname)
 
 
 # Application definition
@@ -79,6 +86,7 @@ INSTALLED_APPS = [
 ]
 
 MIDDLEWARE = [
+    'apps.common.middleware.PublicProxyUrlMiddleware',
     'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'corsheaders.middleware.CorsMiddleware',
@@ -250,6 +258,13 @@ else:
     if env_csrf:
         CSRF_TRUSTED_ORIGINS += [origin.strip()
                                  for origin in env_csrf.split(',') if origin.strip()]
+
+if PUBLIC_BASE_URL:
+    _parsed_public = urlparse(PUBLIC_BASE_URL)
+    if _parsed_public.scheme and _parsed_public.netloc:
+        _public_origin = f"{_parsed_public.scheme}://{_parsed_public.netloc}"
+        if _public_origin not in CSRF_TRUSTED_ORIGINS:
+            CSRF_TRUSTED_ORIGINS.append(_public_origin)
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
