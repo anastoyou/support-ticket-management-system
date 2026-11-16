@@ -22,6 +22,8 @@ from django.urls import path, include, re_path
 from django.conf import settings
 from django.conf.urls.static import static
 from django.views.generic import TemplateView
+from oauth2_provider import urls as oauth2_urls
+from apps.accounts.oauth_views import OAuthLoginView, oauth_logout_view
 
 # Monkeypatch DRF FileField to return relative URLs instead of absolute URLs,
 # preventing hardcoded localhost/127.0.0.1:8000 domains behind reverse proxies.
@@ -40,8 +42,26 @@ def relative_to_representation(self, value):
 FileField.to_representation = relative_to_representation
 
 
+oauth2_urlpatterns = (
+    oauth2_urls.metadata_urlpatterns
+    + [
+        path(
+            'o/',
+            include(
+                oauth2_urls.base_urlpatterns
+                + oauth2_urls.management_urlpatterns
+                + oauth2_urls.dcr_urlpatterns
+            ),
+        ),
+    ]
+)
+
 urlpatterns = [
     path('admin/', admin.site.urls),
+    path('o/login/', OAuthLoginView.as_view(), name='oauth-login'),
+    path('o/logout/', oauth_logout_view, name='oauth-logout'),
+    path('', include((oauth2_urlpatterns, 'oauth2_provider'), namespace='oauth2_provider')),
+    path('', include('mcp_server.urls')),
     path('api/accounts/', include('apps.accounts.urls')),
     path('api/common/', include('apps.common.urls')),
     path('api/stores/', include('apps.stores.urls')),
@@ -90,7 +110,7 @@ for static_file in ROOT_STATIC_FILES:
 # SPA routing fallback: serve React SPA index.html for all other paths
 urlpatterns += [
     re_path(
-        r'^(?!static/|media/|api/|admin/|' +
+        r'^(?!static/|media/|api/|admin/|o/|mcp(?:/|$)|\.well-known/|' +
         '|'.join([re.escape(f) for f in ROOT_STATIC_FILES]) + r').*$',
         TemplateView.as_view(template_name='index.html'),
     )

@@ -66,6 +66,8 @@ INSTALLED_APPS = [
     "rest_framework.authtoken",
     "channels",
     "guardian",
+    "oauth2_provider",
+    "mcp_server",
 
     # Local apps
     "apps.common",
@@ -269,6 +271,60 @@ REST_FRAMEWORK = {
         'rest_framework.authentication.TokenAuthentication',
         'rest_framework.authentication.SessionAuthentication',
     ],
+}
+
+# OAuth 2.1 & MCP Server Configuration (Claude Web / Remote MCP)
+from corsheaders.defaults import default_headers
+
+CORS_ALLOW_HEADERS = (
+    *default_headers,
+    'mcp-session-id',
+    'mcp-protocol-version',
+)
+CORS_EXPOSE_HEADERS = ['Mcp-Session-Id']
+
+LOGIN_URL = '/o/login/'
+LOGOUT_REDIRECT_URL = '/o/login/'
+
+MCP_DCR_OPEN_REGISTRATION = os.getenv('MCP_DCR_OPEN_REGISTRATION', 'True') == 'True'
+MCP_ALLOWED_ROLES = [
+    r.strip() for r in os.getenv('MCP_ALLOWED_ROLES', '').split(',') if r.strip()
+]
+
+OAUTH2_PROVIDER = {
+    'SCOPES': {
+        'read': 'Read maintenance tracker data',
+        'write': 'Create tickets and post comments',
+    },
+    'DEFAULT_SCOPES': ['read', 'write'],
+    'PKCE_REQUIRED': True,
+    'DCR_ENABLED': True,
+    'DCR_REGISTRATION_PERMISSION_CLASSES': (
+        'apps.common.mcp_utils.McpDcrPermission',
+    ),
+    'CIMD_ENABLED': True,
+    'ALLOWED_REDIRECT_URI_SCHEMES': ['https', 'http'] if DEBUG else ['https'],
+    'ALLOW_LOCALHOST_LOOPBACK': True,
+    'ROTATE_REFRESH_TOKEN': True,
+    'REFRESH_TOKEN_REUSE_PROTECTION': True,
+    'ACCESS_TOKEN_EXPIRE_SECONDS': 36000,
+    'OAUTH2_PROTECTED_RESOURCE_NAME': 'Maintenance Tracker MCP Server',
+}
+
+DJANGO_MCP_ENDPOINT = 'mcp'
+DJANGO_MCP_AUTHENTICATION_CLASSES = [
+    'oauth2_provider.contrib.rest_framework.OAuth2ProtectedResourceAuthentication',
+    'rest_framework.authentication.TokenAuthentication',
+]
+DJANGO_MCP_GLOBAL_SERVER_CONFIG = {
+    'name': 'maintenance-tracker-mcp',
+    'instructions': (
+        'You are connected to the Maintenance Tracker MCP server. '
+        'All queries and actions run strictly under the authenticated user permissions, '
+        'role, accessible stores, and departments. Call get_my_profile first if you need '
+        'to inspect the current user role and store/department scope.'
+    ),
+    'stateless': os.getenv('DJANGO_MCP_STATELESS', 'False') == 'True',
 }
 
 
