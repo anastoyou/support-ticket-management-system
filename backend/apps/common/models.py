@@ -44,6 +44,9 @@ class DashboardUpdate(models.Model):
         ordering = ['-priority', '-created_at']
         verbose_name = 'Dashboard Update'
         verbose_name_plural = 'Dashboard Updates'
+        permissions = [
+            ("can_use_ai", "Can use AI / Connect with Claude"),
+        ]
 
     def __str__(self):
         return self.title

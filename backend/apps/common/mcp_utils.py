@@ -33,6 +33,9 @@ def is_mcp_user_allowed(user):
     if not getattr(user, "active", False) and not getattr(user, "is_superuser", False):
         return False, "Account is waiting for admin approval."
 
+    if not getattr(user, "is_superuser", False) and not user.has_perm("common.can_use_ai"):
+        return False, "You do not have permission (can_use_ai) to use the AI assistant."
+
     allowed_roles = [
         r.lower().strip()
         for r in getattr(settings, "MCP_ALLOWED_ROLES", [])
