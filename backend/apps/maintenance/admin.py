@@ -4,30 +4,32 @@ from django.shortcuts import redirect
 from django.utils.html import format_html
 from django.utils.safestring import mark_safe
 from django.contrib import admin
+from unfold.contrib.filters.admin import AutocompleteSelectFilter, ChoicesDropdownFilter
+from apps.common.admin_mixins import SearchableModelAdmin
 from .models import Priority, Status, WorkNature, NatureWorker, Ticket, Allocation, WorkLog, TicketHistory, StatusChangeRule, WorkerLeave
-
-from unfold.admin import ModelAdmin
 
 
 @admin.register(Priority)
-class PriorityAdmin(ModelAdmin):
+class PriorityAdmin(SearchableModelAdmin):
     list_display = ('priority_id', 'department', 'priority_name', 'level')
-    list_filter = ('department',)
+    list_filter = (('department', AutocompleteSelectFilter),)
     search_fields = ('priority_name',)
+    autocomplete_fields = ('department',)
 
 
 @admin.register(Status)
-class StatusAdmin(ModelAdmin):
+class StatusAdmin(SearchableModelAdmin):
     list_display = ('order', 'status_name')
     search_fields = ('status_name',)
 
 
 @admin.register(WorkNature)
-class WorkNatureAdmin(ModelAdmin):
+class WorkNatureAdmin(SearchableModelAdmin):
     list_display = ('nature_id', 'nature_name', 'department',
                     'sub_department', 'default_priority', 'media_required', 'active')
-    list_filter = ('media_required', 'active', 'sub_department')
+    list_filter = ('media_required', 'active', ('sub_department', AutocompleteSelectFilter))
     search_fields = ('nature_name',)
+    autocomplete_fields = ('sub_department', 'default_priority')
 
     def department(self, obj):
         return obj.sub_department.department.department_name
@@ -35,59 +37,83 @@ class WorkNatureAdmin(ModelAdmin):
 
 
 @admin.register(NatureWorker)
-class NatureWorkerAdmin(ModelAdmin):
+class NatureWorkerAdmin(SearchableModelAdmin):
     list_display = ('nature_worker_id', 'nature', 'worker')
-    list_filter = ('nature', 'worker')
+    list_filter = (('nature', AutocompleteSelectFilter), ('worker', AutocompleteSelectFilter))
     search_fields = ('nature__nature_name', 'worker__username')
+    autocomplete_fields = ('nature', 'worker')
 
 
 @admin.register(Ticket)
-class TicketAdmin(ModelAdmin):
+class TicketAdmin(SearchableModelAdmin):
     list_display = ('ticket_id', 'work_order_no', 'store', 'department',
                     'nature', 'priority', 'status', 'created_by', 'created_date')
-    list_filter = ('priority', 'status', 'store', 'department', 'created_date')
+    list_filter = (
+        ('priority', AutocompleteSelectFilter),
+        ('status', AutocompleteSelectFilter),
+        ('store', AutocompleteSelectFilter),
+        ('department', AutocompleteSelectFilter),
+        'created_date',
+    )
     search_fields = ('work_order_no', 'title',
                      'description', 'created_by__username')
+    autocomplete_fields = (
+        'store', 'department', 'nature', 'priority', 'status',
+        'created_by', 'approved_by', 'rejected_by', 'closed_by', 'location_approved_by'
+    )
 
     def has_delete_permission(self, request, obj=None):
         return False
 
 
 @admin.register(Allocation)
-class AllocationAdmin(ModelAdmin):
+class AllocationAdmin(SearchableModelAdmin):
     list_display = ('allocation_id', 'ticket', 'worker',
                     'assigned_by', 'assigned_date', 'planned_hours')
-    list_filter = ('assigned_date', 'worker')
+    list_filter = ('assigned_date', ('worker', AutocompleteSelectFilter))
     search_fields = ('ticket__work_order_no',
                      'worker__username', 'assigned_by__username')
+    autocomplete_fields = ('ticket', 'worker', 'assigned_by')
 
 
 @admin.register(WorkLog)
-class WorkLogAdmin(ModelAdmin):
+class WorkLogAdmin(SearchableModelAdmin):
     list_display = ('worklog_id', 'ticket', 'worker', 'work_date',
                     'hours', 'hourly_rate', 'labour_amount')
-    list_filter = ('work_date', 'worker')
+    list_filter = ('work_date', ('worker', AutocompleteSelectFilter))
     search_fields = ('ticket__work_order_no', 'worker__username')
+    autocomplete_fields = ('ticket', 'worker', 'allocation', 'claim', 'stores')
 
 
 @admin.register(TicketHistory)
-class TicketHistoryAdmin(ModelAdmin):
+class TicketHistoryAdmin(SearchableModelAdmin):
     list_display = ('history_id', 'ticket', 'status',
                     'changed_by', 'changed_date', 'remarks')
-    list_filter = ('changed_date', 'status')
+    list_filter = ('changed_date', ('status', AutocompleteSelectFilter))
     search_fields = ('ticket__work_order_no', 'changed_by__username')
+    autocomplete_fields = (
+        'ticket', 'store', 'department', 'nature', 'priority', 'status',
+        'created_by', 'approved_by', 'rejected_by', 'closed_by',
+        'location_approved_by', 'changed_by'
+    )
 
 
 @admin.register(StatusChangeRule)
-class StatusChangeRuleAdmin(ModelAdmin):
+class StatusChangeRuleAdmin(SearchableModelAdmin):
     list_display = ("from_status", "to_status", "mode", "type", "path", "message", "is_active",
                     )
 
-    list_filter = ("mode", "type", "is_active", "from_status", "to_status",
-                   )
+    list_filter = (
+        ("mode", ChoicesDropdownFilter),
+        ("type", ChoicesDropdownFilter),
+        "is_active",
+        ("from_status", AutocompleteSelectFilter),
+        ("to_status", AutocompleteSelectFilter),
+    )
 
-    search_fields = ("path", "value", "message", "from_status__name", "to_status__name",
+    search_fields = ("path", "value", "message", "from_status__status_name", "to_status__status_name",
                      )
+    autocomplete_fields = ("from_status", "to_status")
 
     list_editable = ("is_active",
                      )
@@ -97,16 +123,22 @@ class StatusChangeRuleAdmin(ModelAdmin):
 
 
 @admin.register(WorkerLeave)
-class WorkerLeaveAdmin(ModelAdmin):
+class WorkerLeaveAdmin(SearchableModelAdmin):
     list_display = (
         'leave_id', 'worker', 'leave_type', 'start_date', 'end_date',
         'is_half_day', 'half_day_slot', 'hours', 'status', 'approved_by', 'action_buttons', 'created_at'
     )
-    list_filter = ('status', 'leave_type', 'is_half_day', 'start_date')
+    list_filter = (
+        ('status', ChoicesDropdownFilter),
+        ('leave_type', ChoicesDropdownFilter),
+        'is_half_day',
+        'start_date',
+    )
     search_fields = (
         'worker__username', 'worker__first_name', 'worker__last_name',
         'worker__employee_no', 'reason', 'admin_notes'
     )
+    autocomplete_fields = ('worker', 'approved_by')
     actions = ['approve_selected_leaves', 'reject_selected_leaves']
 
     def action_buttons(self, obj):

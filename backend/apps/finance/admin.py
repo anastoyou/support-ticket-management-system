@@ -8,52 +8,65 @@ from .models import (
     ApprovalInstance, AuditEvent, Payment
 )
 
-from unfold.admin import ModelAdmin
+from unfold.admin import ModelAdmin as UnfoldModelAdmin
+from unfold.contrib.filters.admin import AutocompleteSelectFilter, ChoicesDropdownFilter
+from apps.common.admin_mixins import (
+    SearchableDropdownMixin,
+    SearchableModelAdmin,
+    SearchableTabularInline,
+)
 
 
 @admin.register(ExpenseType)
-class ExpenseTypeAdmin(ModelAdmin):
+class ExpenseTypeAdmin(SearchableModelAdmin):
     list_display = ('expense_type_id', 'department',
                     'expense_name', 'parent', 'required', 'approve_required')
-    list_filter = ('department', 'required', 'parent')
+    list_filter = (('department', AutocompleteSelectFilter), 'required', ('parent', AutocompleteSelectFilter))
     search_fields = ('expense_name',)
+    autocomplete_fields = ('department', 'parent')
 
 
 @admin.register(EmployeeRate)
-class EmployeeRateAdmin(ModelAdmin):
+class EmployeeRateAdmin(SearchableModelAdmin):
     list_display = ('rate_id', 'worker', 'hourly_rate',
                     'effective_from', 'effective_to')
-    list_filter = ('effective_from', 'worker')
+    list_filter = ('effective_from', ('worker', AutocompleteSelectFilter))
     search_fields = ('worker__username',)
+    autocomplete_fields = ('worker',)
 
 
 @admin.register(WorkerClaim)
-class WorkerClaimAdmin(GuardedModelAdmin):
+class WorkerClaimAdmin(SearchableDropdownMixin, UnfoldModelAdmin, GuardedModelAdmin):
     list_display = ('claim_id', 'worker', 'ticket', 'total_claimed_amount',
                     'status', 'claim_date', 'submitted_at', 'approved_by')
-    list_filter = ('status', 'claim_date', 'period_from', 'period_to')
+    list_filter = (('status', ChoicesDropdownFilter), 'claim_date', 'period_from', 'period_to')
+    list_filter_submit = True
     search_fields = ('ticket__work_order_no', 'worker__username', 'claim_id')
-    raw_id_fields = ('worker', 'ticket', 'approved_by', 'submitted_by')
+    autocomplete_fields = ('worker', 'ticket', 'approved_by', 'submitted_by')
 
 
 @admin.register(Expense)
-class ExpenseAdmin(GuardedModelAdmin):
+class ExpenseAdmin(SearchableDropdownMixin, UnfoldModelAdmin, GuardedModelAdmin):
     list_display = ('expense_id', 'ticket', 'worker', 'added_by', 'expense_type', 'amount',
                     'responsible_store', 'expense_date', 'approved', 'is_claimed', 'claim')
     list_filter = ('approved', 'is_claimed', 'expense_date',
-                   'expense_type', 'responsible_store')
+                   ('expense_type', AutocompleteSelectFilter), ('responsible_store', AutocompleteSelectFilter))
+    list_filter_submit = True
     search_fields = ('ticket__work_order_no', 'worker__username', 'expense_id')
-    raw_id_fields = ('ticket', 'worker', 'added_by',
-                     'claim', 'responsible_store')
+    autocomplete_fields = (
+        'ticket', 'worker', 'added_by', 'expense_type',
+        'approved_by', 'claim', 'responsible_store', 'paid_by'
+    )
 
 
 @admin.register(Reconciliation)
-class ReconciliationAdmin(ModelAdmin):
+class ReconciliationAdmin(SearchableModelAdmin):
     list_display = ('reconciliation_id', 'ticket', 'verified_by', 'labour_total',
                     'expense_total', 'material_total', 'grand_total',
                     'net_payable_amount', 'verified_date', 'completed')
     list_filter = ('completed', 'verified_date')
     search_fields = ('ticket__work_order_no', 'verified_by__username')
+    autocomplete_fields = ('ticket', 'verified_by')
 
 
 class LedgerBatchAdminForm(forms.ModelForm):
@@ -78,11 +91,11 @@ class LedgerBatchAdminForm(forms.ModelForm):
 
 
 @admin.register(LedgerBatch)
-class LedgerBatchAdmin(ModelAdmin):
+class LedgerBatchAdmin(SearchableModelAdmin):
     form = LedgerBatchAdminForm
     list_display = ('batch_id', 'batch_name',
                     'display_sub_departments', 'active', 'created_at')
-    list_filter = ('active', 'sub_departments', 'created_at')
+    list_filter = ('active', ('sub_departments', AutocompleteSelectFilter), 'created_at')
     search_fields = ('batch_name', 'description')
     filter_horizontal = ('sub_departments',)
 
@@ -93,19 +106,22 @@ class LedgerBatchAdmin(ModelAdmin):
 
 
 @admin.register(LedgerGroup)
-class LedgerGroupAdmin(ModelAdmin):
+class LedgerGroupAdmin(SearchableModelAdmin):
     list_display = ('ledger_group_id', 'group_name',
                     'total_amount', 'created_by', 'created_at')
     search_fields = ('group_name',)
+    autocomplete_fields = ('created_by', 'completed_by', 'paid_by')
 
 
 @admin.register(Ledger)
-class LedgerAdmin(GuardedModelAdmin):
+class LedgerAdmin(SearchableDropdownMixin, UnfoldModelAdmin, GuardedModelAdmin):
     list_display = ('ledger_id', 'ledger_group', 'total_amount',
                     'status', 'created_by', 'created_at')
-    list_filter = ('status', 'created_at')
+    list_filter = (('status', ChoicesDropdownFilter), 'created_at')
+    list_filter_submit = True
     search_fields = ('ledger_id', 'ledger_group__group_name',
                      'created_by__username')
+    autocomplete_fields = ('ledger_group', 'ledger_batch', 'store', 'created_by')
     filter_horizontal = ('bundles', 'expenses')
 
 
@@ -134,28 +150,32 @@ class ApprovalStepForm(forms.ModelForm):
         return cleaned_data
 
 
-class ApprovalStepInline(admin.TabularInline):
+class ApprovalStepInline(SearchableTabularInline):
     model = ApprovalStep
     form = ApprovalStepForm
     extra = 1
     ordering = ('step_order',)
+    autocomplete_fields = ('assigned_role',)
     filter_horizontal = ('assigned_users',)
 
 
 @admin.register(ApprovalWorkflow)
-class ApprovalWorkflowAdmin(ModelAdmin):
+class ApprovalWorkflowAdmin(SearchableModelAdmin):
     list_display = ('workflow_id', 'name', 'entity_type',
                     'is_active', 'created_at')
-    list_filter = ('entity_type', 'is_active')
+    list_filter = (('entity_type', ChoicesDropdownFilter), 'is_active')
+    search_fields = ('name', 'entity_type')
     inlines = [ApprovalStepInline]
 
 
 @admin.register(ApprovalStep)
-class ApprovalStepAdmin(ModelAdmin):
+class ApprovalStepAdmin(SearchableModelAdmin):
     form = ApprovalStepForm
     list_display = ('step_id', 'workflow', 'step_order', 'step_name',
                     'get_assignment_type', 'get_assigned_users', 'assigned_role', 'is_final_step')
-    list_filter = ('workflow', 'assigned_role')
+    list_filter = (('workflow', AutocompleteSelectFilter), ('assigned_role', AutocompleteSelectFilter))
+    search_fields = ('step_name', 'workflow__name', 'assigned_role__role_name')
+    autocomplete_fields = ('workflow', 'assigned_role')
     filter_horizontal = ('assigned_users',)
     ordering = ('workflow', 'step_order')
 
@@ -174,16 +194,17 @@ class ApprovalStepAdmin(ModelAdmin):
 
 
 @admin.register(ApprovalInstance)
-class ApprovalInstanceAdmin(ModelAdmin):
+class ApprovalInstanceAdmin(SearchableModelAdmin):
     list_display = ('instance_id', 'step', 'claim', 'ledger',
                     'status', 'action_by', 'actioned_at')
-    list_filter = ('status', 'created_at')
+    list_filter = (('status', ChoicesDropdownFilter), 'created_at')
     search_fields = ('claim__claim_id', 'ledger__ledger_id',
                      'action_by__username')
+    autocomplete_fields = ('step', 'claim', 'ledger', 'expense', 'action_by')
 
 
 @admin.register(AuditEvent)
-class AuditEventAdmin(ModelAdmin):
+class AuditEventAdmin(SearchableModelAdmin):
     list_display = ('event_id', 'entity_name', 'entity_id',
                     'action', 'actor', 'timestamp', 'ip_address')
     list_filter = ('entity_name', 'action', 'timestamp')
@@ -201,9 +222,10 @@ class AuditEventAdmin(ModelAdmin):
 
 
 @admin.register(Payment)
-class PaymentAdmin(ModelAdmin):
+class PaymentAdmin(SearchableModelAdmin):
     list_display = ('payment_id', 'amount_paid', 'payment_method',
                     'transaction_reference', 'claim', 'ledger', 'expense', 'paid_by', 'paid_at')
-    list_filter = ('payment_method', 'paid_at')
+    list_filter = (('payment_method', ChoicesDropdownFilter), 'paid_at')
     search_fields = ('transaction_reference', 'claim__claim_id',
                      'ledger__ledger_id', 'paid_by__username')
+    autocomplete_fields = ('claim', 'ledger', 'expense', 'paid_by')

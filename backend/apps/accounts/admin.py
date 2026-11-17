@@ -7,22 +7,26 @@ from .models import Role, CustomUser, PasswordResetOTP, WhatsAppLog
 from django.utils.html import format_html
 from django.utils.safestring import mark_safe
 
-from unfold.admin import ModelAdmin
+from unfold.admin import ModelAdmin as UnfoldModelAdmin
+from unfold.contrib.filters.admin import AutocompleteSelectFilter
+from apps.common.admin_mixins import SearchableDropdownMixin, SearchableModelAdmin
 
 
 @admin.register(Role)
-class RoleAdmin(ModelAdmin):
+class RoleAdmin(SearchableModelAdmin):
     list_display = ('role_id', 'role_name')
     search_fields = ('role_name',)
 
 
 @admin.register(CustomUser)
-class CustomUserAdmin(UserAdmin):
+class CustomUserAdmin(SearchableDropdownMixin, UnfoldModelAdmin, UserAdmin):
     model = CustomUser
     list_display = ('user_id', 'profile_image_preview', 'username', 'email', 'employee_no', 'full_name',
                     'phone', 'whatsapp_number', 'role', 'profile_updated_at', 'active', 'is_staff')
-    list_filter = ('active', 'is_staff', 'is_superuser', 'role')
+    list_filter = ('active', 'is_staff', 'is_superuser', ('role', AutocompleteSelectFilter))
+    list_filter_submit = True
     search_fields = ('username', 'email', 'employee_no', 'full_name', 'phone')
+    autocomplete_fields = ('role',)
     readonly_fields = ('profile_updated_at',
                        'profile_image_preview', 'profile_image_detail')
 
@@ -66,25 +70,27 @@ class CustomUserAdmin(UserAdmin):
 
 
 @admin.register(PasswordResetOTP)
-class PasswordResetOTPAdmin(ModelAdmin):
+class PasswordResetOTPAdmin(SearchableModelAdmin):
     list_display = ('user', 'otp', 'is_used', 'created_at')
     list_filter = ('is_used', 'created_at')
     search_fields = ('user__username', 'user__employee_no', 'otp')
+    autocomplete_fields = ('user',)
     readonly_fields = ('created_at',)
 
 
 @admin.register(WhatsAppLog)
-class WhatsAppLogAdmin(ModelAdmin):
+class WhatsAppLogAdmin(SearchableModelAdmin):
     list_display = ('whatsapp_number', 'user',
                     'message_type', 'status', 'created_at')
     list_filter = ('status', 'message_type', 'created_at')
     search_fields = ('whatsapp_number', 'user__username',
                      'user__employee_no', 'otp')
+    autocomplete_fields = ('user',)
     readonly_fields = ('created_at',)
 
 
 @admin.register(Permission)
-class PermissionAdmin(ModelAdmin):
+class PermissionAdmin(SearchableModelAdmin):
     list_display = ("id", "name", "codename", "content_type")
     list_filter = ("content_type",)
     search_fields = ("name", "codename")

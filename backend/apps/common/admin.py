@@ -1,37 +1,40 @@
 from .models import DashboardUpdate
 from django.contrib import admin
+from unfold.contrib.filters.admin import AutocompleteSelectFilter
+from apps.common.admin_mixins import SearchableModelAdmin
 from .models import MediaCategory, Media, Notification, PushSubscription
-
-from unfold.admin import ModelAdmin
 
 
 @admin.register(MediaCategory)
-class MediaCategoryAdmin(ModelAdmin):
+class MediaCategoryAdmin(SearchableModelAdmin):
     list_display = ('category_id', 'department', 'category_name')
-    list_filter = ('department',)
+    list_filter = (('department', AutocompleteSelectFilter),)
     search_fields = ('category_name',)
+    autocomplete_fields = ('department',)
 
 
 @admin.register(Media)
-class MediaAdmin(ModelAdmin):
+class MediaAdmin(SearchableModelAdmin):
     list_display = ('media_id', 'file_name', 'ticket',
                     'uploaded_by', 'category', 'uploaded_date')
-    list_filter = ('category', 'uploaded_date')
+    list_filter = (('category', AutocompleteSelectFilter), 'uploaded_date')
     search_fields = ('file_name', 'ticket__work_order_no',
                      'uploaded_by__username')
+    autocomplete_fields = ('ticket', 'uploaded_by', 'category', 'expense')
 
 
 @admin.register(Notification)
-class NotificationAdmin(ModelAdmin):
+class NotificationAdmin(SearchableModelAdmin):
     list_display = ('notification_id', 'user', 'ticket',
                     'notification_type', 'title', 'is_read', 'created_date')
     list_filter = ('notification_type', 'is_read', 'created_date')
     search_fields = ('user__username',
                      'ticket__work_order_no', 'title', 'message')
+    autocomplete_fields = ('user', 'ticket')
 
 
 @admin.register(DashboardUpdate)
-class DashboardUpdateAdmin(ModelAdmin):
+class DashboardUpdateAdmin(SearchableModelAdmin):
     list_display = (
         'title',
         'is_vertical',
@@ -51,7 +54,7 @@ class DashboardUpdateAdmin(ModelAdmin):
     list_filter = (
         'is_active',
         'is_vertical',
-        'roles',
+        ('roles', AutocompleteSelectFilter),
         'created_at',
     )
 
@@ -99,4 +102,9 @@ class DashboardUpdateAdmin(ModelAdmin):
     )
 
 
-admin.site.register(PushSubscription)
+@admin.register(PushSubscription)
+class PushSubscriptionAdmin(SearchableModelAdmin):
+    list_display = ('subscription_id', 'user', 'is_active', 'created_date')
+    list_filter = ('is_active', 'created_date')
+    search_fields = ('user__username', 'endpoint')
+    autocomplete_fields = ('user',)
