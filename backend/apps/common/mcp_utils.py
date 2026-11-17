@@ -176,3 +176,26 @@ class McpDcrPermission:
             return True
         user = getattr(request, "user", None)
         return bool(user and user.is_authenticated and (user.is_staff or user.is_superuser))
+
+
+def patch_mcp_query_tool():
+    """
+    Patch django-mcp-server's query_tool.Count so $group ($sum: 1 / $count: 1)
+    resolves to the model's primary key ('pk') instead of hardcoded 'id',
+    fixing FieldError on models with custom primary keys (e.g. ticket_id).
+    """
+    from django.db.models import Count as DjangoCount
+    from mcp_server import query_tool
+
+    if getattr(query_tool.Count, "_pk_patched", False):
+        return
+
+    class PkSafeCount(DjangoCount):
+        _pk_patched = True
+
+        def __init__(self, expression, *args, **kwargs):
+            if expression == "id":
+                expression = "pk"
+            super().__init__(expression, *args, **kwargs)
+
+    query_tool.Count = PkSafeCount

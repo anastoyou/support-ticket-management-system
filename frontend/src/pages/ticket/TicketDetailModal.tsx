@@ -570,25 +570,61 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
         categoryName: string;
         workerId?: number;
         expenseId?: number;
+        mode?: 'upload' | 'attach-expense';
     }[] | null>(null);
 
-    const queueFilesForReview = (files: File[], categoryName: string, workerId?: number, expenseId?: number) => {
+    const queueFilesForReview = (
+        files: File[],
+        categoryName: string,
+        workerId?: number,
+        expenseId?: number,
+        mode: 'upload' | 'attach-expense' = 'upload'
+    ) => {
         if (!files || files.length === 0) return;
 
         const queueItems = files.map((file, idx) => ({
-            id: `${file.name}-${Date.now()}-${idx}`,
+            id: `${file.name}-${Date.now()}-${idx}-${Math.random().toString(36).slice(2, 6)}`,
             file,
             rotation: 0,
             previewUrl: URL.createObjectURL(file),
             categoryName,
             workerId,
-            expenseId
+            expenseId,
+            mode
         }));
         setPendingUploadQueue(queueItems);
     };
 
     const handleConfirmPendingUpload = async () => {
         if (!pendingUploadQueue || pendingUploadQueue.length === 0) return;
+        const isAttachExpenseMode = pendingUploadQueue.every(item => item.mode === 'attach-expense');
+
+        if (isAttachExpenseMode) {
+            const itemsToAttach = [...pendingUploadQueue];
+            const targetWorkerId = itemsToAttach[0]?.workerId;
+            if (targetWorkerId) {
+                setExpenseFiles(prev => ({
+                    ...prev,
+                    [targetWorkerId]: [
+                        ...(prev[targetWorkerId] || []),
+                        ...itemsToAttach.map(item => ({
+                            id: item.id,
+                            file: item.file,
+                            rotation: item.rotation,
+                            previewUrl: item.previewUrl
+                        }))
+                    ]
+                }));
+                setAddExpenseError(null);
+            } else {
+                itemsToAttach.forEach(i => {
+                    try { URL.revokeObjectURL(i.previewUrl); } catch (_) { }
+                });
+            }
+            setPendingUploadQueue(null);
+            return;
+        }
+
         const queueToUpload = [...pendingUploadQueue];
         setActionLoading(true);
         try {
@@ -615,7 +651,9 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
 
     const handleCancelPendingUpload = () => {
         if (pendingUploadQueue) {
-            pendingUploadQueue.forEach(i => URL.revokeObjectURL(i.previewUrl));
+            pendingUploadQueue.forEach(i => {
+                try { URL.revokeObjectURL(i.previewUrl); } catch (_) { }
+            });
         }
         setPendingUploadQueue(null);
     };
@@ -744,12 +782,18 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
     const [addExpenseFils, setAddExpenseFils] = useState('');
     const [addExpenseRemarks, setAddExpenseRemarks] = useState('');
     const [addExpenseRemarksError, setAddExpenseRemarksError] = useState<string | null>(null);
+    const [addExpenseError, setAddExpenseError] = useState<string | null>(null);
     const [editExpenseRemarksError, setEditExpenseRemarksError] = useState<string | null>(null);
     const [editAllocationForm, setEditAllocationForm] = useState({ planned_hours: '', remarks: '' });
     const [editAllocationVoiceFile, setEditAllocationVoiceFile] = useState<File | null>(null);
     const [deleteExistingVoiceNote, setDeleteExistingVoiceNote] = useState(false);
     const [isEditAssignRecordingPending, setIsEditAssignRecordingPending] = useState(false);
-    const [expenseFiles, setExpenseFiles] = useState<Record<number, File[]>>({});
+    const [expenseFiles, setExpenseFiles] = useState<Record<number, {
+        id: string;
+        file: File;
+        rotation: number;
+        previewUrl: string;
+    }[]>>({});
     const [replacingMediaId, setReplacingMediaId] = useState<number | null>(null);
     const [isFabOpen, setIsFabOpen] = useState(false);
 
@@ -1702,10 +1746,48 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
         queueFilesForReview(files, 'Bills', editingExpense.worker.user_id, editingExpense.expense_id);
     };
 
+    const handlePickExpenseFiles = (picked: File[], workerId: number) => {
+        const nonEmpty = picked.filter(f => f.size > 0);
+        if (nonEmpty.length === 0) return;
+        setAddExpenseError(null);
+        const hasRotatableMedia = nonEmpty.some(f => f.type.startsWith('image/') || f.type.startsWith('video/'));
+        if (hasRotatableMedia) {
+            queueFilesForReview(nonEmpty, 'Bills', workerId, undefined, 'attach-expense');
+        } else {
+            const directItems = nonEmpty.map((file, idx) => ({
+                id: `${file.name}-${Date.now()}-${idx}-${Math.random().toString(36).slice(2, 6)}`,
+                file,
+                rotation: 0,
+                previewUrl: URL.createObjectURL(file)
+            }));
+            setExpenseFiles(prev => ({
+                ...prev,
+                [workerId]: [...(prev[workerId] || []), ...directItems]
+            }));
+        }
+    };
+
+    const handleRemoveExpenseDraftFile = (workerId: number, fileId: string) => {
+        setExpenseFiles(prev => {
+            const list = prev[workerId] || [];
+            const target = list.find(item => item.id === fileId);
+            if (target) {
+                try { URL.revokeObjectURL(target.previewUrl); } catch (_) { }
+            }
+            return {
+                ...prev,
+                [workerId]: list.filter(item => item.id !== fileId)
+            };
+        });
+    };
+
     const handleAddExpense = async (e: React.FormEvent<HTMLFormElement>, workerId: number) => {
         e.preventDefault();
+        setAddExpenseError(null);
         if (!isSubDeptInLedgerBatch) {
-            showError("Cannot add expenses for current department .");
+            const msg = "Cannot add expenses for current department .";
+            setAddExpenseError(msg);
+            showError(msg);
             return;
         }
         const formData = new FormData(e.currentTarget);
@@ -1714,7 +1796,7 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
         const isReceiptRequiredForType = selectedExpTypeObj ? selectedExpTypeObj.required !== false : true;
         const isRemarksRequiredForType = selectedExpTypeObj ? selectedExpTypeObj.required !== false : false;
         const remarksVal = (formData.get('remarks') as string || addExpenseRemarks || '').trim();
-        const validFiles = (expenseFiles[workerId] || []).filter(f => f.size > 0);
+        const validFiles = (expenseFiles[workerId] || []).filter(item => item.file.size > 0);
 
         if (isRemarksRequiredForType && !remarksVal) {
             const errorMsg = `Remarks / Description is required for expense category "${selectedExpTypeObj?.expense_name || 'selected'}".`;
@@ -1723,21 +1805,27 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
             return;
         }
 
-        if (isReceiptRequiredForType && validFiles.length === 0) {
-            showError("Receipt attachment is required for this expense category.");
+        if (isReceiptRequiredForType && hasBillsCategoryForDept && validFiles.length === 0) {
+            const msg = "Receipt attachment is required for this expense category.";
+            setAddExpenseError(msg);
+            showError(msg);
+            return;
+        }
+
+        const rawAmountStr = (formData.get('amount') as string || combineDinarAndFils(addExpenseDinar, addExpenseFils));
+        const rawAmountVal = parseFloat(rawAmountStr);
+        if (isNaN(rawAmountVal) || rawAmountVal <= 0) {
+            const msg = "Please enter a valid expense amount in Dinar or Fils.";
+            setAddExpenseError(msg);
+            showError(msg);
             return;
         }
 
         setAddExpenseRemarksError(null);
+        setAddExpenseError(null);
         setActionLoading(true);
         try {
             const signal = uploadAbortRef.current?.signal;
-            const rawAmountStr = (formData.get('amount') as string || combineDinarAndFils(addExpenseDinar, addExpenseFils));
-            const rawAmountVal = parseFloat(rawAmountStr);
-            if (isNaN(rawAmountVal) || rawAmountVal <= 0) {
-                showError("Please enter a valid expense amount in Dinar or Fils.");
-                return;
-            }
             const amountToSend = rawAmountVal.toFixed(3);
             const response = await fetch(`${API_URL}/finance/expense/`, {
                 method: 'POST',
@@ -1755,27 +1843,56 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
 
             if (response.ok) {
                 const createdExpense = await response.json();
+                let failedUploads = 0;
                 if (validFiles.length > 0) {
-                    queueFilesForReview(validFiles, 'Bills', workerId, createdExpense.expense_id);
+                    for (const item of validFiles) {
+                        let fileToUpload = item.file;
+                        let rotToSave = item.rotation;
+                        if (item.rotation % 360 !== 0 && item.file.type.startsWith('image/')) {
+                            fileToUpload = await rotateImageFile(item.file, item.rotation);
+                            rotToSave = 0;
+                        }
+                        const uploaded = await uploadMedia(fileToUpload, 'Bills', workerId, createdExpense.expense_id, true, rotToSave);
+                        if (!uploaded) {
+                            failedUploads++;
+                        }
+                    }
                 }
+                const currentFiles = expenseFiles[workerId] || [];
+                setTimeout(() => {
+                    currentFiles.forEach(item => {
+                        try { URL.revokeObjectURL(item.previewUrl); } catch (_) { }
+                    });
+                }, 500);
                 setExpenseFiles(prev => { const next = { ...prev }; delete next[workerId]; return next; });
                 await refreshTicketData();
                 setIsAddExpenseModalOpen(false);
                 setSelectedExpenseTypeId('');
                 setAddExpenseRemarks('');
                 setAddExpenseRemarksError(null);
+                setAddExpenseError(null);
                 setAddExpenseDinar('');
                 setAddExpenseFils('');
+                if (failedUploads > 0) {
+                    showError(`Expense was created, but ${failedUploads} receipt file(s) failed to upload. Please attach the receipt by editing the expense.`);
+                }
             } else {
                 const errData = await response.json().catch(() => ({}));
                 const errRemarks = errData?.remarks ? (Array.isArray(errData.remarks) ? errData.remarks.join(' ') : String(errData.remarks)) : null;
                 if (errRemarks) {
                     setAddExpenseRemarksError(errRemarks);
                 }
-                showError(errRemarks || Object.values(errData).flat().join(', ') || 'Failed to create expense.');
+                const errMsg = errRemarks || Object.values(errData).flat().join(', ') || 'Failed to create expense.';
+                setAddExpenseError(errMsg);
+                showError(errMsg);
             }
         } catch (err: any) {
-            if (err?.name !== 'AbortError') console.error(err);
+            if (err?.name !== 'AbortError') {
+                console.error(err);
+                const msg = err?.message || 'Failed to create expense.';
+                setAddExpenseError(msg);
+                showError(msg);
+            }
         } finally {
             setActionLoading(false);
         }
@@ -3989,11 +4106,37 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
                 {
                     isAddExpenseModalOpen && activeWorkerId && (
                         <div className="fixed inset-0 z-[60] flex items-end sm:items-center justify-center p-0 sm:p-4">
-                            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 0.65 }} exit={{ opacity: 0 }} onClick={() => { setIsAddExpenseModalOpen(false); setSelectedExpenseTypeId(''); setAddExpenseRemarks(''); setAddExpenseRemarksError(null); }} className="absolute inset-0 bg-black touch-manipulation" />
+                            <motion.div
+                                initial={{ opacity: 0 }}
+                                animate={{ opacity: 0.65 }}
+                                exit={{ opacity: 0 }}
+                                onClick={() => {
+                                    if (actionLoading) return;
+                                    setIsAddExpenseModalOpen(false);
+                                    setSelectedExpenseTypeId('');
+                                    setAddExpenseRemarks('');
+                                    setAddExpenseRemarksError(null);
+                                    setAddExpenseError(null);
+                                }}
+                                className="absolute inset-0 bg-black touch-manipulation"
+                            />
                             <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }} className="relative bg-surface-container dark:bg-dark-surface-container border border-outline-variant dark:border-dark-outline-variant w-full max-w-md sm:max-w-lg lg:max-w-xl max-h-[92vh] sm:max-h-[88vh] p-4 sm:p-6 rounded-t-xl sm:rounded shadow-2xl overflow-y-auto scrollbar-thin">
                                 <div className="flex items-center justify-between mb-4">
                                     <h3 className="text-sm font-bold text-on-surface dark:text-dark-on-surface uppercase tracking-wider">Add Expense</h3>
-                                    <button onClick={() => { setIsAddExpenseModalOpen(false); setSelectedExpenseTypeId(''); setAddExpenseRemarks(''); setAddExpenseRemarksError(null); }} className="rounded text-outline hover:bg-surface-container-high min-h-[15px] .min-w-[44px] flex items-center justify-center cursor-pointer"><X className="w-4 h-4" /></button>
+                                    <button
+                                        type="button"
+                                        disabled={actionLoading}
+                                        onClick={() => {
+                                            setIsAddExpenseModalOpen(false);
+                                            setSelectedExpenseTypeId('');
+                                            setAddExpenseRemarks('');
+                                            setAddExpenseRemarksError(null);
+                                            setAddExpenseError(null);
+                                        }}
+                                        className="rounded text-outline hover:bg-surface-container-high min-h-[15px] .min-w-[44px] flex items-center justify-center cursor-pointer disabled:opacity-50"
+                                    >
+                                        <X className="w-4 h-4" />
+                                    </button>
                                 </div>
                                 <p className="text-xs text-outline mb-4">
                                     Adding expense for:{' '}
@@ -4009,10 +4152,21 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
                                         </span>
                                     </div>
                                 )}
+                                {addExpenseError && (
+                                    <div className="p-2.5 mb-4 rounded bg-red-500/10 border border-red-500/30 flex items-center justify-between gap-2 text-red-600 dark:text-red-400 text-xs font-medium">
+                                        <div className="flex items-center gap-2">
+                                            <AlertCircle className="w-4 h-4 shrink-0" />
+                                            <span>{addExpenseError}</span>
+                                        </div>
+                                        <button type="button" onClick={() => setAddExpenseError(null)} className="p-0.5 hover:opacity-70 cursor-pointer">
+                                            <X className="w-3.5 h-3.5" />
+                                        </button>
+                                    </div>
+                                )}
                                 <form onSubmit={e => handleAddExpense(e, activeWorkerId)} className="space-y-4">
                                     <div>
                                         <label className="block text-xs font-semibold text-outline mb-1.5">Expense Category</label>
-                                        <select required name="expense_type_id" disabled={actionLoading} value={selectedExpenseTypeId} onChange={e => { setSelectedExpenseTypeId(e.target.value); setAddExpenseRemarksError(null); }} className="w-full text-xs sm:text-sm bg-surface dark:bg-dark-surface border border-outline-variant dark:border-dark-outline-variant rounded p-3 min-h-[15px] text-on-surface dark:text-dark-on-surface focus:ring-2 focus:ring-primary/30">
+                                        <select required name="expense_type_id" disabled={actionLoading} value={selectedExpenseTypeId} onChange={e => { setSelectedExpenseTypeId(e.target.value); setAddExpenseRemarksError(null); setAddExpenseError(null); }} className="w-full text-xs sm:text-sm bg-surface dark:bg-dark-surface border border-outline-variant dark:border-dark-outline-variant rounded p-3 min-h-[15px] text-on-surface dark:text-dark-on-surface focus:ring-2 focus:ring-primary/30">
                                             <option value="">Select Expense Type</option>
                                             {filteredExpenseTypes.map(et => (
                                                 <option key={et.expense_type_id} value={et.expense_type_id}>
@@ -4043,7 +4197,7 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
                                                         placeholder="0"
                                                         disabled={actionLoading}
                                                         value={addExpenseDinar}
-                                                        onChange={e => setAddExpenseDinar(e.target.value.replace(/[^0-9]/g, ''))}
+                                                        onChange={e => { setAddExpenseDinar(e.target.value.replace(/[^0-9]/g, '')); if (addExpenseError) setAddExpenseError(null); }}
                                                         className="w-full text-xs sm:text-sm bg-surface dark:bg-dark-surface border border-outline-variant dark:border-dark-outline-variant rounded p-3 pr-14 min-h-[15px] text-on-surface dark:text-dark-on-surface focus:ring-2 focus:ring-primary/30"
                                                     />
                                                     <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-semibold text-outline pointer-events-none">
@@ -4062,7 +4216,7 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
                                                         placeholder="000"
                                                         disabled={actionLoading}
                                                         value={addExpenseFils}
-                                                        onChange={e => setAddExpenseFils(e.target.value.replace(/[^0-9]/g, '').slice(0, 3))}
+                                                        onChange={e => { setAddExpenseFils(e.target.value.replace(/[^0-9]/g, '').slice(0, 3)); if (addExpenseError) setAddExpenseError(null); }}
                                                         className="w-full text-xs sm:text-sm bg-surface dark:bg-dark-surface border border-outline-variant dark:border-dark-outline-variant rounded p-3 pr-12 min-h-[15px] text-on-surface dark:text-dark-on-surface focus:ring-2 focus:ring-primary/30"
                                                     />
                                                     <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-semibold text-outline pointer-events-none">
@@ -4081,10 +4235,23 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
 
                                         return (
                                             <div>
-                                                <label className="block text-xs font-semibold text-outline mb-1.5">Receipt Files</label>
+                                                <label className="block text-xs font-semibold text-outline mb-1.5">
+                                                    Receipt Files <span className="text-red-500 font-bold ml-0.5">*</span>
+                                                </label>
                                                 <div
                                                     className={`relative border-2 border-dashed border-outline-variant dark:border-dark-outline-variant rounded p-4 text-center hover:border-primary transition-all cursor-pointer ${actionLoading ? 'pointer-events-none opacity-50' : ''}`}
                                                     onClick={() => !actionLoading && document.getElementById(`receipt-input-modal-${activeWorkerId}`)?.click()}
+                                                    onDragOver={e => e.preventDefault()}
+                                                    onDrop={e => {
+                                                        e.preventDefault();
+                                                        if (actionLoading) return;
+                                                        const dropped = Array.from(e.dataTransfer.files || []).filter(
+                                                            f => f.type.startsWith('image/') || f.type === 'application/pdf' || f.name.toLowerCase().endsWith('.pdf')
+                                                        );
+                                                        if (dropped.length > 0) {
+                                                            handlePickExpenseFiles(dropped, activeWorkerId);
+                                                        }
+                                                    }}
                                                 >
                                                     <input
                                                         id={`receipt-input-modal-${activeWorkerId}`}
@@ -4095,21 +4262,43 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
                                                         className="sr-only"
                                                         onChange={e => {
                                                             const picked = Array.from(e.target.files || []);
-                                                            if (picked.length) setExpenseFiles(prev => ({
-                                                                ...prev,
-                                                                [activeWorkerId]: [...(prev[activeWorkerId] || []), ...picked]
-                                                            }));
+                                                            if (picked.length > 0) {
+                                                                handlePickExpenseFiles(picked, activeWorkerId);
+                                                            }
                                                             e.target.value = '';
                                                         }}
                                                     />
                                                     <p className="text-xs text-outline">📎 Click or drag receipts (images / PDFs)</p>
                                                 </div>
                                                 {(expenseFiles[activeWorkerId] || []).length > 0 && (
-                                                    <div className="flex flex-wrap gap-1.5 mt-2">
-                                                        {(expenseFiles[activeWorkerId] || []).map((f, idx) => (
-                                                            <div key={idx} className="flex items-center gap-1 px-2.5 py-1 bg-primary/10 text-primary rounded-full text-[10px] font-medium">
-                                                                <span className="truncate max-w-[120px]">{f.name}</span>
-                                                                <button type="button" disabled={actionLoading} onClick={() => setExpenseFiles(prev => ({ ...prev, [activeWorkerId]: prev[activeWorkerId].filter((_, i) => i !== idx) }))} className="text-primary/60 hover:text-red-500 cursor-pointer p-1">✕</button>
+                                                    <div className="flex flex-wrap gap-2 mt-2">
+                                                        {(expenseFiles[activeWorkerId] || []).map((item) => (
+                                                            <div key={item.id} className="flex items-center gap-2 px-2 py-1.5 bg-primary/10 text-primary rounded border border-primary/20 text-[10px] font-medium">
+                                                                {item.file.type.startsWith('image/') ? (
+                                                                    <div className="w-7 h-7 rounded bg-black/80 overflow-hidden flex items-center justify-center shrink-0">
+                                                                        <img
+                                                                            src={item.previewUrl}
+                                                                            alt={item.file.name}
+                                                                            style={{ transform: `rotate(${item.rotation}deg)` }}
+                                                                            className="max-w-full max-h-full object-contain"
+                                                                        />
+                                                                    </div>
+                                                                ) : (
+                                                                    <FileText className="w-4 h-4 shrink-0" />
+                                                                )}
+                                                                <span className="truncate max-w-[120px]" title={item.file.name}>
+                                                                    {item.file.name}
+                                                                    {item.rotation % 360 !== 0 ? ` (${item.rotation}°)` : ''}
+                                                                </span>
+                                                                <button
+                                                                    type="button"
+                                                                    disabled={actionLoading}
+                                                                    onClick={() => handleRemoveExpenseDraftFile(activeWorkerId, item.id)}
+                                                                    className="text-primary/60 hover:text-red-500 cursor-pointer p-1"
+                                                                    title="Remove file"
+                                                                >
+                                                                    ✕
+                                                                </button>
                                                             </div>
                                                         ))}
                                                     </div>
@@ -4146,6 +4335,7 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
                                                     onChange={e => {
                                                         setAddExpenseRemarks(e.target.value);
                                                         if (addExpenseRemarksError) setAddExpenseRemarksError(null);
+                                                        if (addExpenseError) setAddExpenseError(null);
                                                     }}
                                                     placeholder={isRemarksRequiredForType ? "Remarks / Description (required)" : "Remarks (optional)"}
                                                     disabled={actionLoading}
@@ -4163,7 +4353,20 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
                                         );
                                     })()}
                                     <div className="flex justify-end gap-2 pt-2">
-                                        <button type="button" onClick={() => { setIsAddExpenseModalOpen(false); setSelectedExpenseTypeId(''); setAddExpenseRemarks(''); setAddExpenseRemarksError(null); }} className="min-h-[15px] px-4 py-2 border border-outline-variant dark:border-dark-outline-variant rounded text-xs font-semibold text-on-surface dark:text-dark-on-surface hover:bg-surface-container-high active:scale-95 transition-all">Cancel</button>
+                                        <button
+                                            type="button"
+                                            disabled={actionLoading}
+                                            onClick={() => {
+                                                setIsAddExpenseModalOpen(false);
+                                                setSelectedExpenseTypeId('');
+                                                setAddExpenseRemarks('');
+                                                setAddExpenseRemarksError(null);
+                                                setAddExpenseError(null);
+                                            }}
+                                            className="min-h-[15px] px-4 py-2 border border-outline-variant dark:border-dark-outline-variant rounded text-xs font-semibold text-on-surface dark:text-dark-on-surface hover:bg-surface-container-high active:scale-95 transition-all disabled:opacity-50"
+                                        >
+                                            Cancel
+                                        </button>
                                         <button type="submit" disabled={actionLoading || !isSubDeptInLedgerBatch} className="min-h-[15px] px-4 py-2 bg-primary text-white rounded text-xs font-semibold flex items-center justify-center gap-2 hover:bg-primary-hover active:scale-95 transition-all disabled:opacity-50">
                                             {actionLoading && <Loader2 className="w-4 h-4 animate-spin text-current" />} Add Expense
                                         </button>
@@ -4856,13 +5059,15 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
 
             {/* 12. PRE-UPLOAD MEDIA ROTATION & REVIEW MODAL */}
             <AnimatePresence>
-                {pendingUploadQueue && (
+                {pendingUploadQueue && (() => {
+                    const isAttachExpenseMode = pendingUploadQueue.every(item => item.mode === 'attach-expense');
+                    return (
                     <div className="fixed inset-0 z-[120] flex items-center justify-center p-4">
                         <motion.div
                             initial={{ opacity: 0 }}
                             animate={{ opacity: 0.85 }}
                             exit={{ opacity: 0 }}
-                            onClick={handleCancelPendingUpload}
+                            onClick={() => { if (!actionLoading) handleCancelPendingUpload(); }}
                             className="fixed inset-0 bg-black/90 backdrop-blur-xs cursor-pointer"
                         />
                         <motion.div
@@ -4874,13 +5079,15 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
                             <div className="flex items-center justify-between pb-3 border-b border-outline-variant/60">
                                 <div>
                                     <h3 className="text-sm font-bold text-on-surface dark:text-dark-on-surface uppercase tracking-wider">Review & Adjust Orientation</h3>
-                                    <p className="text-[11px] text-outline">Rotate image(s) upright before uploading ({pendingUploadQueue.length} selected)</p>
+                                    <p className="text-[11px] text-outline">
+                                        Rotate image(s) upright before {isAttachExpenseMode ? 'attaching' : 'uploading'} ({pendingUploadQueue.length} selected)
+                                    </p>
                                 </div>
                                 <button
                                     type="button"
                                     onClick={handleCancelPendingUpload}
                                     disabled={actionLoading}
-                                    className="p-1.5 rounded-full hover:bg-surface-container-high text-on-surface cursor-pointer"
+                                    className="p-1.5 rounded-full hover:bg-surface-container-high text-on-surface cursor-pointer disabled:opacity-50"
                                 >
                                     <X className="w-5 h-5" />
                                 </button>
@@ -4953,7 +5160,7 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
                                     type="button"
                                     onClick={handleCancelPendingUpload}
                                     disabled={actionLoading}
-                                    className="px-4 py-2 border border-outline-variant rounded text-xs font-semibold text-on-surface hover:bg-surface-container-high cursor-pointer"
+                                    className="px-4 py-2 border border-outline-variant rounded text-xs font-semibold text-on-surface hover:bg-surface-container-high cursor-pointer disabled:opacity-50"
                                 >
                                     Cancel
                                 </button>
@@ -4963,12 +5170,16 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
                                     disabled={actionLoading}
                                     className="px-5 py-2.5 bg-primary text-white text-xs font-semibold rounded hover:bg-primary-hover active:scale-95 transition-all flex items-center gap-2 cursor-pointer disabled:opacity-50"
                                 >
-                                    {actionLoading && <Loader2 className="w-4 h-4 animate-spin text-current" />} Upload Media ({pendingUploadQueue.length})
+                                    {actionLoading && <Loader2 className="w-4 h-4 animate-spin text-current" />}
+                                    {isAttachExpenseMode
+                                        ? `Attach Media (${pendingUploadQueue.length})`
+                                        : `Upload Media (${pendingUploadQueue.length})`}
                                 </button>
                             </div>
                         </motion.div>
                     </div>
-                )}
+                    );
+                })()}
             </AnimatePresence>
 
             {/* UNIFIED CONTACT SELECTION MODAL */}
