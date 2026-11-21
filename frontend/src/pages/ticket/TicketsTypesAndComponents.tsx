@@ -84,7 +84,8 @@ export interface WorkLog {
 export interface Expense {
     expense_id: number;
     worker: UserStub;
-    expense_type: { expense_type_id: number; expense_name: string; parent?: { expense_name: string } | null; required?: boolean };
+    expense_type: { expense_type_id: number; expense_name: string; parent?: { expense_name: string } | null; required?: boolean; approve_required?: boolean };
+    expense_type_detail?: { expense_type_id?: number; expense_name?: string; approve_required?: boolean };
     amount: string;
     expense_date: string;
     remarks: string;
@@ -93,9 +94,15 @@ export interface Expense {
     receipts?: Media[] | null;
     is_claimed?: boolean;
     claim?: any;
+    claim_status?: string | null;
+    claim_detail?: { claim_id: number; status: string; reject_reason?: string | null } | null;
+    is_paid?: boolean;
     status_display?: string;
     reject_reason?: string | null;
     approval_instances?: any[];
+    current_step_name?: string | null;
+    has_current_user_approved?: boolean;
+    is_actionable_by_me?: boolean;
 }
 
 export interface MediaCategory {

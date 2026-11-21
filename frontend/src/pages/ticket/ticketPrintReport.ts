@@ -1394,18 +1394,32 @@ function composeTicketPrintHtmlDocument(
         expenses && expenses.length > 0
             ? expenses
                 .map((exp, idx) => {
-                    const statusText =
-                        exp.expense_type && (exp.expense_type as any).approve_required === false
+                    const claimStatus =
+                        exp.claim_status ||
+                        exp.claim_detail?.status ||
+                        (typeof exp.claim === 'object' && exp.claim ? exp.claim.status : null);
+                    const isPaid = Boolean(exp.is_paid || exp.status_display === 'Paid' || claimStatus === 'Paid');
+                    const approveRequired =
+                        exp.expense_type?.approve_required !== false &&
+                        exp.expense_type_detail?.approve_required !== false;
+                    const rawStatusText = isPaid
+                        ? 'Paid'
+                        : exp.approved || !approveRequired
                             ? 'Approved'
                             : exp.status_display ||
-                            (exp.approved
-                                ? 'Approved'
-                                : exp.claim?.status === 'Rejected' || exp.claim?.status === 'Rework'
-                                    ? exp.claim.status
-                                    : 'Pending Approval');
+                                        (claimStatus === 'Rejected' || claimStatus === 'Rework'
+                                            ? claimStatus
+                                            : 'Pending Approval');
+                    const statusText =
+                        rawStatusText === 'Paid'
+                            ? 'Paid & Settled'
+                            : rawStatusText === 'Rework'
+                                ? 'Rework Needed'
+                                : rawStatusText;
 
                     const rejectReasonText =
                         exp.reject_reason ||
+                        exp.claim_detail?.reject_reason ||
                         (exp.claim && (exp.claim.status === 'Rejected' || exp.claim.status === 'Rework')
                             ? exp.claim.reject_reason
                             : null);
@@ -1432,7 +1446,7 @@ function composeTicketPrintHtmlDocument(
                             </td>
                             <td class="text-center">${receiptCount > 0 ? `${receiptCount} file(s)` : 'None'}</td>
                             <td class="text-center">
-                                <span class="mini-badge ${statusText === 'Approved' ? 'badge-ok' : statusText === 'Rejected' ? 'badge-err' : 'badge-warn'}">
+                                <span class="mini-badge ${rawStatusText === 'Approved' || rawStatusText === 'Paid' ? 'badge-ok' : rawStatusText === 'Rejected' ? 'badge-err' : 'badge-warn'}">
                                     ${escapeHtml(statusText)}
                                 </span>
                             </td>

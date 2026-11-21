@@ -25,7 +25,8 @@ def get_cached_workflow_steps(workflow_id):
     if cached and (now - cached[0]) < 30:
         return cached[1]
 
-    steps = ApprovalStep.objects.filter(workflow_id=workflow_id).select_related('assigned_role').prefetch_related('assigned_users').order_by('step_order')
+    steps = ApprovalStep.objects.filter(workflow_id=workflow_id).select_related(
+        'assigned_role').prefetch_related('assigned_users').order_by('step_order')
     res = [
         {
             'step_id': s.step_id,
@@ -87,7 +88,8 @@ def serialize_user_summary(user):
 
     role_name = None
     if getattr(user, 'role', None):
-        role_name = getattr(user.role, 'role_name', None) or (user.role if isinstance(user.role, str) else None)
+        role_name = getattr(user.role, 'role_name', None) or (
+            user.role if isinstance(user.role, str) else None)
     if not role_name and hasattr(user, 'groups'):
         g = user.groups.first()
         if g:
@@ -130,7 +132,8 @@ def serialize_approval_instance_summary(inst, user=None):
         return None
     action_by_full_name = None
     if inst.action_by:
-        action_by_full_name = getattr(inst.action_by, 'full_name', '') or inst.action_by.username
+        action_by_full_name = getattr(
+            inst.action_by, 'full_name', '') or inst.action_by.username
 
     step_info = get_cached_step_info(inst.step) if inst.step else {}
     workflow_steps = []
@@ -140,7 +143,8 @@ def serialize_approval_instance_summary(inst, user=None):
     can_action = False
     if user and getattr(user, 'is_authenticated', False) and inst.status == 'Pending':
         from .services import ApprovalService
-        can_action = ApprovalService.can_user_action_step(user, inst.step, inst)
+        can_action = ApprovalService.can_user_action_step(
+            user, inst.step, inst)
 
     return {
         'instance_id': inst.instance_id,
@@ -166,7 +170,6 @@ def serialize_approval_instance_summary(inst, user=None):
     }
 
 
-
 def serialize_ticket_summary(ticket):
     if not ticket:
         return None
@@ -185,7 +188,8 @@ def serialize_ticket_summary(ticket):
 
     status_obj = getattr(ticket, 'status', None)
     status_name = status_obj.status_name if status_obj else None
-    status_short_code = getattr(status_obj, 'short_code', None) if status_obj else None
+    status_short_code = getattr(
+        status_obj, 'short_code', None) if status_obj else None
     if not status_short_code and status_name:
         STATUS_CODE_MAP = {
             'rejected': 'REJ',
@@ -292,6 +296,11 @@ class ExpenseSerializer(serializers.ModelSerializer):
     approval_instances = serializers.SerializerMethodField()
     status_display = serializers.SerializerMethodField()
     reject_reason = serializers.SerializerMethodField()
+    claim_status = serializers.SerializerMethodField()
+    claim_detail = serializers.SerializerMethodField()
+    current_step_name = serializers.SerializerMethodField()
+    has_current_user_approved = serializers.SerializerMethodField()
+    is_actionable_by_me = serializers.SerializerMethodField()
     ticket_details = serializers.SerializerMethodField()
     worker_detail = serializers.SerializerMethodField()
     added_by_detail = serializers.SerializerMethodField()
@@ -306,7 +315,6 @@ class ExpenseSerializer(serializers.ModelSerializer):
     def get_receipts(self, obj):
         return [serialize_receipt_summary(r) for r in obj.receipts.all()]
 
-
     def to_representation(self, instance):
         rep = super().to_representation(instance)
         # Populate object representations using already-computed summaries without firing nested queries
@@ -320,19 +328,43 @@ class ExpenseSerializer(serializers.ModelSerializer):
             rep['added_by'] = rep['added_by_detail']
         return rep
 
+    def _get_request_user(self):
+        request = self.context.get('request')
+        if request and getattr(request, 'user', None) and getattr(request.user, 'is_authenticated', False):
+            return request.user
+        return None
+
     def _get_sorted_approval_instances(self, obj):
         if hasattr(obj, '_cached_sorted_approval_instances'):
             return obj._cached_sorted_approval_instances
         insts = list(obj.approval_instances.all())
-        insts.sort(key=lambda x: x.created_at or timezone.now(), reverse=True)
+        insts.sort(key=lambda x: (x.created_at or timezone.now(),
+                   getattr(x, 'instance_id', 0) or 0), reverse=True)
         obj._cached_sorted_approval_instances = insts
         return insts
 
-    def get_approval_instances(self, obj):
+
+    def _get_serialized_approval_instances(self, obj):
+        user = self._get_request_user()
+        cache_key = getattr(user, 'pk', None)
+        if hasattr(obj, '_cached_serialized_approval_instances') and getattr(obj, '_cached_serialized_approval_instances_user', None) == cache_key:
+            return obj._cached_serialized_approval_instances
         insts = self._get_sorted_approval_instances(obj)
-        return [serialize_approval_instance_summary(inst) for inst in insts]
+        for inst in insts:
+            if getattr(inst, 'expense_id', None) == obj.pk and 'expense' not in inst._state.fields_cache:
+                inst._state.fields_cache['expense'] = obj
+        res = [serialize_approval_instance_summary(
+            inst, user=user) for inst in insts]
+        obj._cached_serialized_approval_instances_user = cache_key
+        obj._cached_serialized_approval_instances = res
+        return res
+
+    def get_approval_instances(self, obj):
+        return self._get_serialized_approval_instances(obj)
 
     def get_status_display(self, obj):
+        if hasattr(obj, '_cached_status_display'):
+            return obj._cached_status_display
         is_paid = getattr(obj, 'is_paid', False)
         if not is_paid and obj.claim and obj.claim.status == 'Paid':
             is_paid = True
@@ -342,23 +374,83 @@ class ExpenseSerializer(serializers.ModelSerializer):
             elif hasattr(obj, 'ledgers'):
                 is_paid = obj.ledgers.filter(status='Paid').exists()
         if is_paid:
-            return 'Paid'
-        insts = self._get_sorted_approval_instances(obj)
-        if insts:
-            pending_inst = next((i for i in insts if i.status == 'Pending'), None)
-            if pending_inst and not obj.approved:
-                return 'Pending Approval'
-            latest_inst = insts[0]
-            if latest_inst.status in ['Rejected', 'Rework']:
-                return latest_inst.status
-        if obj.approved or (obj.expense_type and not obj.expense_type.approve_required):
-            return 'Approved'
-        if obj.claim and obj.claim.status in ['Rejected', 'Rework']:
-            return obj.claim.status
-        return 'Pending Approval'
+        status_val = 'Paid'
+        elif obj.approved or (obj.expense_type and not obj.expense_type.approve_required):
+            status_val = 'Approved'
+        else:
+            insts = self._get_sorted_approval_instances(obj)
+            if insts:
+                pending_inst = next(
+                    (i for i in insts if i.status == 'Pending'), None)
+                if pending_inst:
+                    status_val = 'Pending Approval'
+                else:
+                    latest_inst = insts[0]
+                    if latest_inst.status in ['Rejected', 'Rework']:
+                        status_val = latest_inst.status
+                    elif obj.claim and obj.claim.status in ['Rejected', 'Rework']:
+                        status_val = obj.claim.status
+                    else:
+                        status_val = 'Pending Approval'
+            elif obj.claim and obj.claim.status in ['Rejected', 'Rework']:
+                status_val = obj.claim.status
+            else:
+                status_val = 'Pending Approval'
+        obj._cached_status_display = status_val
+        return status_val
 
+    def get_claim_status(self, obj):
+        return obj.claim.status if obj.claim else None
+
+    def get_claim_detail(self, obj):
+        if obj.claim:
+            return {
+                'claim_id': obj.claim.claim_id,
+                'status': obj.claim.status,
+                'reject_reason': obj.claim.reject_reason,
+            }
+        return None
+
+    def get_current_step_name(self, obj):
+        if self.get_status_display(obj) != 'Pending Approval':
+            return None
+        for inst in self._get_serialized_approval_instances(obj):
+            if inst.get('status') == 'Pending':
+                return inst.get('step_name')
+        return None
+
+    def get_has_current_user_approved(self, obj):
+        if self.get_status_display(obj) != 'Pending Approval':
+            return False
+        user = self._get_request_user()
+        if not user:
+            return False
+        username_lower = (getattr(user, 'username', '') or '').lower()
+        for inst in self._get_serialized_approval_instances(obj):
+            if inst.get('status') in ('Rework', 'Rejected'):
+                break
+            if inst.get('status') == 'Approved':
+                if inst.get('action_by') == user.pk or (
+                    username_lower and (
+                        inst.get('action_by_username') or '').lower() == username_lower
+                ):
+                    return True
+        return False
+
+    def get_is_actionable_by_me(self, obj):
+        if self.get_status_display(obj) != 'Pending Approval':
+            return False
+        user = self._get_request_user()
+        if not user:
+            return False
+        for inst in self._get_serialized_approval_instances(obj):
+            if inst.get('status') == 'Pending':
+                return bool(inst.get('can_action'))
+        return False
 
     def get_reject_reason(self, obj):
+        if self.get_status_display(obj) not in ('Rejected', 'Rework'):
+            return None
         insts = self._get_sorted_approval_instances(obj)
         for inst in insts:
             if inst.status in ['Rejected', 'Rework'] and inst.comments:
@@ -407,22 +499,27 @@ class ExpenseWriteSerializer(serializers.ModelSerializer):
         fields = '__all__'
 
     def validate(self, data):
-        ticket = data.get('ticket') or (getattr(self.instance, 'ticket', None) if self.instance else None)
-        expense_type = data.get('expense_type') or (getattr(self.instance, 'expense_type', None) if self.instance else None)
+        ticket = data.get('ticket') or (
+            getattr(self.instance, 'ticket', None) if self.instance else None)
+        expense_type = data.get('expense_type') or (
+            getattr(self.instance, 'expense_type', None) if self.instance else None)
         if ticket and expense_type and hasattr(ticket, 'department') and hasattr(expense_type, 'department') and ticket.department and expense_type.department and expense_type.department != ticket.department:
             raise serializers.ValidationError(
                 {"expense_type": f"Expense Type '{expense_type.expense_name}' does not belong to ticket department '{ticket.department.department_name}'."}
             )
 
-        expense_date = data.get('expense_date') or (getattr(self.instance, 'expense_date', None) if self.instance else None)
+        expense_date = data.get('expense_date') or (
+            getattr(self.instance, 'expense_date', None) if self.instance else None)
         if ticket and expense_date and hasattr(ticket, 'created_date') and ticket.created_date:
-            ticket_date = ticket.created_date.date() if hasattr(ticket.created_date, 'date') else ticket.created_date
+            ticket_date = ticket.created_date.date() if hasattr(
+                ticket.created_date, 'date') else ticket.created_date
             if expense_date < ticket_date:
                 raise serializers.ValidationError(
                     {"expense_date": f"Expense date ({expense_date}) cannot be before the ticket creation date ({ticket_date})."}
                 )
 
-        remarks = data.get('remarks') or (getattr(self.instance, 'remarks', None) if self.instance else None)
+        remarks = data.get('remarks') or (
+            getattr(self.instance, 'remarks', None) if self.instance else None)
         if expense_type and getattr(expense_type, 'required', False):
             if not remarks or not str(remarks).strip():
                 raise serializers.ValidationError(
@@ -503,7 +600,8 @@ class WorkerClaimSerializer(serializers.ModelSerializer):
         request = self.context.get('request')
         user = request.user if request else None
         insts = list(obj.approval_instances.all())
-        insts.sort(key=lambda x: (x.step.step_order if x.step else 0, x.created_at or timezone.now()))
+        insts.sort(key=lambda x: (x.step.step_order if x.step else 0,
+                   x.created_at or timezone.now()))
         return [serialize_approval_instance_summary(inst, user=user) for inst in insts]
 
     def get_approval_instances(self, obj):
@@ -514,7 +612,8 @@ class WorkerClaimSerializer(serializers.ModelSerializer):
         if ledgers:
             ledger = ledgers[0]
             group_name = ledger.ledger_group.group_name if ledger.ledger_group else f"Ledger Batch #{ledger.ledger_id}"
-            is_completed = bool(ledger.ledger_group and ledger.ledger_group.is_completed)
+            is_completed = bool(
+                ledger.ledger_group and ledger.ledger_group.is_completed)
             return {
                 'ledger_id': ledger.ledger_id,
                 'ledger_group_id': ledger.ledger_group_id,
@@ -543,7 +642,8 @@ class ReconciliationSerializer(serializers.ModelSerializer):
 
 
 class LedgerBatchSerializer(serializers.ModelSerializer):
-    sub_departments_detail = SubDepartmentSerializer(source='sub_departments', many=True, read_only=True)
+    sub_departments_detail = SubDepartmentSerializer(
+        source='sub_departments', many=True, read_only=True)
 
     class Meta:
         model = LedgerBatch
@@ -560,7 +660,8 @@ class LedgerBatchWriteSerializer(serializers.ModelSerializer):
         instance_pk = instance.pk if instance else None
 
         for subdept in sub_departments:
-            existing_batch = LedgerBatch.objects.exclude(pk=instance_pk).filter(sub_departments=subdept).first()
+            existing_batch = LedgerBatch.objects.exclude(
+                pk=instance_pk).filter(sub_departments=subdept).first()
             if existing_batch:
                 raise serializers.ValidationError(
                     f"Sub-department '{subdept.sub_department_name}' is already assigned to Ledger Batch '{existing_batch.batch_name}'. A sub-department cannot belong to multiple Ledger Batches."
@@ -586,7 +687,8 @@ class LedgerGroupSerializer(serializers.ModelSerializer):
         if self.instance:
             qs = qs.exclude(pk=self.instance.pk)
         if qs.exists():
-            raise serializers.ValidationError(f"A Ledger Group named '{clean_name}' already exists. Group names must be unique.")
+            raise serializers.ValidationError(
+                f"A Ledger Group named '{clean_name}' already exists. Group names must be unique.")
         return clean_name
 
     def get_ledgers_count(self, obj):
@@ -657,7 +759,8 @@ class LedgerSerializer(serializers.ModelSerializer):
         request = self.context.get('request')
         user = request.user if request else None
         insts = list(obj.approval_instances.all())
-        insts.sort(key=lambda x: (x.step.step_order if x.step else 0, x.created_at or timezone.now()))
+        insts.sort(key=lambda x: (x.step.step_order if x.step else 0,
+                   x.created_at or timezone.now()))
         return [serialize_approval_instance_summary(inst, user=user) for inst in insts]
 
 
@@ -683,7 +786,8 @@ class ApprovalStepSerializer(serializers.ModelSerializer):
         assigned_role = attrs.get('assigned_role')
         assigned_users = attrs.get('assigned_users')
         if assigned_role and assigned_users:
-            raise serializers.ValidationError("Please specify either Assigned Role (Role-wise) OR Assigned Users (User-wise), but not both.")
+            raise serializers.ValidationError(
+                "Please specify either Assigned Role (Role-wise) OR Assigned Users (User-wise), but not both.")
         return attrs
 
     def get_assigned_users_detail(self, obj):
@@ -756,7 +860,8 @@ class ApprovalInstanceSerializer(serializers.ModelSerializer):
     def get_approval_history(self, obj):
         request = self.context.get('request')
         history_cache = self.context.setdefault('_history_cache', {})
-        cache_key = f"claim_{obj.claim_id}" if obj.claim_id else (f"ledger_{obj.ledger_id}" if obj.ledger_id else (f"expense_{obj.expense_id}" if obj.expense_id else None))
+        cache_key = f"claim_{obj.claim_id}" if obj.claim_id else (
+            f"ledger_{obj.ledger_id}" if obj.ledger_id else (f"expense_{obj.expense_id}" if obj.expense_id else None))
         if cache_key and cache_key in history_cache:
             return history_cache[cache_key]
 
@@ -798,7 +903,8 @@ class ApprovalInstanceSerializer(serializers.ModelSerializer):
 
     def get_workflow_steps(self, obj):
         if obj.step and obj.step.workflow:
-            steps = sorted(obj.step.workflow.steps.all(), key=lambda s: s.step_order)
+            steps = sorted(obj.step.workflow.steps.all(),
+                           key=lambda s: s.step_order)
             return [
                 {
                     'step_id': s.step_id,
@@ -904,7 +1010,7 @@ class ApprovalInstanceSerializer(serializers.ModelSerializer):
                         'added_by': exp.added_by.full_name or exp.added_by.username if exp.added_by else None,
                         'added_by_detail': serialize_user_summary(exp.added_by),
                         'store_name': exp.responsible_store.store_name if exp.responsible_store else (exp.ticket.store.store_name if exp.ticket and exp.ticket.store else None),
-                    'store_type': exp.responsible_store.type if exp.responsible_store else (exp.ticket.store.type if exp.ticket and exp.ticket.store else None),
+                        'store_type': exp.responsible_store.type if exp.responsible_store else (exp.ticket.store.type if exp.ticket and exp.ticket.store else None),
                         'ticket': t_info,
                         'ticket_details': t_info,
                         'receipts': [serialize_receipt_summary(r) for r in exp.receipts.all()] if hasattr(exp, 'receipts') else []
@@ -981,11 +1087,13 @@ class ApprovalInstanceSerializer(serializers.ModelSerializer):
 
             receipts_data = []
             if hasattr(exp, 'receipts'):
-                receipts_data = [serialize_receipt_summary(r) for r in exp.receipts.all()]
+                receipts_data = [serialize_receipt_summary(
+                    r) for r in exp.receipts.all()]
 
             ticket_attachments = []
             if exp.ticket and hasattr(exp.ticket, 'attachments'):
-                ticket_attachments = [serialize_receipt_summary(a) for a in exp.ticket.attachments.all()]
+                ticket_attachments = [serialize_receipt_summary(
+                    a) for a in exp.ticket.attachments.all()]
 
             return {
                 'type': 'Expense',

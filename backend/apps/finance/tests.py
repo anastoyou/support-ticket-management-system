@@ -273,3 +273,172 @@ class FinancialSystemTestCase(TestCase):
 
         bundle.refresh_from_db()
         self.assertEqual(bundle.status, "Approved")
+
+
+class ExpenseApiFlowTestCase(TestCase):
+    def setUp(self):
+        from rest_framework.test import APIClient
+
+        self.client = APIClient()
+        self.role_manager, _ = Role.objects.get_or_create(role_name="Store Manager")
+        self.role_admin, _ = Role.objects.get_or_create(role_name="Office Administrator")
+
+        self.worker = User.objects.create_user(username="worker_exp", password="password123")
+        self.manager = User.objects.create_user(username="mgr_exp", password="password123", role=self.role_manager)
+        self.office = User.objects.create_user(username="office_exp", password="password123", role=self.role_admin)
+
+        self.dept = Department.objects.create(department_name="Electrical")
+        self.store = Store.objects.create(store_id="S002", store_name="Branch Two")
+        self.exp_type_req = ExpenseType.objects.create(
+            department=self.dept,
+            expense_name="Materials",
+            required=False,
+            approve_required=True,
+        )
+        self.exp_type_auto = ExpenseType.objects.create(
+            department=self.dept,
+            expense_name="Parking",
+            required=False,
+            approve_required=False,
+        )
+        self.priority = Priority.objects.create(department=self.dept, priority_name="Medium", level=2)
+        self.status = Status.objects.create(status_name="Open")
+        self.subdept = SubDepartment.objects.create(department=self.dept, sub_department_name="Wiring")
+        self.nature = WorkNature.objects.create(
+            nature_name="Socket Fix", sub_department=self.subdept, default_priority=self.priority
+        )
+        self.ticket = Ticket.objects.create(
+            work_order_no="WO-9100",
+            title="Socket Fix",
+            department=self.dept,
+            store=self.store,
+            nature=self.nature,
+            priority=self.priority,
+            status=self.status,
+            created_by=self.office,
+        )
+
+        self.exp_wf = ApprovalWorkflow.objects.create(
+            name="Expense 2-Step",
+            entity_type="Expense",
+            is_active=True,
+        )
+        self.step1 = ApprovalStep.objects.create(
+            workflow=self.exp_wf,
+            step_order=1,
+            step_name="Manager Check",
+            assigned_role=self.role_manager,
+            is_final_step=False,
+        )
+        self.step2 = ApprovalStep.objects.create(
+            workflow=self.exp_wf,
+            step_order=2,
+            step_name="Office Approval",
+            assigned_role=self.role_admin,
+            is_final_step=True,
+        )
+
+    def test_expense_status_flow_and_ticket_api(self):
+        # 1. Create expense requiring approval
+        self.client.force_authenticate(user=self.worker)
+        res = self.client.post(
+            "/api/finance/expense/",
+            {
+                "ticket": self.ticket.ticket_id,
+                "worker": self.worker.pk,
+                "expense_type": self.exp_type_req.expense_type_id,
+                "amount": "12.500",
+                "expense_date": "2026-11-21",
+                "remarks": "Cable reel",
+            },
+            format="json",
+        )
+        self.assertEqual(res.status_code, 201)
+        exp_id = res.data["expense_id"]
+
+        # Manager sees Pending Approval at Step 1 and actionable
+        self.client.force_authenticate(user=self.manager)
+        list_res = self.client.get(f"/api/finance/expense/?ticket={self.ticket.ticket_id}")
+        self.assertEqual(list_res.status_code, 200)
+        items = list_res.data["results"] if "results" in list_res.data else list_res.data
+        self.assertEqual(len(items), 1)
+        self.assertEqual(items[0]["status_display"], "Pending Approval")
+        self.assertEqual(items[0]["current_step_name"], "Manager Check")
+        self.assertTrue(items[0]["is_actionable_by_me"])
+        self.assertFalse(items[0]["has_current_user_approved"])
+
+        # Manager approves Step 1 -> moves to Step 2
+        act1 = self.client.post(
+            f"/api/finance/expense/{exp_id}/action/",
+            {"action": "APPROVED", "comments": "Looks good"},
+            format="json",
+        )
+        self.assertEqual(act1.status_code, 200)
+        self.assertEqual(act1.data["expense"]["status_display"], "Pending Approval")
+        self.assertEqual(act1.data["expense"]["current_step_name"], "Office Approval")
+        self.assertTrue(act1.data["expense"]["has_current_user_approved"])
+        self.assertFalse(act1.data["expense"]["is_actionable_by_me"])
+
+        # Office Admin sees Step 2 actionable
+        self.client.force_authenticate(user=self.office)
+        list_res2 = self.client.get(f"/api/finance/expense/?ticket={self.ticket.ticket_id}")
+        items2 = list_res2.data["results"] if "results" in list_res2.data else list_res2.data
+        self.assertEqual(items2[0]["current_step_name"], "Office Approval")
+        self.assertFalse(items2[0]["has_current_user_approved"])
+        self.assertTrue(items2[0]["is_actionable_by_me"])
+
+        # Office Admin requests Rework
+        act2 = self.client.post(
+            f"/api/finance/expense/{exp_id}/action/",
+            {"action": "REWORK", "comments": "Upload clearer bill"},
+            format="json",
+        )
+        self.assertEqual(act2.status_code, 200)
+        self.assertEqual(act2.data["expense"]["status_display"], "Rework")
+        self.assertEqual(act2.data["expense"]["reject_reason"], "Upload clearer bill")
+        self.assertIsNone(act2.data["expense"]["current_step_name"])
+
+        # Status filter for Rework returns it, Pending Approval does not
+        rework_filter = self.client.get("/api/finance/expense/?status=Rework").data
+        rework_ids = [x["expense_id"] for x in (rework_filter["results"] if "results" in rework_filter else rework_filter)]
+        self.assertIn(exp_id, rework_ids)
+
+        pending_filter = self.client.get("/api/finance/expense/?status=Pending%20Approval").data
+        pending_ids = [x["expense_id"] for x in (pending_filter["results"] if "results" in pending_filter else pending_filter)]
+        self.assertNotIn(exp_id, pending_ids)
+
+        # Worker resubmits -> back to Step 1 Pending Approval, and Manager does NOT show has_current_user_approved from prior cycle
+        self.client.force_authenticate(user=self.worker)
+        sub_res = self.client.post(f"/api/finance/expense/{exp_id}/submit/", {}, format="json")
+        self.assertEqual(sub_res.status_code, 200)
+        self.assertEqual(sub_res.data["expense"]["status_display"], "Pending Approval")
+        self.assertEqual(sub_res.data["expense"]["current_step_name"], "Manager Check")
+        self.assertIsNone(sub_res.data["expense"]["reject_reason"])
+
+        self.client.force_authenticate(user=self.manager)
+        mgr_res = self.client.get(f"/api/finance/expense/?ticket={self.ticket.ticket_id}").data
+        mgr_items = mgr_res["results"] if "results" in mgr_res else mgr_res
+        self.assertFalse(mgr_items[0]["has_current_user_approved"])
+        self.assertTrue(mgr_items[0]["is_actionable_by_me"])
+
+        # Complete Step 1 and Step 2 -> Approved
+        self.client.post(f"/api/finance/expense/{exp_id}/action/", {"action": "APPROVED"}, format="json")
+        self.client.force_authenticate(user=self.office)
+        act_final = self.client.post(f"/api/finance/expense/{exp_id}/action/", {"action": "APPROVED"}, format="json")
+        self.assertEqual(act_final.status_code, 200)
+        self.assertEqual(act_final.data["expense"]["status_display"], "Approved")
+
+        # Also test auto-approved expense marked Paid -> status_display must be Paid
+        exp_auto = Expense.objects.create(
+            ticket=self.ticket,
+            worker=self.worker,
+            added_by=self.worker,
+            expense_type=self.exp_type_auto,
+            amount=Decimal("2.000"),
+            expense_date="2026-11-21",
+            approved=True,
+            is_paid=True,
+        )
+        res_all = self.client.get(f"/api/finance/expense/?ticket={self.ticket.ticket_id}").data
+        all_items = {x["expense_id"]: x for x in (res_all["results"] if "results" in res_all else res_all)}
+        self.assertEqual(all_items[exp_auto.expense_id]["status_display"], "Paid")
