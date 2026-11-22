@@ -1,5 +1,6 @@
 from django.test import TestCase
 from django.contrib.auth import get_user_model
+from django.utils import timezone
 from decimal import Decimal
 from django.core.exceptions import ValidationError
 
@@ -348,7 +349,7 @@ class ExpenseApiFlowTestCase(TestCase):
                 "worker": self.worker.pk,
                 "expense_type": self.exp_type_req.expense_type_id,
                 "amount": "12.500",
-                "expense_date": "2026-11-21",
+                "expense_date": timezone.localdate().isoformat(),
                 "remarks": "Cable reel",
             },
             format="json",
@@ -435,7 +436,7 @@ class ExpenseApiFlowTestCase(TestCase):
             added_by=self.worker,
             expense_type=self.exp_type_auto,
             amount=Decimal("2.000"),
-            expense_date="2026-11-21",
+            expense_date=timezone.localdate().isoformat(),
             approved=True,
             is_paid=True,
         )

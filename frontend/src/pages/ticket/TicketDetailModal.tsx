@@ -1241,19 +1241,18 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
     const handleUpdateExpense = async (e: React.FormEvent) => {
         e.preventDefault();
         if (!editingExpense) return;
-            const expStatus = resolveExpenseStatus(editingExpense, user);
-            if (expStatus.isPaid || expStatus.isApproved) {
-                showError(expStatus.isPaid ? 'Paid expenses cannot be modified.' : 'Approved expenses cannot be modified.');
-                setEditingExpense(null);
-                return;
-            }
-            const canEditClaimedExpense = editingExpense.is_claimed && (claimStatus === 'Rejected' || claimStatus === 'Rework');
-            const canEditClaimedExpense = editingExpense.is_claimed && (expStatus.claimStatus === 'Rejected' || expStatus.claimStatus === 'Rework');
-            if (editingExpense.is_claimed && !canEditClaimedExpense) {
-                showError('This expense is part of an active claim bundle and cannot be modified.');
-                setEditingExpense(null);
-                return;
-            }
+        const expStatus = resolveExpenseStatus(editingExpense, user);
+        if (expStatus.isPaid || expStatus.isApproved) {
+            showError(expStatus.isPaid ? 'Paid expenses cannot be modified.' : 'Approved expenses cannot be modified.');
+            setEditingExpense(null);
+            return;
+        }
+        const canEditClaimedExpense = editingExpense.is_claimed && (expStatus.claimStatus === 'Rejected' || expStatus.claimStatus === 'Rework');
+        if (editingExpense.is_claimed && !canEditClaimedExpense) {
+            showError('This expense is part of an active claim bundle and cannot be modified.');
+            setEditingExpense(null);
+            return;
+        }
 
             const currentEditExpTypeObj = expenseTypes.find(et => String(et.expense_type_id) === String(editExpenseForm.expense_type_id)) || editingExpense.expense_type;
             const isReceiptRequiredInEdit = currentEditExpTypeObj ? currentEditExpTypeObj.required !== false : true;
@@ -1317,20 +1316,17 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
         };
 
         const handleDeleteExpense = async (expenseId: number) => {
-            const claimStatus = (typeof editingExpense?.claim === 'object' && editingExpense?.claim) ? (editingExpense.claim as any).status : null;
-            if (editingExpense?.approved || claimStatus === 'Approved') {
-                showError('Approved expenses cannot be deleted.');
-                const expStatus = editingExpense ? resolveExpenseStatus(editingExpense, user) : null;
-                if (expStatus?.isPaid || expStatus?.isApproved) {
-                    showError(expStatus.isPaid ? 'Paid expenses cannot be deleted.' : 'Approved expenses cannot be deleted.');
-                    setEditingExpense(null);
-                    return;
-                }
-                if (editingExpense?.is_claimed) {
-                    showError('Claimed expenses cannot be deleted from here. Delete or edit the bundle in Finance to release this expense.');
-                    setEditingExpense(null);
-                    return;
-                }
+            const expStatus = editingExpense ? resolveExpenseStatus(editingExpense, user) : null;
+            if (expStatus?.isPaid || expStatus?.isApproved) {
+                showError(expStatus.isPaid ? 'Paid expenses cannot be deleted.' : 'Approved expenses cannot be deleted.');
+                setEditingExpense(null);
+                return;
+            }
+            if (editingExpense?.is_claimed) {
+                showError('Claimed expenses cannot be deleted from here. Delete or edit the bundle in Finance to release this expense.');
+                setEditingExpense(null);
+                return;
+            }
                 setActionLoading(true);
                 try {
                     const response = await fetch(`${API_URL}/finance/expense/${expenseId}/`, {
@@ -2989,17 +2985,11 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
                                                                                     });
                                                                                 }
 
-                                                                                const statusText = (exp.expense_type && exp.expense_type.approve_required === false) ? 'Approved' : (exp.status_display || (exp.approved ? 'Approved' : ((exp.claim?.status === 'Rejected' || exp.claim?.status === 'Rework') ? exp.claim.status : 'Pending Approval')));
-                                                                                const isRejected = statusText === 'Rejected';
-                                                                                const isRework = statusText === 'Rework';
-                                                                                const isApproved = statusText === 'Approved';
-                                                                                const rejectReasonText = exp.reject_reason || (exp.claim && (exp.claim.status === 'Rejected' || exp.claim.status === 'Rework') ? exp.claim.reject_reason : null);
                                                                                 const expStatus = resolveExpenseStatus(exp, user);
                                                                                 const { isRejected, isRework, isApproved, isPaid, rejectReasonText } = expStatus;
 
                                                                                 return (
-                                                                                    <div key={exp.expense_id} className={`text-xs p-2 bg-surface dark:bg-dark-surface rounded border ${isRejected ? 'border-rose-300 dark:border-rose-900/50 bg-rose-50/20 dark:bg-rose-950/10' : isRework ? 'border-amber-300 dark:border-amber-900/50 bg-amber-50/20 dark:bg-amber-950/10' : 'border-outline-variant/50'}`}>
-                                                                                        <div key={exp.expense_id} className={`text-xs p-2 bg-surface dark:bg-dark-surface rounded border ${isRejected ? 'border-rose-300 dark:border-rose-900/50 bg-rose-50/20 dark:bg-rose-950/10' : isRework ? 'border-purple-300 dark:border-purple-900/50 bg-purple-50/20 dark:bg-purple-950/10' : 'border-outline-variant/50'}`}>
+                                                                                    <div key={exp.expense_id} className={`text-xs p-2 bg-surface dark:bg-dark-surface rounded border ${isRejected ? 'border-rose-300 dark:border-rose-900/50 bg-rose-50/20 dark:bg-rose-950/10' : isRework ? 'border-purple-300 dark:border-purple-900/50 bg-purple-50/20 dark:bg-purple-950/10' : 'border-outline-variant/50'}`}>
                                                                                             <div className="flex items-start justify-between gap-2">
                                                                                                 <div className="min-w-0 flex-1">
                                                                                                     <p className="font-semibold text-on-surface dark:text-dark-on-surface">{exp.expense_type.expense_name}</p>
@@ -3036,30 +3026,13 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
                                                                                                 </div>
                                                                                                 <div className="flex flex-col items-end gap-1 shrink-0">
                                                                                                     <span className="font-bold text-emerald-600 dark:text-emerald-400">{exp.amount} KWD</span>
-                                                                                                    <div className="flex flex-wrap items-center justify-end gap-1">
-                                                                                                        <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full ${isApproved
-                                                                                                            ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
-                                                                                                            : isRejected
-                                                                                                                ? 'bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-500/20'
-                                                                                                                : isRework
-                                                                                                                    ? 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20'
-                                                                                                                    : 'bg-amber-500/10 text-amber-600 dark:text-amber-400'
-                                                                                                            }`}>
-                                                                                                            {statusText}
-                                                                                                        </span>
-                                                                                                        <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full ${exp.is_claimed ? 'bg-purple-500/10 text-purple-600 dark:text-purple-400 border border-purple-500/20' : 'bg-slate-500/10 text-slate-600 dark:text-slate-400'}`}>
-                                                                                                            {exp.is_claimed ? 'Claimed' : 'Unclaimed'}
-                                                                                                        </span>
-                                                                                                    </div>
-                                                                                                    {!readOnly && !isApproved && (
-                                                                                                        {
-                                                                                                            renderFinanceStatusBadge(
-                                                                                                                expStatus.statusText,
-                                                                                                            expStatus.isActionableForMe,
-                                                                                                            expStatus.stepName,
-                                                                                                            expStatus.hasCurrentUserApproved,
-                                                                                            {align: 'end', title: expStatus.tooltip }
-                                                                                        )}
+                                                                                                    {renderFinanceStatusBadge(
+                                                                                                        expStatus.statusText,
+                                                                                                        expStatus.isActionableForMe,
+                                                                                                        expStatus.stepName,
+                                                                                                        expStatus.hasCurrentUserApproved,
+                                                                                                        { align: 'end', title: expStatus.tooltip }
+                                                                                                    )}
                                                                                                     {!readOnly && !isApproved && !isPaid && !exp.is_claimed && (
                                                                                                         <Can permission={isMyWorker ? 'maintenance.change_my_expence' : 'accounts.change_others_expence'}>
                                                                                                             <button
@@ -3085,16 +3058,15 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
                                                                                                 </div>
                                                                                             </div>
                                                                                             {(isRejected || isRework) && rejectReasonText && (
-                                                                                                <div className={`mt-2 p-1.5 rounded text-[11px] font-medium flex items-start gap-1.5 ${isRejected ? 'bg-rose-500/10 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-900/50' : 'bg-amber-500/10 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-900/50'}`}>
-                                                                                                    <div className={`mt-2 p-1.5 rounded text-[11px] font-medium flex items-start gap-1.5 ${isRejected ? 'bg-rose-500/10 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-900/50' : 'bg-purple-500/10 text-purple-700 dark:text-purple-300 border border-purple-200 dark:border-purple-900/50'}`}>
-                                                                                                        <AlertCircle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
-                                                                                                        <div>
-                                                                                                            <span className="font-bold">{isRejected ? 'Rejected:' : 'Rework:'}</span>{' '}
-                                                                                                            <span>{rejectReasonText}</span>
-                                                                                                        </div>
+                                                                                                <div className={`mt-2 p-1.5 rounded text-[11px] font-medium flex items-start gap-1.5 ${isRejected ? 'bg-rose-500/10 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-900/50' : 'bg-purple-500/10 text-purple-700 dark:text-purple-300 border border-purple-200 dark:border-purple-900/50'}`}>
+                                                                                                    <AlertCircle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+                                                                                                    <div>
+                                                                                                        <span className="font-bold">{isRejected ? 'Rejected:' : 'Rework:'}</span>{' '}
+                                                                                                        <span>{rejectReasonText}</span>
                                                                                                     </div>
-                                                                                )}
                                                                                                 </div>
+                                                                                            )}
+                                                                                        </div>
                                                                                             );
                                                                     })}
                                                                                         </div>
@@ -4532,11 +4504,9 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
                                             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 0.65 }} exit={{ opacity: 0 }} onClick={() => setEditingExpense(null)} className="absolute inset-0 bg-black touch-manipulation" />
                                             <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }} className="relative bg-surface-container dark:bg-dark-surface-container border border-outline-variant dark:border-dark-outline-variant w-full max-w-md p-4 sm:p-5 rounded-t-xl sm:rounded shadow-2xl overflow-y-auto max-h-[90vh] scrollbar-thin">
                                                 {(() => {
-                                                    const claimStatus = (typeof editingExpense.claim === 'object' && editingExpense.claim) ? (editingExpense.claim as any).status : null;
                                                     const expStatus = resolveExpenseStatus(editingExpense, user);
                                                     const claimStatus = expStatus.claimStatus;
                                                     const canEditClaimedExpense = editingExpense.is_claimed && (claimStatus === 'Rejected' || claimStatus === 'Rework');
-                                                    const isEditingLocked = editingExpense.is_claimed && !canEditClaimedExpense;
                                                     const isEditingLocked = expStatus.isPaid || expStatus.isApproved || (editingExpense.is_claimed && !canEditClaimedExpense);
 
                                                     return (
@@ -4548,7 +4518,13 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
                                                             {isEditingLocked ? (
                                                                 <div className="space-y-4">
                                                                     <div className="p-3 bg-purple-500/10 border border-purple-500/20 rounded text-purple-600 dark:text-purple-400 text-xs font-semibold flex items-center gap-2">
-                                                                        <span>🔒 Expense is tied to a claim bundle ({claimStatus || 'Claimed'}) and cannot be edited or deleted here.</span>
+                                                                        <span>
+                                                                            {expStatus.isPaid
+                                                                                ? `🔒 This expense is settled (${expStatus.displayLabel}) and cannot be edited or deleted.`
+                                                                                : expStatus.isApproved && !editingExpense.is_claimed
+                                                                                    ? '🔒 This expense is approved and cannot be edited or deleted here.'
+                                                                                    : `🔒 Expense is tied to a claim bundle (${claimStatus || 'Claimed'}) and cannot be edited or deleted here.`}
+                                                                        </span>
                                                                     </div>
                                                                     <div className="text-xs space-y-2 text-on-surface dark:text-dark-on-surface p-3 bg-surface dark:bg-dark-surface rounded border border-outline-variant/50">
                                                                         <p><strong>Category:</strong> {editingExpense.expense_type.expense_name}</p>
@@ -5627,11 +5603,6 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
                                                                         <div className="divide-y divide-outline-variant/40 dark:divide-dark-outline-variant/40 bg-surface-container dark:bg-dark-surface-container rounded border border-outline-variant dark:border-dark-outline-variant max-h-40 overflow-y-auto scrollbar-thin">
                                                                             {safeExpenses.map((exp, idx) => {
                                                                                 const expAmt = parseFloat(exp.amount) || 0;
-                                                                                const statusText = (exp.expense_type && exp.expense_type.approve_required === false) ? 'Approved' : (exp.status_display || (exp.approved ? 'Approved' : ((exp.claim?.status === 'Rejected' || exp.claim?.status === 'Rework') ? exp.claim.status : 'Pending Approval')));
-                                                                                const isRejected = statusText === 'Rejected';
-                                                                                const isRework = statusText === 'Rework';
-                                                                                const isApproved = statusText === 'Approved';
-                                                                                const rejectReasonText = exp.reject_reason || (exp.claim && (exp.claim.status === 'Rejected' || exp.claim.status === 'Rework') ? exp.claim.reject_reason : null);
                                                                                 const expStatus = resolveExpenseStatus(exp, user);
                                                                                 const { isRejected, isRework, rejectReasonText } = expStatus;
 
@@ -5644,16 +5615,6 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
                                                                                             </div>
                                                                                             <div className="flex flex-col items-end gap-0.5">
                                                                                                 <span className="font-bold text-on-surface dark:text-dark-on-surface">{expAmt.toFixed(3)} KWD</span>
-                                                                                                <span className={`text-[8px] font-bold px-1.5 py-0.2 rounded-full ${isApproved
-                                                                                                    ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
-                                                                                                    : isRejected
-                                                                                                        ? 'bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-500/20'
-                                                                                                        : isRework
-                                                                                                            ? 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20'
-                                                                                                            : 'bg-amber-500/10 text-amber-600 dark:text-amber-400'
-                                                                                                    }`}>
-                                                                                                    {statusText}
-                                                                                                </span>
                                                                                                 {renderFinanceStatusBadge(
                                                                                                     expStatus.statusText,
                                                                                                     expStatus.isActionableForMe,
@@ -5664,13 +5625,12 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
                                                                                             </div>
                                                                                         </div>
                                                                                         {(isRejected || isRework) && rejectReasonText && (
-                                                                                            <div className={`mt-1 p-1 rounded text-[10px] font-medium flex items-start gap-1 ${isRejected ? 'bg-rose-500/10 text-rose-700 dark:text-rose-300' : 'bg-amber-500/10 text-amber-700 dark:text-amber-300'}`}>
-                                                                                                <div className={`mt-1 p-1 rounded text-[10px] font-medium flex items-start gap-1 ${isRejected ? 'bg-rose-500/10 text-rose-700 dark:text-rose-300' : 'bg-purple-500/10 text-purple-700 dark:text-purple-300'}`}>
-                                                                                                    <span className="font-bold">{isRejected ? 'Rejected:' : 'Rework:'}</span>
-                                                                                                    <span>{rejectReasonText}</span>
-                                                                                                </div>
-                                                                        )}
+                                                                                            <div className={`mt-1 p-1 rounded text-[10px] font-medium flex items-start gap-1 ${isRejected ? 'bg-rose-500/10 text-rose-700 dark:text-rose-300' : 'bg-purple-500/10 text-purple-700 dark:text-purple-300'}`}>
+                                                                                                <span className="font-bold">{isRejected ? 'Rejected:' : 'Rework:'}</span>
+                                                                                                <span>{rejectReasonText}</span>
                                                                                             </div>
+                                                                                        )}
+                                                                                    </div>
                                                                                         );
                                                             })}
                                                                                     </div>

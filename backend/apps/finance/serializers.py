@@ -374,7 +374,7 @@ class ExpenseSerializer(serializers.ModelSerializer):
             elif hasattr(obj, 'ledgers'):
                 is_paid = obj.ledgers.filter(status='Paid').exists()
         if is_paid:
-        status_val = 'Paid'
+            status_val = 'Paid'
         elif obj.approved or (obj.expense_type and not obj.expense_type.approve_required):
             status_val = 'Approved'
         else:
