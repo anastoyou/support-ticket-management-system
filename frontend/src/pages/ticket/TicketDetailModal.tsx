@@ -374,7 +374,7 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
                 .catch(() => { });
         }
         if (!propLedgerBatches || propLedgerBatches.length === 0) {
-            fetch(`${API_URL}/finance/ledger-batches/?page_size=200`, { headers })
+            fetch(`${API_URL}/finance/ledger-batches/?page_size=200`, { cache: 'no-store', headers })
                 .then(r => r.ok ? r.json() : [])
                 .then(data => {
                     const list = Array.isArray(data) ? data : (Array.isArray(data?.results) ? data.results : []);

@@ -443,3 +443,271 @@ class ExpenseApiFlowTestCase(TestCase):
         res_all = self.client.get(f"/api/finance/expense/?ticket={self.ticket.ticket_id}").data
         all_items = {x["expense_id"]: x for x in (res_all["results"] if "results" in res_all else res_all)}
         self.assertEqual(all_items[exp_auto.expense_id]["status_display"], "Paid")
+
+
+class LedgerGroupBundleRemovalTestCase(TestCase):
+    def setUp(self):
+        from apps.finance.models import LedgerBatch
+
+        self.role_super, _ = Role.objects.get_or_create(role_name="Administrator")
+        self.role_office, _ = Role.objects.get_or_create(role_name="Office Administrator")
+
+        self.admin_user = User.objects.create_user(
+            username="super_admin_test", password="password123", role=self.role_super
+        )
+        self.office_user = User.objects.create_user(
+            username="office_user_test", password="password123", role=self.role_office
+        )
+        self.worker = User.objects.create_user(
+            username="tech_ledger_test", password="password123"
+        )
+
+        self.dept = Department.objects.create(department_name="Mechanical")
+        self.store = Store.objects.create(store_id="S010", store_name="Test Store")
+        self.exp_type = ExpenseType.objects.create(
+            department=self.dept, expense_name="Parts", required=False, approve_required=False
+        )
+        self.priority = Priority.objects.create(department=self.dept, priority_name="Normal", level=1)
+        self.status = Status.objects.create(status_name="Open")
+
+        self.subdept1 = SubDepartment.objects.create(department=self.dept, sub_department_name="AC")
+        self.subdept2 = SubDepartment.objects.create(department=self.dept, sub_department_name="Civil")
+        self.batch1 = LedgerBatch.objects.create(batch_name="AC Batch", active=True)
+        self.batch1.sub_departments.add(self.subdept1)
+        self.batch2 = LedgerBatch.objects.create(batch_name="Civil Batch", active=True)
+        self.batch2.sub_departments.add(self.subdept2)
+
+        self.nature1 = WorkNature.objects.create(
+            nature_name="AC Fix", sub_department=self.subdept1, default_priority=self.priority
+        )
+        self.nature2 = WorkNature.objects.create(
+            nature_name="Wall Fix", sub_department=self.subdept2, default_priority=self.priority
+        )
+        self.ticket1 = Ticket.objects.create(
+            work_order_no="WO-1001", title="AC", department=self.dept,
+            store=self.store, nature=self.nature1, priority=self.priority,
+            status=self.status, created_by=self.office_user
+        )
+        self.ticket2 = Ticket.objects.create(
+            work_order_no="WO-1002", title="Civil", department=self.dept,
+            store=self.store, nature=self.nature2, priority=self.priority,
+            status=self.status, created_by=self.office_user
+        )
+
+    def _make_approved_bundle(self, ticket, amount_str):
+        exp = Expense.objects.create(
+            ticket=ticket, worker=self.worker, added_by=self.worker,
+            expense_type=self.exp_type, amount=Decimal(amount_str),
+            expense_date=timezone.localdate().isoformat(), approved=True
+        )
+        bundle = BundleService.create_bundle(
+            worker=self.worker, expense_ids=[exp.expense_id],
+            remarks="Test bundle", created_by=self.worker
+        )
+        bundle.status = "Approved"
+        bundle.save(update_fields=["status"])
+        return bundle
+
+    def test_draft_group_with_stale_is_completed_allows_removing_bundle_and_resets_to_draft(self):
+        b1 = self._make_approved_bundle(self.ticket1, "10.000")
+        b2 = self._make_approved_bundle(self.ticket2, "20.000")
+        group = LedgerGroup.objects.create(group_name="Group 10 Repro", created_by=self.admin_user)
+
+        ledgers = LedgerService.create_ledger(
+            bundle_ids=[b1.claim_id], created_by=self.admin_user, ledger_group_id=group.ledger_group_id
+        )
+        ledger1 = ledgers[0]
+        ledger1.status = "Approved"
+        ledger1.save(update_fields=["status"])
+        group.is_completed = True
+        group.completed_at = timezone.now()
+        group.completed_by = self.admin_user
+        group.save(update_fields=["is_completed", "completed_at", "completed_by"])
+
+        # Adding a bundle to the completed group resets existing non-paid batches to Draft and clears is_completed
+        created2 = LedgerService.create_ledger(
+            bundle_ids=[b2.claim_id], created_by=self.admin_user, ledger_group_id=group.ledger_group_id
+        )
+        ledger2 = created2[0]
+        group.refresh_from_db()
+        ledger1.refresh_from_db()
+        self.assertFalse(group.is_completed)
+        self.assertEqual(ledger1.status, "Draft")
+        self.assertEqual(ledger2.status, "Draft")
+
+        # Even if stale is_completed=True existed on a Draft group, removal succeeds and resets group to Draft
+        group.is_completed = True
+        group.save(update_fields=["is_completed"])
+
+        LedgerService.remove_bundle_from_group(group.ledger_group_id, b2.claim_id, actor=self.admin_user)
+        group.refresh_from_db()
+        ledger1.refresh_from_db()
+        self.assertFalse(group.is_completed)
+        self.assertFalse(Ledger.objects.filter(pk=ledger2.ledger_id).exists())
+        self.assertEqual(ledger1.status, "Draft")
+        self.assertEqual(group.total_amount, Decimal("10.000"))
+
+    def test_admin_removing_bundle_from_completed_approved_group_resets_all_to_draft(self):
+        b1 = self._make_approved_bundle(self.ticket1, "15.000")
+        b2 = self._make_approved_bundle(self.ticket1, "25.000")
+        b3 = self._make_approved_bundle(self.ticket2, "30.000")
+        group = LedgerGroup.objects.create(group_name="Approved Group", created_by=self.admin_user)
+
+        ledgers = LedgerService.create_ledger(
+            bundle_ids=[b1.claim_id, b2.claim_id, b3.claim_id],
+            created_by=self.admin_user,
+            ledger_group_id=group.ledger_group_id
+        )
+        for lg in ledgers:
+            lg.status = "Approved"
+            lg.save(update_fields=["status"])
+        group.is_completed = True
+        group.completed_at = timezone.now()
+        group.completed_by = self.admin_user
+        group.save(update_fields=["is_completed", "completed_at", "completed_by"])
+
+        # Non-admin cannot remove bundle from completed group
+        with self.assertRaises(ValidationError):
+            LedgerService.remove_bundle_from_group(group.ledger_group_id, b1.claim_id, actor=self.office_user)
+
+        # Administrator removes b1 -> clears is_completed and resets all non-paid ledgers to Draft
+        LedgerService.remove_bundle_from_group(group.ledger_group_id, b1.claim_id, actor=self.admin_user)
+        group.refresh_from_db()
+        self.assertFalse(group.is_completed)
+        self.assertIsNone(group.completed_at)
+        self.assertEqual(group.total_amount, Decimal("55.000"))
+        for lg in group.ledgers.all():
+            self.assertEqual(lg.status, "Draft")
+
+    def test_paid_group_cannot_have_bundle_removed_even_by_admin(self):
+        b1 = self._make_approved_bundle(self.ticket1, "10.000")
+        b2 = self._make_approved_bundle(self.ticket1, "15.000")
+        group = LedgerGroup.objects.create(
+            group_name="Paid Group", created_by=self.admin_user
+        )
+        ledgers = LedgerService.create_ledger(
+            bundle_ids=[b1.claim_id, b2.claim_id], created_by=self.admin_user, ledger_group_id=group.ledger_group_id
+        )
+        ledgers[0].status = "Paid"
+        ledgers[0].save(update_fields=["status"])
+        group.is_completed = True
+        group.is_paid = True
+        group.save(update_fields=["is_completed", "is_paid"])
+
+        with self.assertRaises(ValidationError):
+            LedgerService.remove_bundle_from_group(group.ledger_group_id, b1.claim_id, actor=self.admin_user)
+        with self.assertRaises(ValidationError):
+            LedgerService.remove_bundle(ledgers[0].ledger_id, b1.claim_id, actor=self.admin_user)
+
+    def test_admin_removing_bundle_from_in_review_group_resets_to_draft(self):
+        b1 = self._make_approved_bundle(self.ticket1, "12.000")
+        b2 = self._make_approved_bundle(self.ticket2, "18.000")
+        group = LedgerGroup.objects.create(group_name="In Review Group", created_by=self.office_user)
+        ledgers = LedgerService.create_ledger(
+            bundle_ids=[b1.claim_id, b2.claim_id], created_by=self.office_user, ledger_group_id=group.ledger_group_id
+        )
+        for lg in ledgers:
+            lg.status = "In Review"
+            lg.save(update_fields=["status"])
+
+        LedgerService.remove_bundle_from_group(group.ledger_group_id, b2.claim_id, actor=self.admin_user)
+        group.refresh_from_db()
+        ledgers[0].refresh_from_db()
+        self.assertFalse(group.is_completed)
+        self.assertEqual(ledgers[0].status, "Draft")
+        self.assertEqual(group.total_amount, Decimal("12.000"))
+
+    def test_any_user_removing_draft_bundle_resets_remaining_batch_to_draft_not_approved(self):
+        from apps.finance.serializers import LedgerGroupSerializer
+
+        b1 = self._make_approved_bundle(self.ticket1, "40.000")
+        b2 = self._make_approved_bundle(self.ticket2, "15.000")
+        group = LedgerGroup.objects.create(group_name="Mixed Draft Group", created_by=self.office_user)
+        wf = ApprovalWorkflow.objects.create(name="Ledger Workflow", entity_type="Ledger", is_active=True)
+        step = ApprovalStep.objects.create(
+            workflow=wf, step_order=1, step_name="ENGG Approval", assigned_role=self.role_super, is_final_step=True
+        )
+
+        # Batch 1 approved previously, Batch 2 currently in Draft inside the same group
+        l1 = LedgerService.create_ledger(
+            bundle_ids=[b1.claim_id], created_by=self.office_user, ledger_group_id=group.ledger_group_id
+        )[0]
+        LedgerService.submit_ledger(l1.ledger_id, actor=self.office_user)
+        inst = ApprovalInstance.objects.get(ledger=l1, status="Pending")
+        ApprovalService.action_step(inst.instance_id, actor=self.admin_user, action="APPROVED", comments="OK")
+        group.refresh_from_db()
+        self.assertTrue(group.is_completed)
+
+        # Simulate pre-existing Draft Batch 2 inside the group while Batch 1 remained Approved
+        l2 = Ledger.objects.create(
+            ledger_group=group, ledger_batch=self.batch2, created_by=self.office_user,
+            total_amount=Decimal("15.000"), status="Draft"
+        )
+        l2.bundles.add(b2)
+        group.is_completed = False
+        group.save(update_fields=["is_completed"])
+
+        # Non-super user removes b2 from Draft l2 -> l2 deleted AND l1 must reset to Draft (never revert to Approved)
+        LedgerService.remove_bundle_from_group(group.ledger_group_id, b2.claim_id, actor=self.office_user)
+        l1.refresh_from_db()
+        group.refresh_from_db()
+        self.assertFalse(Ledger.objects.filter(pk=l2.ledger_id).exists())
+        self.assertEqual(l1.status, "Draft")
+        self.assertEqual(l1.approval_instances.count(), 0)
+        self.assertFalse(group.is_completed)
+        self.assertEqual(LedgerGroupSerializer(group).data["status"], "Draft")
+
+        # Must be explicitly submitted and approved to become Approved again
+        LedgerService.submit_ledger(l1.ledger_id, actor=self.office_user)
+        l1.refresh_from_db()
+        self.assertEqual(l1.status, "In Review")
+        inst2 = ApprovalInstance.objects.get(ledger=l1, status="Pending")
+        ApprovalService.action_step(inst2.instance_id, actor=self.admin_user, action="APPROVED", comments="Re-approved")
+        l1.refresh_from_db()
+        group.refresh_from_db()
+        self.assertEqual(l1.status, "Approved")
+        self.assertEqual(LedgerGroupSerializer(group).data["status"], "Approved")
+
+    def test_add_bundle_and_add_bundle_to_group_always_reset_group_to_draft_until_approved(self):
+        b1 = self._make_approved_bundle(self.ticket1, "20.000")
+        b2 = self._make_approved_bundle(self.ticket2, "30.000")
+        b3 = self._make_approved_bundle(self.ticket1, "10.000")
+        group = LedgerGroup.objects.create(group_name="Re-Approval On Add", created_by=self.admin_user)
+        wf = ApprovalWorkflow.objects.create(name="Ledger WF", entity_type="Ledger", is_active=True)
+        ApprovalStep.objects.create(
+            workflow=wf, step_order=1, step_name="Final Check", assigned_role=self.role_super, is_final_step=True
+        )
+
+        l1 = LedgerService.create_ledger(
+            bundle_ids=[b1.claim_id], created_by=self.admin_user, ledger_group_id=group.ledger_group_id
+        )[0]
+        LedgerService.submit_ledger(l1.ledger_id, actor=self.admin_user)
+        inst = ApprovalInstance.objects.get(ledger=l1, status="Pending")
+        ApprovalService.action_step(inst.instance_id, actor=self.admin_user, action="APPROVED", comments="OK")
+        group.refresh_from_db()
+        self.assertTrue(group.is_completed)
+
+        # Adding bundle of a different batch via add_bundle_to_group resets existing l1 back to Draft too
+        LedgerService.add_bundle_to_group(group.ledger_group_id, bundle_id=b2.claim_id, actor=self.admin_user)
+        l1.refresh_from_db()
+        group.refresh_from_db()
+        self.assertFalse(group.is_completed)
+        self.assertEqual(l1.status, "Draft")
+        self.assertEqual(l1.approval_instances.count(), 0)
+        for lg in group.ledgers.all():
+            self.assertEqual(lg.status, "Draft")
+
+        # Approve all, then add_bundle directly onto a single batch -> resets sibling batches in group to Draft
+        for lg in group.ledgers.all():
+            LedgerService.submit_ledger(lg.ledger_id, actor=self.admin_user)
+            pending = ApprovalInstance.objects.get(ledger=lg, status="Pending")
+            ApprovalService.action_step(pending.instance_id, actor=self.admin_user, action="APPROVED", comments="OK")
+        group.refresh_from_db()
+        self.assertTrue(group.is_completed)
+
+        LedgerService.add_bundle(l1.ledger_id, b3.claim_id, actor=self.admin_user)
+        group.refresh_from_db()
+        self.assertFalse(group.is_completed)
+        for lg in group.ledgers.all():
+            self.assertEqual(lg.status, "Draft")
+            self.assertEqual(lg.approval_instances.count(), 0)

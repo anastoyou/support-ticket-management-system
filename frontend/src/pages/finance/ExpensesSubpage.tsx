@@ -194,7 +194,7 @@ export const ExpensesSubpage: React.FC<ExpensesSubpageProps> = ({
   const [loadingDropdowns, setLoadingDropdowns] = useState<boolean>(false);
 
   const ledgerBatches = useMemo(() => {
-    return (propLedgerBatches && propLedgerBatches.length > 0) ? propLedgerBatches : fetchedLedgerBatches;
+    return fetchedLedgerBatches.length > 0 ? fetchedLedgerBatches : (propLedgerBatches || []);
   }, [propLedgerBatches, fetchedLedgerBatches]);
 
   // Dynamic ticket search states
@@ -264,7 +264,7 @@ export const ExpensesSubpage: React.FC<ExpensesSubpageProps> = ({
         fetch(`${API_URL}/finance/expensetype/?page_size=all`, { headers }).then(res => res.ok ? res.json() : []),
         fetch(`${API_URL}/accounts/customuser/?page_size=all`, { headers }).then(res => res.ok ? res.json() : []),
         fetch(`${API_URL}/stores/store/?page_size=all`, { headers }).then(res => res.ok ? res.json() : []),
-        fetch(`${API_URL}/finance/ledger-batches/?page_size=200`, { headers }).then(res => res.ok ? res.json() : [])
+        fetch(`${API_URL}/finance/ledger-batches/?page_size=200`, { cache: 'no-store', headers }).then(res => res.ok ? res.json() : [])
       ]).then(([ticketsRes, expTypesRes, usersRes, storesRes, batchesRes]) => {
         const rawTickets = Array.isArray(ticketsRes) ? ticketsRes : (ticketsRes?.results || []);
         setTicketsList(rawTickets);

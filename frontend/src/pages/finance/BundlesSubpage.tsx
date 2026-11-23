@@ -1258,13 +1258,15 @@ export const BundlesSubpage: React.FC<BundlesSubpageProps> = ({
     }
 
     const fetchBatches = async () => {
-      if (ledgerBatches.length > 0) return;
-      setIsLoadingBatches(true);
+      if (ledgerBatches.length === 0) setIsLoadingBatches(true);
       try {
         const headers: Record<string, string> = { 'Content-Type': 'application/json' };
         if (token) headers['Authorization'] = `Token ${token}`;
         const baseApi = API_URL || '';
-        const res = await fetch(`${baseApi}/finance/ledger-batches/?page_size=100`, { headers });
+        const res = await fetch(`${baseApi}/finance/ledger-batches/?page_size=200`, {
+          cache: 'no-store',
+          headers
+        });
         if (res.ok) {
           const data = await res.json();
           const results = Array.isArray(data) ? data : (data.results || []);

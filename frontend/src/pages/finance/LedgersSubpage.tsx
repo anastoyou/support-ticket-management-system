@@ -522,7 +522,7 @@ export const LedgersSubpage: React.FC<LedgersSubpageProps> = ({
   const [loadingGroups, setLoadingGroups] = useState<boolean>(false);
   const searchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Fallback Ledger Batches State
+  // Fallback / Freshly Refreshed Ledger Batches State
   const [internalBatches, setInternalBatches] = useState<LedgerBatchItem[]>(ledgerBatches || []);
   const batchesFetchedRef = useRef<boolean>(false);
 
@@ -532,11 +532,16 @@ export const LedgersSubpage: React.FC<LedgersSubpageProps> = ({
     }
   }, [ledgerBatches]);
 
-  const fetchLedgerBatches = async () => {
-    if (!API_URL || batchesFetchedRef.current) return;
+  const effectiveLedgerBatches = useMemo(() => {
+    return (internalBatches && internalBatches.length > 0 ? internalBatches : ledgerBatches) || [];
+  }, [internalBatches, ledgerBatches]);
+
+  const fetchLedgerBatches = async (force = false) => {
+    if (!API_URL || (!force && batchesFetchedRef.current)) return;
     batchesFetchedRef.current = true;
     try {
-      const res = await fetch(`${API_URL}/finance/ledger-batches/?page_size=100`, {
+      const res = await fetch(`${API_URL}/finance/ledger-batches/?page_size=200`, {
+        cache: 'no-store',
         headers: {
           'Authorization': `Token ${token}`,
           'Content-Type': 'application/json'
@@ -1782,7 +1787,7 @@ export const LedgersSubpage: React.FC<LedgersSubpageProps> = ({
         case 'target_batch': {
           const getBatch = (exp: ExpenseItem) => {
             return bundleItem.ledgerBatches.find(bb => {
-              const batchObj = (ledgerBatches || internalBatches || []).find(bItem => bItem.batch_name === bb.batchName);
+              const batchObj = effectiveLedgerBatches.find(bItem => bItem.batch_name === bb.batchName);
               const sds = (batchObj?.sub_departments || []).map(sd => typeof sd === 'number' ? sd : (sd as any).sub_department_id);
               const expSdId = exp.ticket_details?.sub_department_id ?? exp.sub_department_id;
               return expSdId && sds.includes(Number(expSdId));
@@ -1983,7 +1988,7 @@ export const LedgersSubpage: React.FC<LedgersSubpageProps> = ({
       await Promise.all([
         onRefresh ? onRefresh() : Promise.resolve(),
         fetchLedgerGroups(''),
-        fetchLedgerBatches()
+        fetchLedgerBatches(true)
       ]);
     } finally {
       setIsRefreshingAssemble(false);
@@ -2068,7 +2073,7 @@ export const LedgersSubpage: React.FC<LedgersSubpageProps> = ({
 
   // Classification logic for Assemble Modal
   const classificationResult = useMemo(() => {
-    const effectiveBatches = (ledgerBatches && ledgerBatches.length > 0 ? ledgerBatches : internalBatches) || [];
+    const effectiveBatches = effectiveLedgerBatches;
     if (selectedBundleIds.length === 0) {
       return {
         totalExpenses: 0,
@@ -2254,7 +2259,7 @@ export const LedgersSubpage: React.FC<LedgersSubpageProps> = ({
       totalAmount: sumTotal,
       hasUnmapped: unmapped.length > 0,
     };
-  }, [selectedBundleIds, bundles, ledgerBatches, internalBatches]);
+  }, [selectedBundleIds, bundles, effectiveLedgerBatches]);
 
   // Active unmapped sub-department (defaults to the first one)
   const activeUnmappedSubDept = useMemo(() => {
@@ -2867,11 +2872,18 @@ export const LedgersSubpage: React.FC<LedgersSubpageProps> = ({
 
                           <td className="px-4 py-3 text-right" onClick={(e) => e.stopPropagation()}>
                             <div className="flex items-center justify-end gap-1.5 flex-wrap">
-                              {/* Add Bundle to Group Button (If approved, requires super_permission) */}
+                              {/* Add Bundle to Group Button (If in review or approved, requires super_permission) */}
                               {(() => {
                                 const isGroupApproved = groupStatus === 'Approved' || cluster.allApproved || cluster.isCompleted;
-                                const isPaidOrInReview = isGroupPaid || cluster.ledgers.some(l => l.status === 'Paid' || l.status === "In Review");
-                                if (isPaidOrInReview) return null;
+                                const isGroupOrBatchPaid = isGroupPaid || cluster.ledgers.some(l => l.status === 'Paid');
+                                if (isGroupOrBatchPaid) return null;
+
+                                const requiresSuperPermission =
+                                  isGroupApproved ||
+                                  isGroupInReview ||
+                                  cluster.ledgers.some(
+                                    l => l.status === 'Approved' || l.status === 'In Review' || l.status === 'Submitted'
+                                  );
 
                                 const addBundleBtn = (
                                   <button
@@ -2885,7 +2897,7 @@ export const LedgersSubpage: React.FC<LedgersSubpageProps> = ({
                                   </button>
                                 );
 
-                                return isGroupApproved ? (
+                                return requiresSuperPermission ? (
                                   <Can permission="super_permission">
                                     {addBundleBtn}
                                   </Can>
@@ -3288,13 +3300,22 @@ export const LedgersSubpage: React.FC<LedgersSubpageProps> = ({
                                           </span>
                                         ) : null}
 
-                                        {/* Remove Bundle action (If approved, requires super_permission) */}
+                                        {/* Remove Bundle action (If in review or approved, requires super_permission) */}
                                         {(() => {
-                                          if (groupStatus === "In Review" || isGroupPaid) return null;
+                                          if (isGroupPaid) return null;
                                           const targetLedger = cluster.ledgers.find(l => (l.bundles || []).some((b: any) => (b.claim_id || b.id) === bundleItem.bundleId));
                                           if (targetLedger?.status === 'Paid') return null;
 
-                                          const isBundleApproved = groupStatus === 'Approved' || cluster.allApproved || cluster.isCompleted || targetLedger?.status === 'Approved';
+                                          const requiresSuperPermission = (
+                                            groupStatus === 'In Review' ||
+                                            isGroupInReview ||
+                                            groupStatus === 'Approved' ||
+                                            cluster.allApproved ||
+                                            cluster.isCompleted ||
+                                            targetLedger?.status === 'Approved' ||
+                                            targetLedger?.status === 'In Review' ||
+                                            targetLedger?.status === 'Submitted'
+                                          );
                                           const isRemovingBundle = removingBundleKey === `${cluster.groupId}_${bundleItem.bundleId}`;
 
                                           const removeBundleBtn = (
@@ -3338,7 +3359,7 @@ export const LedgersSubpage: React.FC<LedgersSubpageProps> = ({
                                             </button>
                                           );
 
-                                          return isBundleApproved ? (
+                                          return requiresSuperPermission ? (
                                             <Can permission="super_permission">
                                               {removeBundleBtn}
                                             </Can>
@@ -3451,7 +3472,7 @@ export const LedgersSubpage: React.FC<LedgersSubpageProps> = ({
                                                 const parentLedger = cluster.ledgers.find(l => (l.expenses || []).some(e => e.expense_id === exp.expense_id));
                                                 const matchingBatch = parentLedger?.ledger_batch_detail?.batch_name
                                                   || bundleItem.ledgerBatches.find(bb => {
-                                                    const batchObj = (ledgerBatches || internalBatches || []).find(b => b.batch_name === bb.batchName);
+                                                    const batchObj = effectiveLedgerBatches.find(b => b.batch_name === bb.batchName);
                                                     const sds = (batchObj?.sub_departments || []).map(sd => typeof sd === 'number' ? sd : (sd as any).sub_department_id);
                                                     const expSdId = exp.ticket_details?.sub_department_id ?? exp.sub_department_id;
                                                     return expSdId && sds.includes(Number(expSdId));
@@ -4721,7 +4742,7 @@ export const LedgersSubpage: React.FC<LedgersSubpageProps> = ({
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
                         {classificationResult.classifiedBatches.map(group => (
                           <div
-                            key={group.batch.ledger_batch_id}
+                            key={(group.batch as any).batch_id ?? group.batch.ledger_batch_id ?? group.batch.batch_name}
                             className="p-2 rounded bg-surface-container border border-outline-variant/60 flex items-center justify-between text-xs"
                           >
                             <div>

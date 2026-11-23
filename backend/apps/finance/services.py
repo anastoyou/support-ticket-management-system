@@ -436,7 +436,7 @@ class BundleService:
 
             if bundle.ledgers.exists():
                 for lg in bundle.ledgers.all():
-                    if getattr(lg.ledger_group, 'is_completed', False) or lg.status == 'Paid':
+                    if LedgerService.is_group_completed(lg.ledger_group) or lg.status == 'Paid':
                         raise ValidationError(
                             f"This bundle is attached to Ledger Batch #{lg.ledger_id} which is completed/paid and cannot be modified.")
 
@@ -529,7 +529,7 @@ class BundleService:
                     "Cannot remove the only expense. Please delete the Bundle instead.")
 
             for lg in bundle.ledgers.all():
-                if getattr(lg.ledger_group, 'is_completed', False) or lg.status == 'Paid':
+                if LedgerService.is_group_completed(lg.ledger_group) or lg.status == 'Paid':
                     raise ValidationError(
                         f"Bundle #{bundle_id} is attached to a completed/paid Ledger Batch and cannot be modified.")
 
@@ -644,6 +644,65 @@ class LedgerService:
         if role_name in ('administrator', 'admin'):
             return True
         return user.has_perm('finance.super_permission') or user.has_perm('super_permission')
+
+    @classmethod
+    def is_group_completed(cls, group):
+        """
+        A group is truly completed only when is_completed is True and no child ledger
+        remains in a non-approved/non-paid state.
+        """
+        if not group or not getattr(group, 'is_completed', False):
+            return False
+        if getattr(group, 'is_paid', False):
+            return True
+        return not group.ledgers.exclude(status__in=['Approved', 'Paid']).exists()
+
+    @classmethod
+    def _ensure_group_editable(cls, group, actor, action_label="modified"):
+        if not group:
+            return
+        if getattr(group, 'is_paid', False):
+            raise ValidationError(
+                f"Ledger Group '{group.group_name}' is already 'Paid' and cannot be {action_label}.")
+        if cls.is_group_completed(group) and not cls.has_super_permission(actor):
+            raise ValidationError(
+                f"Ledger Group '{group.group_name}' is completed and locked. Only administrators can modify it.")
+
+    @classmethod
+    def _reset_ledger_to_draft(cls, ledger):
+        """
+        Resets a non-paid Ledger batch to 'Draft' and clears stale approval instances
+        so it stays in Draft until submitted and approved.
+        """
+        if not ledger or ledger.status == 'Paid':
+            return
+        if ledger.status != 'Draft' or ledger.approval_instances.exists():
+            ledger.status = 'Draft'
+            ledger.approval_instances.all().delete()
+            ledger.save(update_fields=['status'])
+
+    @classmethod
+    def _reset_group_to_draft(cls, group, reset_all_ledgers=False, update_total=True):
+        """
+        Clears group completion flags and optionally resets all non-paid ledgers
+        in the group back to Draft for re-approval.
+        """
+        if not group:
+            return
+        if group.is_completed or group.completed_at is not None or group.completed_by_id is not None:
+            group.is_completed = False
+            group.completed_at = None
+            group.completed_by = None
+            group.save(update_fields=['is_completed', 'completed_at', 'completed_by'])
+
+        if reset_all_ledgers:
+            for l in group.ledgers.select_for_update().exclude(status='Paid'):
+                cls._reset_ledger_to_draft(l)
+
+        if update_total:
+            group.total_amount = sum(
+                (l.total_amount for l in group.ledgers.all()), Decimal('0.000'))
+            group.save(update_fields=['total_amount'])
 
     @classmethod
     def recalculate_ledger_total(cls, ledger):
@@ -767,9 +826,13 @@ class LedgerService:
 
             existing_batch_map = {}
             if ledger_group:
+                if getattr(ledger_group, 'is_paid', False):
+                    raise ValidationError(
+                        f"Ledger Group '{ledger_group.group_name}' is already 'Paid' and cannot be modified."
+                    )
                 group_has_approved = ledger_group.ledgers.filter(
                     status='Approved').exists()
-                if group_has_approved and not cls.has_super_permission(created_by):
+                if (group_has_approved or cls.is_group_completed(ledger_group)) and not cls.has_super_permission(created_by):
                     raise ValidationError(
                         f"Ledger Group '{ledger_group.group_name}' is Approved. Only users with super_permission can add bundles."
                     )
@@ -796,10 +859,7 @@ class LedgerService:
                         )
                     ledger.expenses.add(*batch_exp_list)
                     ledger.bundles.add(*batch_bundle_list)
-                    if ledger.status in ['Approved', 'In Review', 'Submitted']:
-                        ledger.status = 'Draft'
-                        ledger.approval_instances.all().delete()
-                        ledger.save(update_fields=['status'])
+                    cls._reset_ledger_to_draft(ledger)
                     cls.recalculate_ledger_total(ledger)
                     created_ledgers.append(ledger)
                 else:
@@ -832,10 +892,8 @@ class LedgerService:
                 pk__in=[e.pk for e in expenses]).update(is_claimed=True)
 
             if ledger_group:
-                group_total = sum(
-                    l.total_amount for l in ledger_group.ledgers.all())
-                ledger_group.total_amount = group_total
-                ledger_group.save(update_fields=['total_amount'])
+                cls._reset_group_to_draft(
+                    ledger_group, reset_all_ledgers=True, update_total=True)
 
             return created_ledgers
 
@@ -876,9 +934,8 @@ class LedgerService:
         """
         with transaction.atomic():
             ledger = Ledger.objects.select_for_update().get(pk=ledger_id)
-            if ledger.ledger_group and getattr(ledger.ledger_group, 'is_completed', False):
-                raise ValidationError(
-                    f"Ledger Group '{ledger.ledger_group.group_name}' is completed and locked. Expenses cannot be added.")
+            cls._ensure_group_editable(
+                ledger.ledger_group, actor, action_label="modified")
             if ledger.status == 'Paid':
                 raise ValidationError(
                     f"Ledger #{ledger_id} is in status '{ledger.status}' and cannot be modified.")
@@ -899,6 +956,9 @@ class LedgerService:
                 ledger.save(update_fields=['status'])
 
             cls.recalculate_ledger_total(ledger)
+            if ledger.ledger_group:
+                cls._reset_group_to_draft(
+                    ledger.ledger_group, reset_all_ledgers=False, update_total=True)
 
             create_audit_event(
                 'Ledger', ledger.ledger_id, 'EXPENSE_ADDED', actor=actor,
@@ -915,9 +975,8 @@ class LedgerService:
         """
         with transaction.atomic():
             ledger = Ledger.objects.select_for_update().get(pk=ledger_id)
-            if ledger.ledger_group and getattr(ledger.ledger_group, 'is_completed', False):
-                raise ValidationError(
-                    f"Ledger Group '{ledger.ledger_group.group_name}' is completed and locked. Expenses cannot be removed.")
+            cls._ensure_group_editable(
+                ledger.ledger_group, actor, action_label="modified")
             if ledger.status == 'Paid':
                 raise ValidationError(
                     f"Ledger #{ledger_id} is in status '{ledger.status}' and cannot be modified.")
@@ -968,6 +1027,9 @@ class LedgerService:
                 ledger.save(update_fields=['status'])
 
             cls.recalculate_ledger_total(ledger)
+            if ledger.ledger_group:
+                cls._reset_group_to_draft(
+                    ledger.ledger_group, reset_all_ledgers=False, update_total=True)
 
             create_audit_event(
                 'Ledger', ledger.ledger_id, 'EXPENSE_REMOVED', actor=actor,
@@ -985,9 +1047,8 @@ class LedgerService:
         """
         with transaction.atomic():
             ledger = Ledger.objects.select_for_update().get(pk=ledger_id)
-            if ledger.ledger_group and getattr(ledger.ledger_group, 'is_completed', False):
-                raise ValidationError(
-                    f"Ledger Group '{ledger.ledger_group.group_name}' is completed and locked. Bundles cannot be added.")
+            cls._ensure_group_editable(
+                ledger.ledger_group, actor, action_label="added")
             if ledger.status == 'Paid':
                 raise ValidationError(
                     f"Ledger #{ledger_id} is in status '{ledger.status}' and cannot be modified.")
@@ -1055,18 +1116,13 @@ class LedgerService:
                     pk__in=[e.pk for e in new_expenses]).update(is_claimed=True)
                 added_amount = sum(e.amount for e in new_expenses)
 
-            # If ledger was approved or in review, reset to Draft for re-approval
-            if ledger.status in ['Approved', 'In Review', 'Submitted']:
-                ledger.status = 'Draft'
-                ledger.approval_instances.all().delete()
-                ledger.save(update_fields=['status'])
+            # Reset ledger and sibling batches in its group to Draft until re-approved
+            cls._reset_ledger_to_draft(ledger)
 
             cls.recalculate_ledger_total(ledger)
             if ledger.ledger_group:
-                group_total = sum(
-                    l.total_amount for l in ledger.ledger_group.ledgers.all())
-                ledger.ledger_group.total_amount = group_total
-                ledger.ledger_group.save(update_fields=['total_amount'])
+                cls._reset_group_to_draft(
+                    ledger.ledger_group, reset_all_ledgers=True, update_total=True)
 
             create_audit_event(
                 'Ledger', ledger.ledger_id, 'BUNDLE_ADDED', actor=actor,
@@ -1093,9 +1149,7 @@ class LedgerService:
 
         with transaction.atomic():
             group = LedgerGroup.objects.select_for_update().get(pk=ledger_group_id)
-            if group.is_completed:
-                raise ValidationError(
-                    f"Ledger Group '{group.group_name}' is completed and locked. Bundles cannot be added.")
+            cls._ensure_group_editable(group, actor, action_label="added")
             if group.ledgers.filter(status='Approved').exists() and not cls.has_super_permission(actor):
                 raise ValidationError(
                     f"Ledger Group '{group.group_name}' is Approved. Only users with super_permission can add bundles.")
@@ -1204,10 +1258,7 @@ class LedgerService:
                     ledger.expenses.add(*exp_list)
                     ledger.bundles.add(*bundle_set)
 
-                    if ledger.status in ['Approved', 'In Review', 'Submitted']:
-                        ledger.status = 'Draft'
-                        ledger.approval_instances.all().delete()
-                        ledger.save(update_fields=['status'])
+                    cls._reset_ledger_to_draft(ledger)
                     cls.recalculate_ledger_total(ledger)
                     affected_ledgers.append(ledger)
                 else:
@@ -1231,10 +1282,9 @@ class LedgerService:
                 Expense.objects.filter(
                     pk__in=[e.pk for e in all_added_expenses]).update(is_claimed=True)
 
-            # Recalculate group total_amount
-            group_total = sum(l.total_amount for l in group.ledgers.all())
-            group.total_amount = group_total
-            group.save(update_fields=['total_amount'])
+            # Clear group completion state, reset all non-paid batches to Draft, and update group total
+            cls._reset_group_to_draft(
+                group, reset_all_ledgers=True, update_total=True)
 
             create_audit_event(
                 'LedgerGroup', group.ledger_group_id, 'BUNDLE_ADDED_TO_GROUP', actor=actor,
@@ -1249,16 +1299,16 @@ class LedgerService:
     def remove_bundle_from_group(cls, group_id, bundle_id, actor=None, ip_address=None):
         """
         Detaches a bundle completely from all ledger batches within the specified Ledger Group.
-        If any affected ledger batch was Approved, its status is reset to Draft for re-approval.
+        Clears group completion lock and resets all remaining non-paid ledgers back to Draft
+        so the group stays in Draft until submitted and approved.
         """
         with transaction.atomic():
             group = LedgerGroup.objects.select_for_update().get(pk=group_id)
-            if getattr(group, 'is_completed', False):
-                raise ValidationError(
-                    f"Ledger Group '{group.group_name}' is completed and locked. Bundles cannot be removed.")
+            cls._ensure_group_editable(group, actor, action_label="removed")
 
             bundle = WorkerClaim.objects.select_for_update().get(pk=bundle_id)
             ledgers = list(group.ledgers.select_for_update().all())
+            is_super_actor = cls.has_super_permission(actor)
 
             # Check if this is the only bundle in the group
             total_bundles = sum(l.bundles.count() for l in ledgers)
@@ -1277,7 +1327,7 @@ class LedgerService:
                         raise ValidationError(
                             f"Cannot remove Bundle #{bundle_id}: Ledger Batch '{batch_name}' is already 'Paid' and settled."
                         )
-                    if l.status == 'Approved' and not cls.has_super_permission(actor):
+                    if l.status == 'Approved' and not is_super_actor:
                         raise ValidationError(
                             f"Cannot remove Bundle #{bundle_id}: Ledger Batch '{batch_name}' is Approved. Only users with super_permission can remove bundles from an approved ledger."
                         )
@@ -1294,14 +1344,16 @@ class LedgerService:
                     for exp in matching_expenses:
                         l.expenses.remove(exp)
 
-                    # If ledger was approved or in review, reset to Draft for re-approval
-                    if l.status in ['Approved', 'In Review', 'Submitted']:
-                        l.status = 'Draft'
+                    if not l.bundles.exists() and not l.expenses.exists():
                         l.approval_instances.all().delete()
-                        l.save(update_fields=['status'])
-
-                    cls.recalculate_ledger_total(l)
+                        l.delete()
+                    else:
+                        cls._reset_ledger_to_draft(l)
+                        cls.recalculate_ledger_total(l)
                     affected_count += 1
+
+            cls._reset_group_to_draft(
+                group, reset_all_ledgers=True, update_total=True)
 
             create_audit_event(
                 'LedgerGroup', group.ledger_group_id, 'BUNDLE_REMOVED_FROM_GROUP', actor=actor,
@@ -1318,13 +1370,14 @@ class LedgerService:
         """
         with transaction.atomic():
             ledger = Ledger.objects.select_for_update().get(pk=ledger_id)
-            if ledger.ledger_group and getattr(ledger.ledger_group, 'is_completed', False):
-                raise ValidationError(
-                    f"Ledger Group '{ledger.ledger_group.group_name}' is completed and locked. Bundles cannot be removed.")
+            cls._ensure_group_editable(
+                ledger.ledger_group, actor, action_label="removed")
+            is_super_actor = cls.has_super_permission(actor)
+
             if ledger.status == 'Paid':
                 raise ValidationError(
                     f"Ledger #{ledger_id} is in status '{ledger.status}' and cannot be modified.")
-            if ledger.status == 'Approved' and not cls.has_super_permission(actor):
+            if ledger.status == 'Approved' and not is_super_actor:
                 raise ValidationError(
                     f"Ledger #{ledger_id} is Approved. Only users with super_permission can remove bundles from an approved ledger.")
 
@@ -1342,12 +1395,12 @@ class LedgerService:
                 if exp in ledger.expenses.all():
                     ledger.expenses.remove(exp)
 
-            if ledger.status in ['Approved', 'In Review', 'Submitted']:
-                ledger.status = 'Draft'
-                ledger.approval_instances.all().delete()
-                ledger.save(update_fields=['status'])
+            cls._reset_ledger_to_draft(ledger)
 
             cls.recalculate_ledger_total(ledger)
+            if ledger.ledger_group:
+                cls._reset_group_to_draft(
+                    ledger.ledger_group, reset_all_ledgers=True, update_total=True)
 
             create_audit_event(
                 'Ledger', ledger.ledger_id, 'BUNDLE_REMOVED', actor=actor,
@@ -1371,7 +1424,7 @@ class LedgerService:
                     f"Ledger #{ledger_id} is in status '{ledger.status}' and cannot change groups.")
 
             old_group = ledger.ledger_group
-            if old_group and getattr(old_group, 'is_completed', False):
+            if cls.is_group_completed(old_group):
                 raise ValidationError(
                     f"Ledger Group '{old_group.group_name}' is completed and locked. Batches cannot be removed or reassigned.")
 
@@ -1394,7 +1447,7 @@ class LedgerService:
                     raise ValidationError(
                         f"Ledger Group #{ledger_group_id} does not exist.")
 
-            if target_group and getattr(target_group, 'is_completed', False):
+            if cls.is_group_completed(target_group):
                 raise ValidationError(
                     f"Ledger Group '{target_group.group_name}' is completed and locked. Batches cannot be added to it.")
 
@@ -1459,7 +1512,7 @@ class LedgerService:
         with transaction.atomic():
             group = LedgerGroup.objects.select_for_update().get(pk=group_id)
 
-            if getattr(group, 'is_completed', False):
+            if cls.is_group_completed(group):
                 raise ValidationError(
                     f"Ledger Group '{group.group_name}' is completed and locked. It cannot be deleted.")
 

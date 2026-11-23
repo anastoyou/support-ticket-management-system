@@ -324,6 +324,7 @@ export const FinanceView: React.FC = () => {
   useEffect(() => {
     if (!token) return;
     fetch(`${API_URL}/finance/ledger-batches/?page_size=200`, {
+      cache: 'no-store',
       headers: { Authorization: `Token ${token}` }
     })
       .then(res => res.ok ? res.json() : [])
@@ -862,7 +863,7 @@ export const FinanceView: React.FC = () => {
     const confirmed = await confirmPopup({
       preset: "remove",
       title: "Remove Bundle from Ledger Group",
-      description: "Are you sure you want to remove Bundle 24 from this Ledger Group?",
+      description: `Are you sure you want to remove Bundle ${bundleId} from this Ledger Group?`,
       button1: "Cancel",
       button2: "Remove Bundle",
     });
@@ -1082,15 +1083,17 @@ export const FinanceView: React.FC = () => {
           groupsUrl += `&status=${encodeURIComponent(statusFilter)}`;
         }
 
-        // 3. Fresh fetch of approved unassigned claims for Assemble Ledger directly from DB
+        // 3. Fresh fetch of approved unassigned claims, ledger batches & approvals directly from DB
         const claimsUrl = `${API_URL}/finance/claim/?status=Approved&ledger_filter=NOT_IN_LEDGER&page_size=all`;
         const ledgerApprovalsUrl = `${API_URL}/finance/approvals/?page_size=100${dateParams}`;
+        const batchesUrl = `${API_URL}/finance/ledger-batches/?page_size=200`;
 
-        const [resL, resG, resClaims, resApps] = await Promise.all([
+        const [resL, resG, resClaims, resApps, resBatches] = await Promise.all([
           fetch(ledgersUrl, fetchOptions),
           fetch(groupsUrl, fetchOptions),
           fetch(claimsUrl, fetchOptions),
-          fetch(ledgerApprovalsUrl, fetchOptions)
+          fetch(ledgerApprovalsUrl, fetchOptions),
+          fetch(batchesUrl, fetchOptions)
         ]);
         if (signal.aborted) return;
 
@@ -1117,6 +1120,10 @@ export const FinanceView: React.FC = () => {
 
         if (resApps.ok) {
           setApprovals(parseList(await resApps.json()));
+        }
+
+        if (resBatches.ok) {
+          setLedgerBatches(parseList(await resBatches.json()));
         }
       }
       else if (subpage === 'approvals') {
@@ -1777,12 +1784,33 @@ const handleCreateLedger = async () => {
     });
     setIsSyncingNewLedger(true);
 
-    // Optimistically prepend to ledgers list so user sees immediate feedback
+    // Optimistically sync newly created/updated ledgers and reset sibling batches in group to Draft
     if (newLedgerItems.length > 0) {
+      const updatedById = new Map<number, any>();
+      newLedgerItems.forEach((l: any) => {
+        if (l?.ledger_id) updatedById.set(l.ledger_id, l);
+      });
       setLedgers(prev => {
+        const mapped = prev.map(existing => {
+          if (updatedById.has(existing.ledger_id)) {
+            return updatedById.get(existing.ledger_id);
+          }
+          const existingGroupId = existing.ledger_group_detail?.ledger_group_id ?? existing.ledger_group;
+          if (gId && Number(existingGroupId) === Number(gId) && existing.status !== 'Paid') {
+            return {
+              ...existing,
+              status: 'Draft',
+              approval_history: [],
+              ledger_group_detail: existing.ledger_group_detail
+                ? { ...existing.ledger_group_detail, is_completed: false }
+                : existing.ledger_group_detail
+            };
+          }
+          return existing;
+        });
         const existingIds = new Set(prev.map(l => l.ledger_id));
         const toAdd = newLedgerItems.filter((l: any) => !existingIds.has(l.ledger_id));
-        return [...toAdd, ...prev];
+        return [...toAdd, ...mapped];
       });
     }
 
@@ -1796,7 +1824,7 @@ const handleCreateLedger = async () => {
     setSelectedBundleIds([]);
     setNewGroupName('');
 
-    fetchData(true);
+    await fetchData(true);
 
     setTimeout(() => {
       setIsSyncingNewLedger(false);
