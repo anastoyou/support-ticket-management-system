@@ -173,3 +173,7 @@ backend/test_summery.py
 backend/maintenance_summary.txt
 backend/maintenance.txt
 backend/pull_db.bat
+
+# Local Uptime Monitor & NSSM (keep local only, do not push to production)
+
+uptime_monitor/

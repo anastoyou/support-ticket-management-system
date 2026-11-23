@@ -186,7 +186,7 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
     const headers: Record<string, string> = token ? { Authorization: `Token ${token}` } : {};
 
     // 1. Fetch Expense Types
-    fetch(`${API_URL}/finance/expensetype/`, { headers })
+    fetch(`${API_URL}/finance/expensetype/?page_size=all`, { headers })
       .then(r => r.ok ? r.json() : [])
       .then(data => {
         const list = Array.isArray(data) ? data : (Array.isArray(data.results) ? data.results : []);
@@ -296,7 +296,8 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
   // Dynamic Multi-Level Expense Columns structure (Parent -> Children)
   const expenseColumnsHierarchy = useMemo<ExpenseColumnCategory[]>(() => {
     const parentToChildrenMap = new Map<string, Set<string>>();
-    const knownParentsOrder = ['Travel Fair', 'Transportation', 'Material', 'Other', 'Miscellaneous'];
+    const firstParentsOrder = ['Travel Fair', 'Transportation', 'Material'];
+    const lastParentsOrder = ['Other', 'Miscellaneous'];
 
     // Discover all expense type names used in this group
     const usedTypeNames = new Set<string>();
@@ -307,12 +308,19 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
       }
     }
 
-    // Default template if no expenses yet
+    // Fallback from fetchedExpenseTypes API if no expenses exist in this group yet
     if (usedTypeNames.size === 0) {
-      return [
-        { parentName: 'Travel Fair', children: ['BusFair', 'taxi fair'] },
-        { parentName: 'Material', children: ['Cost', 'Transportation'] }
-      ];
+      for (const et of fetchedExpenseTypes) {
+        const typeName = (et.expense_name || '').trim();
+        const hasParent = Boolean(et.parent?.expense_name || et.parent_name || et.parent);
+        if (typeName && hasParent) {
+          usedTypeNames.add(typeName);
+        }
+      }
+    }
+
+    if (usedTypeNames.size === 0) {
+      return [];
     }
 
     for (const typeName of usedTypeNames) {
@@ -335,10 +343,16 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
       parentToChildrenMap.get(parent)!.add(typeName);
     }
 
-    // Sort parents with known parents first
+    // Sort parents with primary categories first, custom categories alphabetically, and Other/Misc last
     const sortedParents = Array.from(parentToChildrenMap.keys()).sort((a, b) => {
-      const idxA = knownParentsOrder.indexOf(a);
-      const idxB = knownParentsOrder.indexOf(b);
+      const lastA = lastParentsOrder.indexOf(a);
+      const lastB = lastParentsOrder.indexOf(b);
+      if (lastA !== -1 && lastB !== -1) return lastA - lastB;
+      if (lastA !== -1) return 1;
+      if (lastB !== -1) return -1;
+
+      const idxA = firstParentsOrder.indexOf(a);
+      const idxB = firstParentsOrder.indexOf(b);
       if (idxA !== -1 && idxB !== -1) return idxA - idxB;
       if (idxA !== -1) return -1;
       if (idxB !== -1) return 1;
@@ -349,7 +363,7 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
       parentName,
       children: Array.from(parentToChildrenMap.get(parentName)!)
     }));
-  }, [allExpenses, expenseTypeParentMap]);
+  }, [allExpenses, expenseTypeParentMap, fetchedExpenseTypes]);
 
   // Flattened list of all distinct child columns
   const allChildExpenseColumns = useMemo<string[]>(() => {
@@ -1112,6 +1126,8 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
       labourCharge: number;
       expense: number;
       total: number;
+      amountsByType: Record<string, number>;
+      unitemizedAmount: number;
       workers: Map<string, {
         workerId: string | number;
         workerName: string;
@@ -1119,6 +1135,8 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
         labourCharge: number;
         expense: number;
         total: number;
+        amountsByType: Record<string, number>;
+        unitemizedAmount: number;
       }>;
     }>();
 
@@ -1129,6 +1147,8 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
         labourCharge: 0,
         expense: 0,
         total: 0,
+        amountsByType: {},
+        unitemizedAmount: 0,
         workers: new Map()
       });
     }
@@ -1141,6 +1161,8 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
           labourCharge: 0,
           expense: 0,
           total: 0,
+          amountsByType: {},
+          unitemizedAmount: 0,
           workers: new Map()
         });
       }
@@ -1158,13 +1180,28 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
           workerEmployeeNo: row.workerEmployeeNo,
           labourCharge: 0,
           expense: 0,
-          total: 0
+          total: 0,
+          amountsByType: {},
+          unitemizedAmount: 0
         });
       }
       const wEntry = entry.workers.get(wKey)!;
       wEntry.labourCharge += row.labourAmount;
       wEntry.expense += expAmt;
       wEntry.total += row.total;
+
+      let typedSum = 0;
+      for (const col of allChildExpenseColumns) {
+        const colAmt = row.amountsByType[col] || 0;
+        if (colAmt > 0) {
+          entry.amountsByType[col] = (entry.amountsByType[col] || 0) + colAmt;
+          wEntry.amountsByType[col] = (wEntry.amountsByType[col] || 0) + colAmt;
+          typedSum += colAmt;
+        }
+      }
+      const unitemized = Math.max(0, row.total - typedSum);
+      entry.unitemizedAmount += unitemized;
+      wEntry.unitemizedAmount += unitemized;
     }
 
     const list = Array.from(batchMap.values()).map(b => ({
@@ -1175,9 +1212,14 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
     const grandLabour = list.reduce((s, x) => s + x.labourCharge, 0);
     const grandExpense = list.reduce((s, x) => s + x.expense, 0);
     const grandTotal = list.reduce((s, x) => s + x.total, 0);
+    const grandAmountsByType: Record<string, number> = {};
+    for (const col of allChildExpenseColumns) {
+      grandAmountsByType[col] = list.reduce((s, x) => s + (x.amountsByType[col] || 0), 0);
+    }
+    const grandUnitemized = list.reduce((s, x) => s + x.unitemizedAmount, 0);
 
-    return { list, grandLabour, grandExpense, grandTotal };
-  }, [structuredRows, dynamicLedgerBatches]);
+    return { list, grandLabour, grandExpense, grandTotal, grandAmountsByType, grandUnitemized };
+  }, [structuredRows, dynamicLedgerBatches, allChildExpenseColumns]);
 
   // Consolidated User Payout Data for Tab 1 (User & amount to be given to him)
   const consolidatedUserData = useMemo(() => {
@@ -1218,14 +1260,21 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
     try {
       const isAllOrActiveTab = targetTab || activeTab;
 
+      const escapeHtml = (val: unknown) =>
+        String(val ?? '')
+          .replace(/&/g, '&amp;')
+          .replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;')
+          .replace(/"/g, '&quot;');
+
       // 1. Build table headers HTML based on parent/child hierarchy
       let parentHeadersHtml = '';
       let subHeadersHtml = '';
 
       for (const cat of expenseColumnsHierarchy) {
-        parentHeadersHtml += `<th colspan="${cat.children.length}" style="text-align:center;background:#e5e7eb;font-weight:700;border:1px solid #9ca3af;padding:5px 4px;text-transform:uppercase;font-size:10px;color:#111827;">${cat.parentName}</th>`;
+        parentHeadersHtml += `<th colspan="${cat.children.length}" style="text-align:center;background:#e5e7eb;font-weight:700;border:1px solid #9ca3af;padding:5px 4px;text-transform:uppercase;font-size:10px;color:#111827;">${escapeHtml(cat.parentName)}</th>`;
         for (const child of cat.children) {
-          subHeadersHtml += `<th style="text-align:right;background:#f3f4f6;font-weight:600;border:1px solid #9ca3af;padding:4px 5px;font-size:9.5px;color:#374151;">${child}</th>`;
+          subHeadersHtml += `<th style="text-align:right;background:#f3f4f6;font-weight:600;border:1px solid #9ca3af;padding:4px 5px;font-size:9.5px;color:#374151;">${escapeHtml(child)}</th>`;
         }
       }
 
@@ -1235,40 +1284,70 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
         : 0;
       const totalSummaryRows = consolidatedBatchData.list.length + totalSummaryWorkerRows;
       const isCompactSummary = totalSummaryRows > 18;
-      const batchRowPad = isCompactSummary ? '3px 8px' : '5px 10px';
-      const batchFontSize = isCompactSummary ? '9.5px' : '10.5px';
-      const workerRowPad = isCompactSummary ? '2px 8px 2px 18px' : '3.5px 10px 3.5px 24px';
-      const workerCellPad = isCompactSummary ? '2px 8px' : '3.5px 10px';
-      const workerFontSize = isCompactSummary ? '8.5px' : '9.5px';
+      const hasSummaryUnitemized = consolidatedBatchData.grandUnitemized > 0.001;
+      const summaryColCount = allChildExpenseColumns.length + (hasSummaryUnitemized ? 1 : 0);
+      const isDenseSummaryCols = isVerticalOrientation && summaryColCount > 4;
+
+      const summaryHeadPad = isCompactSummary ? '3px 4px' : (isDenseSummaryCols ? '4px 4px' : '5px 6px');
+      const summaryHeadFont = isDenseSummaryCols ? '8.5px' : (isCompactSummary ? '9px' : '10px');
+      const summarySubHeadFont = isDenseSummaryCols ? '8px' : (isCompactSummary ? '8.5px' : '9px');
+      const batchRowPad = isCompactSummary ? '3px 5px' : (isDenseSummaryCols ? '4px 4px' : '5px 7px');
+      const batchFontSize = isDenseSummaryCols ? '8.5px' : (isCompactSummary ? '9px' : '10px');
+      const workerRowPad = isCompactSummary ? '2px 5px 2px 14px' : (isDenseSummaryCols ? '3px 4px 3px 14px' : '3.5px 7px 3.5px 18px');
+      const workerCellPad = isCompactSummary ? '2px 4px' : (isDenseSummaryCols ? '3px 4px' : '3.5px 6px');
+      const workerFontSize = isDenseSummaryCols ? '8px' : (isCompactSummary ? '8.5px' : '9px');
+
+      let summaryParentHeadersHtml = '';
+      let summarySubHeadersHtml = '';
+      for (const cat of expenseColumnsHierarchy) {
+        summaryParentHeadersHtml += `<th colspan="${cat.children.length}" style="text-align:center;background:#e5e7eb;font-weight:700;border:1px solid #9ca3af;padding:${summaryHeadPad};text-transform:uppercase;font-size:${summaryHeadFont};color:#111827;">${escapeHtml(cat.parentName)}</th>`;
+        for (const child of cat.children) {
+          summarySubHeadersHtml += `<th style="text-align:right;background:#f3f4f6;font-weight:600;border:1px solid #9ca3af;padding:${summaryHeadPad};font-size:${summarySubHeadFont};color:#374151;line-height:1.15;">${escapeHtml(child)}</th>`;
+        }
+      }
 
       let consolidatedRowsHtml = '';
       let cSl = 1;
       for (const item of consolidatedBatchData.list) {
+        let batchExpCols = '';
+        for (const col of allChildExpenseColumns) {
+          const val = item.amountsByType[col] || 0;
+          batchExpCols += `<td style="text-align:right;padding:${workerCellPad};border:1px solid #d1d5db;font-size:${batchFontSize};font-weight:700;color:${val > 0 ? '#1f2937' : '#9ca3af'};white-space:nowrap;">${val > 0 ? val.toFixed(3) : '-'}</td>`;
+        }
+        const batchUnitemizedCol = hasSummaryUnitemized
+          ? `<td style="text-align:right;padding:${workerCellPad};border:1px solid #d1d5db;font-size:${batchFontSize};font-weight:700;color:${item.unitemizedAmount > 0.001 ? '#1f2937' : '#9ca3af'};white-space:nowrap;">${item.unitemizedAmount > 0.001 ? item.unitemizedAmount.toFixed(3) : '-'}</td>`
+          : '';
+
         consolidatedRowsHtml += `
           <tr style="border:1px solid #d1d5db;background:#f9fafb;line-height:1.2;">
-            <td style="text-align:center;padding:${batchRowPad};border:1px solid #d1d5db;font-size:${batchFontSize};font-weight:700;color:#4b5563;">${cSl++}</td>
-            <td style="padding:${batchRowPad};border:1px solid #d1d5db;font-size:${batchFontSize};font-weight:700;color:#111827;">${item.section}</td>
-            <td style="text-align:right;padding:${batchRowPad};border:1px solid #d1d5db;font-size:${batchFontSize};font-weight:700;color:#1f2937;">${item.labourCharge > 0 ? `KD ${item.labourCharge.toFixed(3)}` : '-'}</td>
-            <td style="text-align:right;padding:${batchRowPad};border:1px solid #d1d5db;font-size:${batchFontSize};font-weight:700;color:#1f2937;">KD ${item.expense.toFixed(3)}</td>
-            <td style="text-align:right;padding:${batchRowPad};border:1px solid #d1d5db;font-size:${batchFontSize};font-weight:800;color:#065f46;background:#ecfdf5;">KD ${item.total.toFixed(3)}</td>
+            <td style="text-align:center;padding:${workerCellPad};border:1px solid #d1d5db;font-size:${batchFontSize};font-weight:700;color:#4b5563;">${cSl++}</td>
+            <td style="padding:${batchRowPad};border:1px solid #d1d5db;font-size:${batchFontSize};font-weight:700;color:#111827;">${escapeHtml(item.section)}</td>
+            ${batchExpCols}
+            ${batchUnitemizedCol}
+            <td style="text-align:right;padding:${workerCellPad};border:1px solid #d1d5db;font-size:${batchFontSize};font-weight:800;color:#065f46;background:#ecfdf5;white-space:nowrap;">KD ${item.total.toFixed(3)}</td>
           </tr>
         `;
 
         if (showWorkerDetailsInSummary && item.workerList && item.workerList.length > 0) {
           for (const w of item.workerList) {
+            let workerExpCols = '';
+            for (const col of allChildExpenseColumns) {
+              const wVal = w.amountsByType[col] || 0;
+              workerExpCols += `<td style="text-align:right;padding:${workerCellPad};border:1px solid #e5e7eb;font-size:${workerFontSize};color:${wVal > 0 ? '#374151' : '#9ca3af'};white-space:nowrap;">${wVal > 0 ? wVal.toFixed(3) : '-'}</td>`;
+            }
+            const workerUnitemizedCol = hasSummaryUnitemized
+              ? `<td style="text-align:right;padding:${workerCellPad};border:1px solid #e5e7eb;font-size:${workerFontSize};color:${w.unitemizedAmount > 0.001 ? '#374151' : '#9ca3af'};white-space:nowrap;">${w.unitemizedAmount > 0.001 ? w.unitemizedAmount.toFixed(3) : '-'}</td>`
+              : '';
+
             consolidatedRowsHtml += `
               <tr style="border:1px solid #e5e7eb;background:#ffffff;line-height:1.15;">
                 <td style="text-align:center;padding:${workerCellPad};border:1px solid #e5e7eb;font-size:8.5px;color:#9ca3af;">•</td>
                 <td style="padding:${workerRowPad};border:1px solid #e5e7eb;font-size:${workerFontSize};color:#1e40af;font-weight:600;">
-                  ▸ ${w.workerName} ${w.workerEmployeeNo ? `<span style="font-size:8px;color:#6b7280;font-weight:normal;">(${w.workerEmployeeNo})</span>` : ''}
+                  ▸ ${escapeHtml(w.workerName)} ${w.workerEmployeeNo ? `<span style="font-size:7.5px;color:#6b7280;font-weight:normal;">(${escapeHtml(w.workerEmployeeNo)})</span>` : ''}
                 </td>
-                <td style="text-align:right;padding:${workerCellPad};border:1px solid #e5e7eb;font-size:${workerFontSize};color:#374151;">
-                  ${w.labourCharge > 0 ? `KD ${w.labourCharge.toFixed(3)}` : '-'}
-                </td>
-                <td style="text-align:right;padding:${workerCellPad};border:1px solid #e5e7eb;font-size:${workerFontSize};color:#374151;">
-                  ${w.expense > 0 ? `KD ${w.expense.toFixed(3)}` : '-'}
-                </td>
-                <td style="text-align:right;padding:${workerCellPad};border:1px solid #e5e7eb;font-size:${workerFontSize};font-weight:600;color:#065f46;">
+                ${workerExpCols}
+                ${workerUnitemizedCol}
+                <td style="text-align:right;padding:${workerCellPad};border:1px solid #e5e7eb;font-size:${workerFontSize};font-weight:600;color:#065f46;white-space:nowrap;">
                   KD ${w.total.toFixed(3)}
                 </td>
               </tr>
@@ -1276,12 +1355,22 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
           }
         }
       }
+
+      let grandSummaryExpCols = '';
+      for (const col of allChildExpenseColumns) {
+        const gVal = consolidatedBatchData.grandAmountsByType[col] || 0;
+        grandSummaryExpCols += `<td style="text-align:right;padding:${isCompactSummary ? '4px 4px' : '5px 6px'};border:1.5px solid #374151;font-size:${batchFontSize};font-weight:800;color:#111827;white-space:nowrap;">${gVal > 0 ? gVal.toFixed(3) : '-'}</td>`;
+      }
+      const grandSummaryUnitemizedCol = hasSummaryUnitemized
+        ? `<td style="text-align:right;padding:${isCompactSummary ? '4px 4px' : '5px 6px'};border:1.5px solid #374151;font-size:${batchFontSize};font-weight:800;color:#111827;white-space:nowrap;">${consolidatedBatchData.grandUnitemized > 0.001 ? consolidatedBatchData.grandUnitemized.toFixed(3) : '-'}</td>`
+        : '';
+
       consolidatedRowsHtml += `
         <tr style="background:#e5e7eb;font-weight:800;border:2px solid #111827;line-height:1.2;">
-          <td colspan="2" style="text-align:right;padding:${isCompactSummary ? '4px 8px' : '6px 10px'};font-size:${isCompactSummary ? '10px' : '11px'};color:#111827;border:1.5px solid #374151;text-transform:uppercase;">GRAND TOTAL:</td>
-          <td style="text-align:right;padding:${isCompactSummary ? '4px 8px' : '6px 10px'};border:1.5px solid #374151;font-size:${isCompactSummary ? '10px' : '11px'};font-weight:800;color:#111827;">${consolidatedBatchData.grandLabour > 0 ? `KD ${consolidatedBatchData.grandLabour.toFixed(3)}` : '-'}</td>
-          <td style="text-align:right;padding:${isCompactSummary ? '4px 8px' : '6px 10px'};border:1.5px solid #374151;font-size:${isCompactSummary ? '10px' : '11px'};font-weight:800;color:#111827;">KD ${consolidatedBatchData.grandExpense.toFixed(3)}</td>
-          <td style="text-align:right;padding:${isCompactSummary ? '4px 8px' : '6px 10px'};border:1.5px solid #374151;font-size:${isCompactSummary ? '10.5px' : '11.5px'};font-weight:900;color:#064e3b;background:#a7f3d0;">KD ${consolidatedBatchData.grandTotal.toFixed(3)}</td>
+          <td colspan="2" style="text-align:right;padding:${isCompactSummary ? '4px 6px' : '6px 8px'};font-size:${isCompactSummary ? '9.5px' : '10.5px'};color:#111827;border:1.5px solid #374151;text-transform:uppercase;">GRAND TOTAL:</td>
+          ${grandSummaryExpCols}
+          ${grandSummaryUnitemizedCol}
+          <td style="text-align:right;padding:${isCompactSummary ? '4px 6px' : '6px 8px'};border:1.5px solid #374151;font-size:${isCompactSummary ? '10px' : '11px'};font-weight:900;color:#064e3b;background:#a7f3d0;white-space:nowrap;">KD ${consolidatedBatchData.grandTotal.toFixed(3)}</td>
         </tr>
       `;
 
@@ -1887,12 +1976,13 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
                 <table class="summary-table" style="width:100%;border-collapse:collapse;background:#fff;border:1.5px solid #374151;">
                   <thead>
                     <tr style="background:#e5e7eb;border:1.5px solid #374151;">
-                      <th style="width:50px;text-align:center;padding:${isCompactSummary ? '4px 6px' : '6px 6px'};border:1px solid #9ca3af;font-size:${isCompactSummary ? '9.5px' : '10.5px'};font-weight:700;color:#111827;">SL</th>
-                      <th style="text-align:left;padding:${isCompactSummary ? '4px 8px' : '6px 10px'};border:1px solid #9ca3af;font-size:${isCompactSummary ? '9.5px' : '10.5px'};font-weight:700;color:#111827;">SECTION (LEDGER BATCH)</th>
-                      <th style="text-align:right;padding:${isCompactSummary ? '4px 8px' : '6px 10px'};border:1px solid #9ca3af;font-size:${isCompactSummary ? '9.5px' : '10.5px'};font-weight:700;color:#111827;">LABOUR CHARGE</th>
-                      <th style="text-align:right;padding:${isCompactSummary ? '4px 8px' : '6px 10px'};border:1px solid #9ca3af;font-size:${isCompactSummary ? '9.5px' : '10.5px'};font-weight:700;color:#111827;">EXPENSE</th>
-                      <th style="text-align:right;padding:${isCompactSummary ? '4px 8px' : '6px 10px'};border:1px solid #9ca3af;font-size:${isCompactSummary ? '9.5px' : '10.5px'};font-weight:800;color:#065f46;background:#d1fae5;">TOTAL</th>
+                      <th ${allChildExpenseColumns.length > 0 ? 'rowspan="2"' : ''} style="width:28px;text-align:center;padding:${summaryHeadPad};border:1px solid #9ca3af;font-size:${summaryHeadFont};font-weight:700;color:#111827;">SL</th>
+                      <th ${allChildExpenseColumns.length > 0 ? 'rowspan="2"' : ''} style="text-align:left;padding:${summaryHeadPad};border:1px solid #9ca3af;font-size:${summaryHeadFont};font-weight:700;color:#111827;">SECTION (LEDGER BATCH)</th>
+                      ${summaryParentHeadersHtml}
+                      ${hasSummaryUnitemized ? `<th ${allChildExpenseColumns.length > 0 ? 'rowspan="2"' : ''} style="text-align:right;padding:${summaryHeadPad};border:1px solid #9ca3af;font-size:${summaryHeadFont};font-weight:700;color:#111827;">OTHER</th>` : ''}
+                      <th ${allChildExpenseColumns.length > 0 ? 'rowspan="2"' : ''} style="width:74px;text-align:right;padding:${summaryHeadPad};border:1px solid #9ca3af;font-size:${summaryHeadFont};font-weight:800;color:#065f46;background:#d1fae5;">TOTAL</th>
                     </tr>
+                    ${summarySubHeadersHtml ? `<tr>${summarySubHeadersHtml}</tr>` : ''}
                   </thead>
                   <tbody>
                     ${consolidatedRowsHtml}
@@ -2521,52 +2611,88 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
           });
         } else {
           // --- PAGE 1: CONSOLIDATED FINANCIAL SETTLEMENT REPORT ---
-          const head1 = [['SL', 'Section (Ledger Batch)', 'Labour Charge', 'Expense', 'Total']];
+          const hasPdfUnitemized = consolidatedBatchData.grandUnitemized > 0.001;
+          const hasPdfExpenseSubCols = allChildExpenseColumns.length > 0;
+          const pdfHead1Row1: any[] = [
+            { content: 'SL', ...(hasPdfExpenseSubCols ? { rowSpan: 2 } : {}), styles: { halign: 'center', valign: 'middle' } },
+            { content: 'Section (Ledger Batch)', ...(hasPdfExpenseSubCols ? { rowSpan: 2 } : {}), styles: { valign: 'middle' } }
+          ];
+          for (const cat of expenseColumnsHierarchy) {
+            pdfHead1Row1.push({
+              content: cat.parentName,
+              colSpan: cat.children.length,
+              styles: { halign: 'center', fillColor: [55, 65, 81], textColor: [255, 255, 255], fontStyle: 'bold' }
+            });
+          }
+          if (hasPdfUnitemized) {
+            pdfHead1Row1.push({ content: 'Other', ...(hasPdfExpenseSubCols ? { rowSpan: 2 } : {}), styles: { halign: 'right', valign: 'middle' } });
+          }
+          pdfHead1Row1.push({ content: 'TOTAL', ...(hasPdfExpenseSubCols ? { rowSpan: 2 } : {}), styles: { halign: 'right', valign: 'middle', fillColor: [6, 95, 70], textColor: [255, 255, 255] } });
+
+          const pdfHead1Row2: any[] = [];
+          for (const cat of expenseColumnsHierarchy) {
+            for (const child of cat.children) {
+              pdfHead1Row2.push({ content: child, styles: { halign: 'right', fontSize: isVerticalOrientation ? 6.5 : 7.5 } });
+            }
+          }
+          const head1 = pdfHead1Row2.length > 0 ? [pdfHead1Row1, pdfHead1Row2] : [pdfHead1Row1];
           const body1: any[] = [];
           let cSl = 1;
           for (const item of consolidatedBatchData.list) {
-            body1.push([
-              cSl++,
-              item.section,
-              item.labourCharge > 0 ? `KD ${item.labourCharge.toFixed(3)}` : '-',
-              `KD ${item.expense.toFixed(3)}`,
-              `KD ${item.total.toFixed(3)}`
-            ]);
+            const batchRow: any[] = [cSl++, item.section];
+            for (const col of allChildExpenseColumns) {
+              const val = item.amountsByType[col] || 0;
+              batchRow.push({ content: val > 0 ? val.toFixed(3) : '-', styles: { halign: 'right', fontStyle: 'bold' } });
+            }
+            if (hasPdfUnitemized) {
+              batchRow.push({ content: item.unitemizedAmount > 0.001 ? item.unitemizedAmount.toFixed(3) : '-', styles: { halign: 'right', fontStyle: 'bold' } });
+            }
+            batchRow.push({ content: `KD ${item.total.toFixed(3)}`, styles: { halign: 'right', fontStyle: 'bold', fillColor: [236, 253, 245], textColor: [6, 95, 70] } });
+            body1.push(batchRow);
 
             if (showWorkerDetailsInSummary && item.workerList && item.workerList.length > 0) {
               for (const w of item.workerList) {
-                body1.push([
+                const wRow: any[] = [
                   '•',
-                  `   ${w.workerName}${w.workerEmployeeNo ? ` (${w.workerEmployeeNo})` : ''}`,
-                  w.labourCharge > 0 ? `KD ${w.labourCharge.toFixed(3)}` : '-',
-                  w.expense > 0 ? `KD ${w.expense.toFixed(3)}` : '-',
-                  `KD ${w.total.toFixed(3)}`
-                ]);
+                  `   ${w.workerName}${w.workerEmployeeNo ? ` (${w.workerEmployeeNo})` : ''}`
+                ];
+                for (const col of allChildExpenseColumns) {
+                  const wVal = w.amountsByType[col] || 0;
+                  wRow.push({ content: wVal > 0 ? wVal.toFixed(3) : '-', styles: { halign: 'right' } });
+                }
+                if (hasPdfUnitemized) {
+                  wRow.push({ content: w.unitemizedAmount > 0.001 ? w.unitemizedAmount.toFixed(3) : '-', styles: { halign: 'right' } });
+                }
+                wRow.push({ content: `KD ${w.total.toFixed(3)}`, styles: { halign: 'right', fontStyle: 'bold', textColor: [6, 95, 70] } });
+                body1.push(wRow);
               }
             }
           }
-          body1.push([
-            { content: 'GRAND TOTAL', colSpan: 2, styles: { fontStyle: 'bold', fillColor: [229, 231, 235] } },
-            { content: consolidatedBatchData.grandLabour > 0 ? `KD ${consolidatedBatchData.grandLabour.toFixed(3)}` : '-', styles: { fontStyle: 'bold', fillColor: [229, 231, 235] } },
-            { content: `KD ${consolidatedBatchData.grandExpense.toFixed(3)}`, styles: { fontStyle: 'bold', fillColor: [229, 231, 235] } },
-            { content: `KD ${consolidatedBatchData.grandTotal.toFixed(3)}`, styles: { fontStyle: 'bold', fillColor: [167, 243, 208], textColor: [6, 78, 59] } }
-          ]);
+          const grandSummaryPdfRow: any[] = [
+            { content: 'GRAND TOTAL', colSpan: 2, styles: { fontStyle: 'bold', fillColor: [229, 231, 235] } }
+          ];
+          for (const col of allChildExpenseColumns) {
+            const gVal = consolidatedBatchData.grandAmountsByType[col] || 0;
+            grandSummaryPdfRow.push({ content: gVal > 0 ? gVal.toFixed(3) : '-', styles: { halign: 'right', fontStyle: 'bold', fillColor: [229, 231, 235] } });
+          }
+          if (hasPdfUnitemized) {
+            grandSummaryPdfRow.push({ content: consolidatedBatchData.grandUnitemized > 0.001 ? consolidatedBatchData.grandUnitemized.toFixed(3) : '-', styles: { halign: 'right', fontStyle: 'bold', fillColor: [229, 231, 235] } });
+          }
+          grandSummaryPdfRow.push({ content: `KD ${consolidatedBatchData.grandTotal.toFixed(3)}`, styles: { halign: 'right', fontStyle: 'bold', fillColor: [167, 243, 208], textColor: [6, 78, 59] } });
+          body1.push(grandSummaryPdfRow);
 
           autoTable(doc, {
             startY: 38,
             head: head1,
             body: body1,
             theme: 'grid',
-            headStyles: { fillColor: [31, 41, 55], textColor: [255, 255, 255], fontStyle: 'bold', fontSize: 9 },
-            bodyStyles: { fontSize: 8.5 },
+            headStyles: { fillColor: [31, 41, 55], textColor: [255, 255, 255], fontStyle: 'bold', fontSize: isVerticalOrientation ? 7 : 8 },
+            bodyStyles: { fontSize: isVerticalOrientation ? 7 : 8, cellPadding: isVerticalOrientation ? 1.5 : 2 },
             columnStyles: {
-              0: { cellWidth: 15, halign: 'center' },
-              1: { cellWidth: 95, fontStyle: 'bold' },
-              2: { cellWidth: 45, halign: 'right' },
-              3: { cellWidth: 45, halign: 'right' },
-              4: { cellWidth: 48, halign: 'right', fontStyle: 'bold' }
+              0: { cellWidth: 10, halign: 'center' },
+              1: { fontStyle: 'bold' }
             },
-            margin: { left: 14, right: 14 }
+            margin: { left: isVerticalOrientation ? 8 : 14, right: isVerticalOrientation ? 8 : 14 }
           });
 
           // 7-Tier Signatures on Page 1
@@ -3038,37 +3164,103 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
         s5Data.push(['Prepared By', 'Verify By MEngg', 'Verify By Engg', 'Accountant', 'Audit', 'Finance', 'CEO / CCOO / Director']);
         s5Data.push([group.createdByName || 'Site Accountant', 'Maintenance Engineer', 'Project Engineer', 'Accounts Dept', 'Internal Audit', 'Finance Manager', group.completedByName || 'Executive Management']);
       } else {
-        s5Data = [
-          ['', 'Consolidated Financial Settlement Report'],
-          ['Section', 'Labour Charge', 'Expense', 'Total']
+        const hasExcelUnitemized = consolidatedBatchData.grandUnitemized > 0.001;
+        const hasExcelSubCols = allChildExpenseColumns.length > 0;
+        const s5Header1: any[] = ['Section'];
+        const s5Header2: any[] = [''];
+        const s5ExtraCols = hasExcelUnitemized ? 1 : 0;
+        const s5TotalColIdx = 1 + allChildExpenseColumns.length + s5ExtraCols;
+        s5Merges = [
+          { s: { r: 0, c: 1 }, e: { r: 0, c: s5TotalColIdx } },
+          ...(hasExcelSubCols ? [{ s: { r: 1, c: 0 }, e: { r: 2, c: 0 } }] : [])
         ];
 
+        let s5ColIdx = 1;
+        for (const cat of expenseColumnsHierarchy) {
+          const startC = s5ColIdx;
+          const endC = s5ColIdx + cat.children.length - 1;
+          s5Header1.push(cat.parentName);
+          for (let i = 1; i < cat.children.length; i++) {
+            s5Header1.push('');
+          }
+          for (const child of cat.children) {
+            s5Header2.push(child);
+          }
+          if (endC > startC) {
+            s5Merges.push({ s: { r: 1, c: startC }, e: { r: 1, c: endC } });
+          }
+          s5ColIdx += cat.children.length;
+        }
+        if (hasExcelUnitemized) {
+          s5Header1.push('Other');
+          s5Header2.push('');
+          if (hasExcelSubCols) {
+            s5Merges.push({ s: { r: 1, c: s5ColIdx }, e: { r: 2, c: s5ColIdx } });
+          }
+          s5ColIdx++;
+        }
+        s5Header1.push('TOTAL');
+        s5Header2.push('');
+        if (hasExcelSubCols) {
+          s5Merges.push({ s: { r: 1, c: s5ColIdx }, e: { r: 2, c: s5ColIdx } });
+        }
+
+        s5Cols = [
+          { wch: 34 },
+          ...allChildExpenseColumns.map(() => ({ wch: 16 })),
+          ...(hasExcelUnitemized ? [{ wch: 16 }] : []),
+          { wch: 18 }
+        ];
+
+        s5Data = hasExcelSubCols
+          ? [
+            ['', 'Consolidated Financial Settlement Report'],
+            s5Header1,
+            s5Header2
+          ]
+          : [
+            ['', 'Consolidated Financial Settlement Report'],
+            s5Header1
+          ];
+
         for (const item of consolidatedBatchData.list) {
-          s5Data.push([
-            item.section,
-            Number(item.labourCharge.toFixed(3)),
-            Number(item.expense.toFixed(3)),
-            Number(item.total.toFixed(3))
-          ]);
+          const batchRow: any[] = [item.section];
+          for (const col of allChildExpenseColumns) {
+            const val = item.amountsByType[col] || 0;
+            batchRow.push(val > 0 ? Number(val.toFixed(3)) : '-');
+          }
+          if (hasExcelUnitemized) {
+            batchRow.push(item.unitemizedAmount > 0.001 ? Number(item.unitemizedAmount.toFixed(3)) : '-');
+          }
+          batchRow.push(Number(item.total.toFixed(3)));
+          s5Data.push(batchRow);
 
           if (showWorkerDetailsInSummary && item.workerList && item.workerList.length > 0) {
             for (const w of item.workerList) {
-              s5Data.push([
-                `    • ${w.workerName}${w.workerEmployeeNo ? ` (${w.workerEmployeeNo})` : ''}`,
-                Number(w.labourCharge.toFixed(3)),
-                Number(w.expense.toFixed(3)),
-                Number(w.total.toFixed(3))
-              ]);
+              const workerRow: any[] = [`    • ${w.workerName}${w.workerEmployeeNo ? ` (${w.workerEmployeeNo})` : ''}`];
+              for (const col of allChildExpenseColumns) {
+                const wVal = w.amountsByType[col] || 0;
+                workerRow.push(wVal > 0 ? Number(wVal.toFixed(3)) : '-');
+              }
+              if (hasExcelUnitemized) {
+                workerRow.push(w.unitemizedAmount > 0.001 ? Number(w.unitemizedAmount.toFixed(3)) : '-');
+              }
+              workerRow.push(Number(w.total.toFixed(3)));
+              s5Data.push(workerRow);
             }
           }
         }
 
-        s5Data.push([
-          'GRAND TOTAL',
-          Number(consolidatedBatchData.grandLabour.toFixed(3)),
-          Number(consolidatedBatchData.grandExpense.toFixed(3)),
-          Number(consolidatedBatchData.grandTotal.toFixed(3))
-        ]);
+        const grandRow: any[] = ['GRAND TOTAL'];
+        for (const col of allChildExpenseColumns) {
+          const gVal = consolidatedBatchData.grandAmountsByType[col] || 0;
+          grandRow.push(gVal > 0 ? Number(gVal.toFixed(3)) : '-');
+        }
+        if (hasExcelUnitemized) {
+          grandRow.push(consolidatedBatchData.grandUnitemized > 0.001 ? Number(consolidatedBatchData.grandUnitemized.toFixed(3)) : '-');
+        }
+        grandRow.push(Number(consolidatedBatchData.grandTotal.toFixed(3)));
+        s5Data.push(grandRow);
 
         // Signatures row for Consolidated Sheet
         s5Data.push([]);
@@ -4602,53 +4794,109 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
                         </span>
                       </div>
                     </div>
-                    <div className="border border-outline-variant rounded overflow-hidden bg-surface-container shadow-2xs">
-                      <table className="w-full text-xs text-left text-on-surface">
-                        <thead className="bg-surface-container-high text-on-surface-variant uppercase text-[11px] font-bold tracking-wider border-b border-outline-variant">
+                    <div className="border border-outline-variant rounded overflow-x-auto bg-surface-container shadow-2xs">
+                      <table className="w-full text-xs text-left text-on-surface border-collapse">
+                        <thead className="bg-surface-container-high text-on-surface-variant uppercase text-[11px] font-bold tracking-wider border-b-2 border-outline-variant">
                           <tr>
-                            <th className="px-5 py-3">Section (Ledger Batch)</th>
-                            <th className="px-5 py-3 text-right">Labour Charge</th>
-                            <th className="px-5 py-3 text-right">Expense</th>
-                            <th className="px-5 py-3 text-right bg-emerald-500/10 text-emerald-800 dark:text-emerald-300">Total</th>
+                            <th rowSpan={allChildExpenseColumns.length > 0 ? 2 : 1} className="px-5 py-3 border-r border-outline-variant text-left font-bold">
+                              Section (Ledger Batch)
+                            </th>
+                            {expenseColumnsHierarchy.map(cat => (
+                              <th
+                                key={cat.parentName}
+                                colSpan={cat.children.length}
+                                className="px-3 py-1.5 text-center border-r border-outline-variant bg-surface-container-lowest font-bold text-primary uppercase tracking-wider text-[10px]"
+                              >
+                                {cat.parentName}
+                              </th>
+                            ))}
+                            {consolidatedBatchData.grandUnitemized > 0.001 && (
+                              <th rowSpan={allChildExpenseColumns.length > 0 ? 2 : 1} className="px-3 py-2.5 text-right border-r border-outline-variant font-bold">
+                                Other
+                              </th>
+                            )}
+                            <th rowSpan={allChildExpenseColumns.length > 0 ? 2 : 1} className="px-5 py-3 text-right font-bold bg-emerald-500/10 text-emerald-800 dark:text-emerald-300">
+                              TOTAL
+                            </th>
                           </tr>
+                          {allChildExpenseColumns.length > 0 && (
+                            <tr>
+                              {expenseColumnsHierarchy.map(cat => (
+                                cat.children.map(child => (
+                                  <th
+                                    key={`${cat.parentName}_${child}`}
+                                    className="px-3 py-1.5 text-right border-r border-outline-variant bg-surface-container-low font-medium text-[10px] text-on-surface-variant whitespace-nowrap"
+                                  >
+                                    {child}
+                                  </th>
+                                ))
+                              ))}
+                            </tr>
+                          )}
                         </thead>
                         <tbody className="divide-y divide-outline-variant/60">
                           {consolidatedBatchData.list.map((item) => (
                             <React.Fragment key={item.section}>
                               <tr className="hover:bg-surface-container-high/40 transition-colors">
-                                <td className="px-5 py-3 font-semibold text-on-surface">
+                                <td className="px-5 py-3 font-semibold text-on-surface border-r border-outline-variant">
                                   <div className="flex items-center gap-2">
                                     <Boxes className="w-4 h-4 text-primary shrink-0" />
                                     <span>{item.section}</span>
                                   </div>
                                 </td>
-                                <td className="px-5 py-3 text-right font-mono font-medium text-on-surface">
-                                  {item.labourCharge > 0 ? item.labourCharge.toFixed(3) : '-'}
-                                </td>
-                                <td className="px-5 py-3 text-right font-mono font-medium text-on-surface">
-                                  {item.expense.toFixed(3)}
-                                </td>
-                                <td className="px-5 py-3 text-right font-mono font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-500/5">
+                                {allChildExpenseColumns.map(colName => {
+                                  const amt = item.amountsByType[colName] || 0;
+                                  return (
+                                    <td
+                                      key={colName}
+                                      className="px-3 py-3 text-right border-r border-outline-variant font-mono font-medium text-on-surface whitespace-nowrap"
+                                    >
+                                      {amt > 0 ? (
+                                        <span className="font-semibold">{amt.toFixed(3)}</span>
+                                      ) : (
+                                        <span className="text-on-surface-variant/40">-</span>
+                                      )}
+                                    </td>
+                                  );
+                                })}
+                                {consolidatedBatchData.grandUnitemized > 0.001 && (
+                                  <td className="px-3 py-3 text-right border-r border-outline-variant font-mono font-medium text-on-surface whitespace-nowrap">
+                                    {item.unitemizedAmount > 0.001 ? item.unitemizedAmount.toFixed(3) : '-'}
+                                  </td>
+                                )}
+                                <td className="px-5 py-3 text-right font-mono font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-500/5 whitespace-nowrap">
                                   KD {item.total.toFixed(3)}
                                 </td>
                               </tr>
                               {showWorkerDetailsInSummary && item.workerList && item.workerList.map((w) => (
                                 <tr key={`${item.section}_${w.workerId || w.workerName}`} className="bg-surface-container-lowest/50 hover:bg-surface-container-high/30 transition-colors text-[11px]">
-                                  <td className="px-5 py-2 pl-11 text-on-surface flex items-center gap-2">
-                                    <span className="text-primary font-bold">•</span>
-                                    <User className="w-3.5 h-3.5 text-primary/70 shrink-0" />
-                                    <span className="font-semibold text-on-surface">{w.workerName}</span>
-                                    {w.workerEmployeeNo && (
-                                      <span className="text-[10px] text-on-surface-variant font-mono">({w.workerEmployeeNo})</span>
-                                    )}
+                                  <td className="px-5 py-2 pl-11 text-on-surface border-r border-outline-variant">
+                                    <div className="flex items-center gap-2">
+                                      <span className="text-primary font-bold">•</span>
+                                      <User className="w-3.5 h-3.5 text-primary/70 shrink-0" />
+                                      <span className="font-semibold text-on-surface">{w.workerName}</span>
+                                      {w.workerEmployeeNo && (
+                                        <span className="text-[10px] text-on-surface-variant font-mono">({w.workerEmployeeNo})</span>
+                                      )}
+                                    </div>
                                   </td>
-                                  <td className="px-5 py-2 text-right font-mono text-on-surface-variant">
-                                    {w.labourCharge > 0 ? w.labourCharge.toFixed(3) : '-'}
-                                  </td>
-                                  <td className="px-5 py-2 text-right font-mono text-on-surface-variant">
-                                    {w.expense.toFixed(3)}
-                                  </td>
-                                  <td className="px-5 py-2 text-right font-mono font-semibold text-emerald-600 dark:text-emerald-400 bg-emerald-500/5">
+                                  {allChildExpenseColumns.map(colName => {
+                                    const wAmt = w.amountsByType[colName] || 0;
+                                    return (
+                                      <td
+                                        key={colName}
+                                        className="px-3 py-2 text-right border-r border-outline-variant font-mono text-on-surface-variant whitespace-nowrap"
+                                      >
+                                        {wAmt > 0 ? wAmt.toFixed(3) : <span className="text-on-surface-variant/40">-</span>}
+                                      </td>
+                                    );
+                                  })}
+                                  {consolidatedBatchData.grandUnitemized > 0.001 && (
+                                    <td className="px-3 py-2 text-right border-r border-outline-variant font-mono text-on-surface-variant whitespace-nowrap">
+                                      {w.unitemizedAmount > 0.001 ? w.unitemizedAmount.toFixed(3) : '-'}
+                                    </td>
+                                  )}
+                                  <td className="px-5 py-2 text-right font-mono font-semibold text-emerald-600 dark:text-emerald-400 bg-emerald-500/5 whitespace-nowrap">
                                     KD {w.total.toFixed(3)}
                                   </td>
                                 </tr>
@@ -4658,16 +4906,26 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
                         </tbody>
                         <tfoot className="bg-surface-container-high font-extrabold border-t-2 border-outline-variant text-xs">
                           <tr>
-                            <td className="px-5 py-3.5 text-on-surface uppercase tracking-wider">
+                            <td className="px-5 py-3.5 text-on-surface uppercase tracking-wider border-r border-outline-variant">
                               GRAND TOTAL
                             </td>
-                            <td className="px-5 py-3.5 text-right font-mono text-on-surface">
-                              {consolidatedBatchData.grandLabour > 0 ? consolidatedBatchData.grandLabour.toFixed(3) : '-'}
-                            </td>
-                            <td className="px-5 py-3.5 text-right font-mono text-on-surface">
-                              {consolidatedBatchData.grandExpense.toFixed(3)}
-                            </td>
-                            <td className="px-5 py-3.5 text-right font-mono text-emerald-600 dark:text-emerald-400 text-sm bg-emerald-500/15">
+                            {allChildExpenseColumns.map(colName => {
+                              const gAmt = consolidatedBatchData.grandAmountsByType[colName] || 0;
+                              return (
+                                <td
+                                  key={`summary_grand_${colName}`}
+                                  className="px-3 py-3.5 text-right border-r border-outline-variant font-mono text-on-surface whitespace-nowrap"
+                                >
+                                  {gAmt > 0 ? gAmt.toFixed(3) : '-'}
+                                </td>
+                              );
+                            })}
+                            {consolidatedBatchData.grandUnitemized > 0.001 && (
+                              <td className="px-3 py-3.5 text-right border-r border-outline-variant font-mono text-on-surface whitespace-nowrap">
+                                {consolidatedBatchData.grandUnitemized.toFixed(3)}
+                              </td>
+                            )}
+                            <td className="px-5 py-3.5 text-right font-mono text-emerald-600 dark:text-emerald-400 text-sm bg-emerald-500/15 whitespace-nowrap">
                               KD {consolidatedBatchData.grandTotal.toFixed(3)}
                             </td>
                           </tr>
