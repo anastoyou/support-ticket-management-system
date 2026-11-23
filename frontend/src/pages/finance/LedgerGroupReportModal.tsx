@@ -86,6 +86,16 @@ const STORE_TYPE_LABELS: Record<string, string> = {
   'FINE DINE': 'Fine Dine',
 };
 
+const REPORT_SIGNATURE_TIERS = [
+  { title: 'Prepared By', role: 'Site Accountant' },
+  { title: 'Verify By MEngg', role: 'Maintenance Engineer' },
+  { title: 'Verify By Engg', role: 'Project / Site Engineer' },
+  { title: 'Accountant', role: 'Accounts Dept' },
+  { title: 'Audit', role: 'Internal Audit' },
+  { title: 'Finance', role: 'Finance Manager' },
+  { title: 'CEO / CCOO / Director', role: 'Executive Approval' },
+] as const;
+
 export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
   group,
   onClose,
@@ -1507,34 +1517,12 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
       // 7-Tier Signatures Block HTML (Verify By MEngg before Verify By Engg)
       const signaturesHtml = `
         <div class="signatures">
+          ${REPORT_SIGNATURE_TIERS.map(tier => `
           <div class="sign-box">
-            <strong>Prepared By</strong>
-            <span>${group.createdByName || 'Site Accountant'}</span>
+            <strong>${tier.title}</strong>
+            <span>${tier.role}</span>
           </div>
-          <div class="sign-box">
-            <strong>Verify By MEngg</strong>
-            <span>Maintenance Engineer</span>
-          </div>
-          <div class="sign-box">
-            <strong>Verify By Engg</strong>
-            <span>Project / Site Engineer</span>
-          </div>
-          <div class="sign-box">
-            <strong>Accountant</strong>
-            <span>Accounts Dept</span>
-          </div>
-          <div class="sign-box">
-            <strong>Audit</strong>
-            <span>Internal Audit</span>
-          </div>
-          <div class="sign-box">
-            <strong>Finance</strong>
-            <span>Finance Manager</span>
-          </div>
-          <div class="sign-box">
-            <strong>CEO / CCOO / Director</strong>
-            <span>${group.completedByName || 'Executive Approval'}</span>
-          </div>
+          `).join('')}
         </div>
       `;
 
@@ -2354,6 +2342,30 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
         doc.text(`Technicians: ${workerGroupedRows.length}   |   Locations: ${userwiseGrandTotals.uniqueLocationsCount}   |   Batches: ${dynamicLedgerBatches.length}   |   Tickets: ${structuredRows.length}`, 95, 30.5);
       }
 
+      const appendPdfSignatures = () => {
+        const signHead = [REPORT_SIGNATURE_TIERS.map(tier => tier.title)];
+        const signBody = [REPORT_SIGNATURE_TIERS.map(tier => `\n\n___________________\n${tier.role}`)];
+
+        const finalTableY = (doc as any).lastAutoTable?.finalY || 100;
+        const targetBottomSigY = pageHeight - 28;
+        let sigStartY = targetBottomSigY;
+        if (finalTableY + 6 > targetBottomSigY) {
+          doc.addPage();
+          sigStartY = targetBottomSigY;
+        }
+
+        autoTable(doc, {
+          startY: sigStartY,
+          head: signHead,
+          body: signBody,
+          theme: 'plain',
+          headStyles: { fontStyle: 'bold', fontSize: 7, halign: 'center', textColor: [17, 24, 39], fillColor: [243, 244, 246] },
+          bodyStyles: { fontSize: 6.5, halign: 'center', textColor: [75, 85, 99], cellPadding: 1 },
+          margin: { left: 14, right: 14, bottom: 6 },
+          pageBreak: 'avoid'
+        });
+      };
+
       if (isTargetTab === 'storewise') {
         if (storeReportGrouping === 'store_type') {
           // --- PAGE 1: CONSOLIDATED STORE TYPE STATEMENT ---
@@ -2397,37 +2409,7 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
           });
 
           // 7-Tier Signatures on Page 1
-          const signHead = [['Prepared By', 'Verify By MEngg', 'Verify By Engg', 'Accountant', 'Audit', 'Finance', 'CEO / CCOO / Director']];
-          const signBody = [
-            [
-              `\n\n___________________\n${group.createdByName || 'Site Accountant'}`,
-              '\n\n___________________\nMaintenance Engineer',
-              '\n\n___________________\nProject Engineer',
-              '\n\n___________________\nAccounts Dept',
-              '\n\n___________________\nInternal Audit',
-              '\n\n___________________\nFinance Manager',
-              `\n\n___________________\n${group.completedByName || 'Executive Approval'}`
-            ]
-          ];
-
-          const finalTableY = (doc as any).lastAutoTable?.finalY || 100;
-          const targetBottomSigY = pageHeight - 28;
-          let sigStartY = targetBottomSigY;
-          if (finalTableY + 6 > targetBottomSigY) {
-            doc.addPage();
-            sigStartY = targetBottomSigY;
-          }
-
-          autoTable(doc, {
-            startY: sigStartY,
-            head: signHead,
-            body: signBody,
-            theme: 'plain',
-            headStyles: { fontStyle: 'bold', fontSize: 7, halign: 'center', textColor: [17, 24, 39], fillColor: [243, 244, 246] },
-            bodyStyles: { fontSize: 6.5, halign: 'center', textColor: [75, 85, 99], cellPadding: 1 },
-            margin: { left: 14, right: 14, bottom: 6 },
-            pageBreak: 'avoid'
-          });
+          appendPdfSignatures();
 
           // --- PAGE 2+: STORE TYPE DETAILED STATEMENTS ---
           doc.addPage();
@@ -2696,37 +2678,7 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
           });
 
           // 7-Tier Signatures on Page 1
-          const signHead = [['Prepared By', 'Verify By MEngg', 'Verify By Engg', 'Accountant', 'Audit', 'Finance', 'CEO / CCOO / Director']];
-          const signBody = [
-            [
-              `\n\n___________________\n${group.createdByName || 'Site Accountant'}`,
-              '\n\n___________________\nMaintenance Engineer',
-              '\n\n___________________\nProject Engineer',
-              '\n\n___________________\nAccounts Dept',
-              '\n\n___________________\nInternal Audit',
-              '\n\n___________________\nFinance Manager',
-              `\n\n___________________\n${group.completedByName || 'Executive Approval'}`
-            ]
-          ];
-
-          const finalTableY = (doc as any).lastAutoTable?.finalY || 100;
-          const targetBottomSigY = pageHeight - 28;
-          let sigStartY = targetBottomSigY;
-          if (finalTableY + 6 > targetBottomSigY) {
-            doc.addPage();
-            sigStartY = targetBottomSigY;
-          }
-
-          autoTable(doc, {
-            startY: sigStartY,
-            head: signHead,
-            body: signBody,
-            theme: 'plain',
-            headStyles: { fontStyle: 'bold', fontSize: 7, halign: 'center', textColor: [17, 24, 39], fillColor: [243, 244, 246] },
-            bodyStyles: { fontSize: 6.5, halign: 'center', textColor: [75, 85, 99], cellPadding: 1 },
-            margin: { left: 14, right: 14, bottom: 6 },
-            pageBreak: 'avoid'
-          });
+          appendPdfSignatures();
 
           // --- PAGE 2: STORE & DEPARTMENT EXPENSE STATEMENT BY LEDGER BATCHES ---
           doc.addPage();
@@ -3161,8 +3113,8 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
 
         s5Data.push([]);
         s5Data.push(['SIGNATURES & APPROVALS:']);
-        s5Data.push(['Prepared By', 'Verify By MEngg', 'Verify By Engg', 'Accountant', 'Audit', 'Finance', 'CEO / CCOO / Director']);
-        s5Data.push([group.createdByName || 'Site Accountant', 'Maintenance Engineer', 'Project Engineer', 'Accounts Dept', 'Internal Audit', 'Finance Manager', group.completedByName || 'Executive Management']);
+        s5Data.push(REPORT_SIGNATURE_TIERS.map(tier => tier.title));
+        s5Data.push(REPORT_SIGNATURE_TIERS.map(tier => tier.role));
       } else {
         const hasExcelUnitemized = consolidatedBatchData.grandUnitemized > 0.001;
         const hasExcelSubCols = allChildExpenseColumns.length > 0;
@@ -3265,8 +3217,8 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
         // Signatures row for Consolidated Sheet
         s5Data.push([]);
         s5Data.push(['SIGNATURES & APPROVALS:']);
-        s5Data.push(['Prepared By', 'Verify By MEngg', 'Verify By Engg', 'Accountant', 'Audit', 'Finance', 'CEO / CCOO / Director']);
-        s5Data.push([group.createdByName || 'Site Accountant', 'Maintenance Engineer', 'Project Engineer', 'Accounts Dept', 'Internal Audit', 'Finance Manager', group.completedByName || 'Executive Management']);
+        s5Data.push(REPORT_SIGNATURE_TIERS.map(tier => tier.title));
+        s5Data.push(REPORT_SIGNATURE_TIERS.map(tier => tier.role));
       }
 
       const ws5 = XLSX.utils.aoa_to_sheet(s5Data);
@@ -3493,8 +3445,8 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
         // Signatures row for Sheet 1
         s1Data.push([]);
         s1Data.push(['SIGNATURES & APPROVALS:']);
-        s1Data.push(['Prepared By', 'Verify By MEngg', 'Verify By Engg', 'Accountant', 'Audit', 'Finance', 'CEO / CCOO / Director']);
-        s1Data.push([group.createdByName || 'Site Accountant', 'Maintenance Engineer', 'Project Engineer', 'Accounts Dept', 'Internal Audit', 'Finance Manager', group.completedByName || 'Executive Management']);
+        s1Data.push(REPORT_SIGNATURE_TIERS.map(tier => tier.title));
+        s1Data.push(REPORT_SIGNATURE_TIERS.map(tier => tier.role));
 
         const ws1 = XLSX.utils.aoa_to_sheet(s1Data);
         ws1['!merges'] = s1Merges;
