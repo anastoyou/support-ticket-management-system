@@ -87,13 +87,13 @@ const STORE_TYPE_LABELS: Record<string, string> = {
 };
 
 const REPORT_SIGNATURE_TIERS = [
-  { title: 'Prepared By', role: 'Site Accountant' },
+  { title: 'Prepared By', role: 'Maintenance Supervisor' },
   { title: 'Verify By MEngg', role: 'Maintenance Engineer' },
-  { title: 'Verify By Engg', role: 'Project / Site Engineer' },
+  { title: 'Verify By Engg', role: 'Project Engineer' },
   { title: 'Accountant', role: 'Accounts Dept' },
   { title: 'Audit', role: 'Internal Audit' },
   { title: 'Finance', role: 'Finance Manager' },
-  { title: 'CEO / CCOO / Director', role: 'Executive Approval' },
+  { title: 'CEO / CCOO / Director', role: '' },
 ] as const;
 
 export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({

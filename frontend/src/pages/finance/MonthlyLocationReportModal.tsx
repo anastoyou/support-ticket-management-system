@@ -3,7 +3,7 @@ import {
   X, Printer, Download, RefreshCw, Calendar, Building2,
   TrendingUp, TrendingDown, ArrowRight, Filter, Search,
   FileText, CheckCircle2, AlertCircle, Loader2, BarChart2,
-  Layers, DollarSign, ArrowUpDown, ChevronDown, ChevronRight, Store
+  Layers, DollarSign, ArrowUpDown, ChevronDown, ChevronRight, Store, User
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { usePermission } from '@/hooks/usePermission';
@@ -46,6 +46,34 @@ interface LedgerBatchSummaryItem {
   }[];
 }
 
+interface WorkerLocationItem {
+  store_id: string;
+  location_name: string;
+  store_type?: string;
+  categories: Record<string, number>;
+  total_amount: number;
+  voucher_amount?: number;
+  labour_amount?: number;
+  expense_count: number;
+  allocated_hours?: number;
+  actual_hours?: number;
+}
+
+interface WorkerSummaryItem {
+  worker_id: number | string;
+  worker_name: string;
+  employee_no?: string;
+  total_amount: number;
+  voucher_amount?: number;
+  labour_amount?: number;
+  expense_count: number;
+  locations_count: number;
+  allocated_hours?: number;
+  actual_hours?: number;
+  categories: Record<string, number>;
+  locations?: WorkerLocationItem[];
+}
+
 interface LocationReportData {
   department_name?: string;
   from_date?: string;
@@ -65,6 +93,7 @@ interface LocationReportData {
   }[];
   store_types_summary?: StoreTypeSummaryItem[];
   ledger_batches_summary?: LedgerBatchSummaryItem[];
+  workers_summary?: WorkerSummaryItem[];
   available_batches?: { batch_id: number; batch_name: string }[];
   categories: string[];
   category_totals: Record<string, number>;
@@ -121,6 +150,27 @@ interface ComparisonLedgerBatchItem {
   locations: ComparisonLocationItem[];
 }
 
+interface ComparisonWorkerItem {
+  worker_id: number | string;
+  worker_name: string;
+  employee_no?: string;
+  period1_amount: number;
+  period2_amount: number;
+  variance: number;
+  percent_change: number;
+  period1_allocated_hours?: number;
+  period2_allocated_hours?: number;
+  hours_variance?: number;
+  period1_labour_amount?: number;
+  period2_labour_amount?: number;
+  labour_variance?: number;
+  period1_voucher_amount?: number;
+  period2_voucher_amount?: number;
+  period1_locations_count?: number;
+  period2_locations_count?: number;
+  categories: ComparisonCategoryItem[];
+}
+
 interface ComparisonReportData {
   is_comparison: true;
   department_name?: string;
@@ -157,6 +207,7 @@ interface ComparisonReportData {
   };
   store_types_summary?: any[];
   ledger_batches_summary?: ComparisonLedgerBatchItem[];
+  workers_summary?: ComparisonWorkerItem[];
   categories: string[];
   category_totals: {
     period1: Record<string, number>;
@@ -283,7 +334,7 @@ export const MonthlyLocationReportModal: React.FC<MonthlyLocationReportModalProp
   const [statusFilter, setStatusFilter] = useState<'approved' | 'all' | 'paid'>('approved');
   const [selectedStoreType, setSelectedStoreType] = useState<string>('all');
   const [selectedBatch, setSelectedBatch] = useState<string>('all');
-  const [groupingMode, setGroupingMode] = useState<'location' | 'batch' | 'store_type'>('location');
+  const [groupingMode, setGroupingMode] = useState<'location' | 'batch' | 'store_type' | 'worker'>('location');
   const [searchTerm, setSearchTerm] = useState('');
   const [showDetailedCategoriesInComparison, setShowDetailedCategoriesInComparison] = useState(false);
   const [expandedLocations, setExpandedLocations] = useState<Record<string, boolean>>({});
@@ -391,6 +442,24 @@ export const MonthlyLocationReportModal: React.FC<MonthlyLocationReportModalProp
     );
   }, [comparisonData, searchTerm]);
 
+  const filteredSingleWorkers = useMemo(() => {
+    if (!singleData?.workers_summary) return [];
+    if (!searchTerm.trim()) return singleData.workers_summary;
+    const term = searchTerm.toLowerCase().trim();
+    return singleData.workers_summary.filter(
+      w => w.worker_name.toLowerCase().includes(term) || (w.employee_no || '').toLowerCase().includes(term)
+    );
+  }, [singleData, searchTerm]);
+
+  const filteredComparisonWorkers = useMemo(() => {
+    if (!comparisonData?.workers_summary) return [];
+    if (!searchTerm.trim()) return comparisonData.workers_summary;
+    const term = searchTerm.toLowerCase().trim();
+    return comparisonData.workers_summary.filter(
+      w => w.worker_name.toLowerCase().includes(term) || (w.employee_no || '').toLowerCase().includes(term)
+    );
+  }, [comparisonData, searchTerm]);
+
   // Group single locations by store_type
   const singleLocationsByStoreType = useMemo(() => {
     const groups: Record<string, typeof filteredSingleLocations> = {};
@@ -439,6 +508,16 @@ export const MonthlyLocationReportModal: React.FC<MonthlyLocationReportModalProp
       const p2TotalHours = locs.reduce((sum, l) => sum + (l.period2_allocated_hours || 0), 0);
       const variance = p2Subtotal - p1Subtotal;
       const pctChange = p1Subtotal > 0 ? (variance / p1Subtotal) * 100 : (p2Subtotal > 0 ? 100 : 0);
+      const categorySubtotals: Record<string, { p1: number; p2: number }> = {};
+      for (const l of locs) {
+        for (const cat of l.categories || []) {
+          if (!categorySubtotals[cat.category_name]) {
+            categorySubtotals[cat.category_name] = { p1: 0, p2: 0 };
+          }
+          categorySubtotals[cat.category_name].p1 += cat.period1_amount || 0;
+          categorySubtotals[cat.category_name].p2 += cat.period2_amount || 0;
+        }
+      }
       return {
         typeLabel,
         locations: locs,
@@ -452,6 +531,7 @@ export const MonthlyLocationReportModal: React.FC<MonthlyLocationReportModalProp
         hoursVariance: p2TotalHours - p1TotalHours,
         variance,
         pctChange,
+        categorySubtotals,
       };
     }).sort((a, b) => b.p2Subtotal - a.p2Subtotal);
   }, [filteredComparisonLocations]);
@@ -522,6 +602,16 @@ export const MonthlyLocationReportModal: React.FC<MonthlyLocationReportModalProp
       const p2TotalHours = locs.reduce((sum, l) => sum + (l.period2_allocated_hours || 0), 0);
       const variance = p2Subtotal - p1Subtotal;
       const pctChange = p1Subtotal > 0 ? (variance / p1Subtotal) * 100 : (p2Subtotal > 0 ? 100 : 0);
+      const categorySubtotals: Record<string, { p1: number; p2: number }> = {};
+      for (const l of locs) {
+        for (const cat of l.categories || []) {
+          if (!categorySubtotals[cat.category_name]) {
+            categorySubtotals[cat.category_name] = { p1: 0, p2: 0 };
+          }
+          categorySubtotals[cat.category_name].p1 += cat.period1_amount || 0;
+          categorySubtotals[cat.category_name].p2 += cat.period2_amount || 0;
+        }
+      }
 
       return {
         ...batch,
@@ -536,6 +626,7 @@ export const MonthlyLocationReportModal: React.FC<MonthlyLocationReportModalProp
         hoursVariance: p2TotalHours - p1TotalHours,
         variance,
         pctChange,
+        categorySubtotals,
       };
     }).filter(batch => batch.locations.length > 0);
   }, [comparisonData, searchTerm]);
@@ -548,21 +639,44 @@ export const MonthlyLocationReportModal: React.FC<MonthlyLocationReportModalProp
     }));
   };
 
+  const hasComparisonLabour = Boolean(
+    comparisonData &&
+    ((comparisonData.summary.period1_total_labour_amount || 0) > 0 ||
+      (comparisonData.summary.period2_total_labour_amount || 0) > 0)
+  );
+
+  const compCategories = comparisonData?.categories || [];
+
+  const compTotalCols = showDetailedCategoriesInComparison && comparisonData
+    ? 2 + (hasComparisonLabour ? 2 : 0) + (compCategories.length * 2) + 4
+    : 6;
+
+  const getCategoryLookup = (cats?: ComparisonCategoryItem[]) => {
+    const map = new Map<string, ComparisonCategoryItem>();
+    for (const c of cats || []) {
+      map.set(c.category_name, c);
+    }
+    return map;
+  };
+
   // 7-Tier Signatures Block Definition
   const signaturesList = [
     { title: 'Prepared By', name: currentUser?.full_name || currentUser?.username || 'Site Accountant', role: 'Site Accountant' },
     { title: 'Verify By MEngg', name: 'Maintenance Engineer', role: 'Maintenance Engineer' },
-    { title: 'Verify By Engg', name: 'Project / Site Engineer', role: 'Project Engineer' },
+    { title: 'Verify By Engg', name: 'Project Engineer', role: 'Project Engineer' },
     { title: 'Accountant', name: 'Accounts Dept', role: 'Accounts Dept' },
     { title: 'Audit', name: 'Internal Audit', role: 'Internal Audit' },
     { title: 'Finance', name: 'Finance Manager', role: 'Finance Manager' },
-    { title: 'CEO / CCOO / Director', name: 'Executive Management', role: 'Executive Approval' }
+    { title: 'CEO / CCOO / Director', name: 'Executive Management', role: '' }
   ];
 
   // PRINT / PDF GENERATOR (Prints directly on current page via hidden isolated iframe - NO new tab)
   const handlePrint = () => {
     const isComp = reportMode === 'comparison' && comparisonData;
-    const title = isComp ? 'LOCATION EXPENSE COMPARISON REPORT' : 'MONTHLY LOCATION EXPENSE REPORT';
+    const isWorkerMode = groupingMode === 'worker';
+    const title = isComp
+      ? (isWorkerMode ? 'WORKER EXPENSE COMPARISON REPORT' : 'LOCATION EXPENSE COMPARISON REPORT')
+      : (isWorkerMode ? 'MONTHLY WORKER EXPENSE REPORT' : 'MONTHLY LOCATION EXPENSE REPORT');
     const subtitle = isComp
       ? `Period 1: ${comparisonData.period1.month_label} (${comparisonData.period1.from_date} to ${comparisonData.period1.to_date}) vs Period 2: ${comparisonData.period2.month_label} (${comparisonData.period2.from_date} to ${comparisonData.period2.to_date})`
       : `Period: ${singleData?.month_label || `${singleFromDate} to ${singleToDate}`}`;
@@ -581,7 +695,7 @@ export const MonthlyLocationReportModal: React.FC<MonthlyLocationReportModalProp
       tableHeadersHtml = `
         <tr>
           <th style="width: ${slColWidth}; text-align: center;">#</th>
-          <th style="text-align: left; min-width: ${locColMin};">Location / Store</th>
+          <th style="text-align: left; min-width: ${locColMin};">${isWorkerMode ? 'Worker' : 'Location / Store'}</th>
           <th style="text-align: right; width: ${hoursColWidth}; color: #0284c7;">Working Hours</th>
           <th style="text-align: right; width: ${totalColWidth}; color: #059669;">Labour (KWD)</th>
           ${singleData.categories.map(c => `<th style="text-align: right;">${c}</th>`).join('')}
@@ -598,10 +712,10 @@ export const MonthlyLocationReportModal: React.FC<MonthlyLocationReportModalProp
             </td>
           </tr>
           ${batch.locations.map((loc, idx) => {
-            const share = singleData.grand_total > 0
-              ? ((loc.total_amount / singleData.grand_total) * 100).toFixed(1)
-              : '0.0';
-            return `
+          const share = singleData.grand_total > 0
+            ? ((loc.total_amount / singleData.grand_total) * 100).toFixed(1)
+            : '0.0';
+          return `
               <tr>
                 <td style="text-align: center; color: #6b7280;">${idx + 1}</td>
                 <td style="font-weight: 600; color: #111827;">${loc.location_name}</td>
@@ -612,7 +726,7 @@ export const MonthlyLocationReportModal: React.FC<MonthlyLocationReportModalProp
                 <td style="text-align: right; color: #4b5563;">${share}%</td>
               </tr>
             `;
-          }).join('')}
+        }).join('')}
           <tr style="background: #f9fafb; font-weight: 700; border-top: 1px solid #e5e7eb; border-bottom: 1px solid #e5e7eb;">
             <td colspan="2" style="text-align: right; padding: 4px 6px; font-size: ${isVerticalOrientation ? '8px' : '9.5px'}; color: #374151;">Subtotal (${batch.batch_name}):</td>
             <td style="text-align: right; font-weight: 700; color: #0284c7; font-size: ${isVerticalOrientation ? '8px' : '9.5px'};">${formatWorkHours(batch.totalHours)}</td>
@@ -630,10 +744,10 @@ export const MonthlyLocationReportModal: React.FC<MonthlyLocationReportModalProp
             </td>
           </tr>
           ${typeGroup.locations.map((loc, idx) => {
-            const share = singleData.grand_total > 0
-              ? ((loc.total_amount / singleData.grand_total) * 100).toFixed(1)
-              : '0.0';
-            return `
+          const share = singleData.grand_total > 0
+            ? ((loc.total_amount / singleData.grand_total) * 100).toFixed(1)
+            : '0.0';
+          return `
               <tr>
                 <td style="text-align: center; color: #6b7280;">${idx + 1}</td>
                 <td style="font-weight: 600; color: #111827;">${loc.location_name}</td>
@@ -644,7 +758,7 @@ export const MonthlyLocationReportModal: React.FC<MonthlyLocationReportModalProp
                 <td style="text-align: right; color: #4b5563;">${share}%</td>
               </tr>
             `;
-          }).join('')}
+        }).join('')}
           <tr style="background: #f9fafb; font-weight: 700; border-top: 1px solid #e5e7eb; border-bottom: 1px solid #e5e7eb;">
             <td colspan="2" style="text-align: right; padding: 4px 6px; font-size: ${isVerticalOrientation ? '8px' : '9.5px'}; color: #374151;">Subtotal (${typeGroup.typeLabel}):</td>
             <td style="text-align: right; font-weight: 700; color: #0284c7; font-size: ${isVerticalOrientation ? '8px' : '9.5px'};">${formatWorkHours(typeGroup.totalHours)}</td>
@@ -654,6 +768,24 @@ export const MonthlyLocationReportModal: React.FC<MonthlyLocationReportModalProp
             <td style="text-align: right; font-size: ${isVerticalOrientation ? '8px' : '9.5px'};">${singleData.grand_total > 0 ? ((typeGroup.subtotal / singleData.grand_total) * 100).toFixed(1) : '0.0'}%</td>
           </tr>
         `).join('');
+      } else if (groupingMode === 'worker') {
+        tableBodyHtml = filteredSingleWorkers.map((w, idx) => {
+          const share = singleData.grand_total > 0
+            ? ((w.total_amount / singleData.grand_total) * 100).toFixed(1)
+            : '0.0';
+          const empTag = w.employee_no ? ` <span style="font-weight:normal;color:#6b7280;font-size:8px;">(${w.employee_no})</span>` : '';
+          return `
+            <tr>
+              <td style="text-align: center; color: #6b7280;">${idx + 1}</td>
+              <td style="font-weight: 600; color: #111827;">${w.worker_name}${empTag}</td>
+              <td style="text-align: right; font-weight: 600; color: #0284c7;">${formatWorkHours(w.allocated_hours)}</td>
+              <td style="text-align: right; font-weight: 600; color: #059669;">${Number(w.labour_amount || 0).toFixed(3)}</td>
+              ${singleData.categories.map(c => `<td style="text-align: right;">${w.categories[c] ? Number(w.categories[c]).toFixed(3) : '-'}</td>`).join('')}
+              <td style="text-align: right; font-weight: 700; color: #111827;">${Number(w.total_amount).toFixed(3)}</td>
+              <td style="text-align: right; color: #4b5563;">${share}%</td>
+            </tr>
+          `;
+        }).join('');
       } else {
         tableBodyHtml = filteredSingleLocations.map((loc, idx) => {
           const share = singleData.grand_total > 0
@@ -684,88 +816,47 @@ export const MonthlyLocationReportModal: React.FC<MonthlyLocationReportModalProp
         </tr>
       `;
     } else if (isComp && comparisonData) {
-      tableHeadersHtml = `
-        <tr>
-          <th style="width: ${slColWidth}; text-align: center;">#</th>
-          <th style="text-align: left; min-width: ${locColMin};">Location</th>
-          <th style="text-align: right;">Period 1 (${comparisonData.period1.month_label})</th>
-          <th style="text-align: right;">Period 2 (${comparisonData.period2.month_label})</th>
-          <th style="text-align: right; width: ${totalColWidth};">Variance (KWD)</th>
-          <th style="text-align: right; width: ${shareColWidth};">% Change</th>
-        </tr>
-      `;
+      const showCatCols = showDetailedCategoriesInComparison && compCategories.length > 0;
+      const printCompCols = showCatCols
+        ? 2 + (hasComparisonLabour ? 2 : 0) + (compCategories.length * 2) + 4
+        : 6;
 
-      if (groupingMode === 'batch') {
-        tableBodyHtml = filteredComparisonBatches.map(batch => `
-          <tr style="background: #eef2ff; font-weight: 700; color: #3730a3;">
-            <td colspan="6" style="padding: 6px 10px; font-size: ${isVerticalOrientation ? '9px' : '10px'};">
-              🔹 LEDGER BATCH: ${batch.batch_name} — ${batch.locations.length} Stores | P1: ${batch.p1Subtotal.toFixed(3)} | P2: ${batch.p2Subtotal.toFixed(3)} | Var: ${batch.variance >= 0 ? '+' : ''}${batch.variance.toFixed(3)}
-            </td>
+      if (showCatCols) {
+        tableHeadersHtml = `
+          <tr>
+            <th rowspan="2" style="width: ${slColWidth}; text-align: center;">#</th>
+            <th rowspan="2" style="text-align: left; min-width: ${isVerticalOrientation ? '100px' : '140px'};">${isWorkerMode ? 'Worker' : 'Location / Store'}</th>
+            ${hasComparisonLabour ? `<th colspan="2" style="text-align: center; color: #059669;">Labour (KWD)</th>` : ''}
+            ${compCategories.map(c => `<th colspan="2" style="text-align: center;">${c}</th>`).join('')}
+            <th colspan="2" style="text-align: center; background: #e5e7eb;">Total (KWD)</th>
+            <th rowspan="2" style="text-align: right; width: ${isVerticalOrientation ? '52px' : '70px'};">Variance (KWD)</th>
+            <th rowspan="2" style="text-align: right; width: ${isVerticalOrientation ? '42px' : '56px'};">% Change</th>
           </tr>
-          ${batch.locations.map((loc, idx) => {
-            const isUp = loc.variance > 0;
-            const varColor = isUp ? '#dc2626' : (loc.variance < 0 ? '#16a34a' : '#4b5563');
-            return `
-              <tr>
-                <td style="text-align: center; color: #6b7280;">${idx + 1}</td>
-                <td style="font-weight: 600; color: #111827;">${loc.location_name}</td>
-                <td style="text-align: right;">${Number(loc.period1_amount).toFixed(3)}</td>
-                <td style="text-align: right; font-weight: 600;">${Number(loc.period2_amount).toFixed(3)}</td>
-                <td style="text-align: right; font-weight: 700; color: ${varColor};">
-                  ${isUp ? '+' : ''}${Number(loc.variance).toFixed(3)}
-                </td>
-                <td style="text-align: right; font-weight: 700; color: ${varColor};">
-                  ${isUp ? '+' : ''}${loc.percent_change.toFixed(2)}%
-                </td>
-              </tr>
-            `;
-          }).join('')}
-          <tr style="background: #f9fafb; font-weight: 700; border-top: 1px solid #e5e7eb; border-bottom: 1px solid #e5e7eb;">
-            <td colspan="2" style="text-align: right; padding: 4px 6px; font-size: ${isVerticalOrientation ? '8px' : '9.5px'}; color: #374151;">Subtotal (${batch.batch_name}):</td>
-            <td style="text-align: right; font-size: ${isVerticalOrientation ? '8px' : '9.5px'};">${batch.p1Subtotal.toFixed(3)}</td>
-            <td style="text-align: right; font-weight: 700; color: #4f46e5; font-size: ${isVerticalOrientation ? '8px' : '9.5px'};">${batch.p2Subtotal.toFixed(3)}</td>
-            <td style="text-align: right; font-weight: 700; color: ${batch.variance > 0 ? '#dc2626' : '#16a34a'}; font-size: ${isVerticalOrientation ? '8px' : '9.5px'};">${batch.variance >= 0 ? '+' : ''}${batch.variance.toFixed(3)}</td>
-            <td style="text-align: right; font-size: ${isVerticalOrientation ? '8px' : '9.5px'};">${batch.variance >= 0 ? '+' : ''}${batch.pctChange.toFixed(1)}%</td>
+          <tr>
+            ${hasComparisonLabour ? `<th style="text-align: right;">P1</th><th style="text-align: right;">P2</th>` : ''}
+            ${compCategories.map(() => `<th style="text-align: right;">P1</th><th style="text-align: right;">P2</th>`).join('')}
+            <th style="text-align: right; background: #e5e7eb;">P1</th>
+            <th style="text-align: right; background: #e5e7eb;">P2</th>
           </tr>
-        `).join('');
-      } else if (groupingMode === 'store_type') {
-        tableBodyHtml = comparisonLocationsByStoreType.map(typeGroup => `
-          <tr style="background: #eef2ff; font-weight: 700; color: #3730a3;">
-            <td colspan="6" style="padding: 6px 10px; font-size: ${isVerticalOrientation ? '9px' : '10px'};">
-              🔹 STORE TYPE: ${typeGroup.typeLabel} — ${typeGroup.locations.length} Stores | P1: ${typeGroup.p1Subtotal.toFixed(3)} | P2: ${typeGroup.p2Subtotal.toFixed(3)} | Var: ${typeGroup.variance >= 0 ? '+' : ''}${typeGroup.variance.toFixed(3)}
-            </td>
-          </tr>
-          ${typeGroup.locations.map((loc, idx) => {
-            const isUp = loc.variance > 0;
-            const varColor = isUp ? '#dc2626' : (loc.variance < 0 ? '#16a34a' : '#4b5563');
-            return `
-              <tr>
-                <td style="text-align: center; color: #6b7280;">${idx + 1}</td>
-                <td style="font-weight: 600; color: #111827;">${loc.location_name}</td>
-                <td style="text-align: right;">${Number(loc.period1_amount).toFixed(3)}</td>
-                <td style="text-align: right; font-weight: 600;">${Number(loc.period2_amount).toFixed(3)}</td>
-                <td style="text-align: right; font-weight: 700; color: ${varColor};">
-                  ${isUp ? '+' : ''}${Number(loc.variance).toFixed(3)}
-                </td>
-                <td style="text-align: right; font-weight: 700; color: ${varColor};">
-                  ${isUp ? '+' : ''}${loc.percent_change.toFixed(2)}%
-                </td>
-              </tr>
-            `;
-          }).join('')}
-          <tr style="background: #f9fafb; font-weight: 700; border-top: 1px solid #e5e7eb; border-bottom: 1px solid #e5e7eb;">
-            <td colspan="2" style="text-align: right; padding: 4px 6px; font-size: ${isVerticalOrientation ? '8px' : '9.5px'}; color: #374151;">Subtotal (${typeGroup.typeLabel}):</td>
-            <td style="text-align: right; font-size: ${isVerticalOrientation ? '8px' : '9.5px'};">${typeGroup.p1Subtotal.toFixed(3)}</td>
-            <td style="text-align: right; font-weight: 700; color: #4f46e5; font-size: ${isVerticalOrientation ? '8px' : '9.5px'};">${typeGroup.p2Subtotal.toFixed(3)}</td>
-            <td style="text-align: right; font-weight: 700; color: ${typeGroup.variance > 0 ? '#dc2626' : '#16a34a'}; font-size: ${isVerticalOrientation ? '8px' : '9.5px'};">${typeGroup.variance >= 0 ? '+' : ''}${typeGroup.variance.toFixed(3)}</td>
-            <td style="text-align: right; font-size: ${isVerticalOrientation ? '8px' : '9.5px'};">${typeGroup.variance >= 0 ? '+' : ''}${typeGroup.pctChange.toFixed(1)}%</td>
-          </tr>
-        `).join('');
+        `;
       } else {
-        tableBodyHtml = filteredComparisonLocations.map((loc, idx) => {
-          const isUp = loc.variance > 0;
-          const varColor = isUp ? '#dc2626' : (loc.variance < 0 ? '#16a34a' : '#4b5563');
-          const mainRow = `
+        tableHeadersHtml = `
+          <tr>
+            <th style="width: ${slColWidth}; text-align: center;">#</th>
+            <th style="text-align: left; min-width: ${locColMin};">${isWorkerMode ? 'Worker' : 'Location'}</th>
+            <th style="text-align: right;">Period 1 (${comparisonData.period1.month_label})</th>
+            <th style="text-align: right;">Period 2 (${comparisonData.period2.month_label})</th>
+            <th style="text-align: right; width: ${totalColWidth};">Variance (KWD)</th>
+            <th style="text-align: right; width: ${shareColWidth};">% Change</th>
+          </tr>
+        `;
+      }
+
+      const buildPrintCompRowHtml = (loc: ComparisonLocationItem, idx: number) => {
+        const isUp = loc.variance > 0;
+        const varColor = isUp ? '#dc2626' : (loc.variance < 0 ? '#16a34a' : '#4b5563');
+        if (!showCatCols) {
+          return `
             <tr>
               <td style="text-align: center; color: #6b7280;">${idx + 1}</td>
               <td style="font-weight: 600; color: #111827;">${loc.location_name}</td>
@@ -779,38 +870,134 @@ export const MonthlyLocationReportModal: React.FC<MonthlyLocationReportModalProp
               </td>
             </tr>
           `;
-
-          const catRows = (showDetailedCategoriesInComparison && loc.categories)
-            ? loc.categories.map(cat => {
-              const cUp = cat.variance > 0;
-              const cColor = cUp ? '#dc2626' : (cat.variance < 0 ? '#16a34a' : '#6b7280');
-              return `
-                  <tr style="background: #fafafa; font-size: ${isVerticalOrientation ? '7.5px' : '9px'}; color: #4b5563;">
-                    <td></td>
-                    <td style="padding-left: 14px;">└ ${cat.category_name}</td>
-                    <td style="text-align: right;">${Number(cat.period1_amount).toFixed(3)}</td>
-                    <td style="text-align: right;">${Number(cat.period2_amount).toFixed(3)}</td>
-                    <td style="text-align: right; color: ${cColor};">${cUp ? '+' : ''}${Number(cat.variance).toFixed(3)}</td>
-                    <td style="text-align: right; color: ${cColor};">${cUp ? '+' : ''}${cat.percent_change.toFixed(1)}%</td>
-                  </tr>
-                `;
-            }).join('')
-            : '';
-
-          return mainRow + catRows;
+        }
+        const catMap = getCategoryLookup(loc.categories);
+        const labourCells = hasComparisonLabour
+          ? `<td style="text-align: right; color: #059669;">${loc.period1_labour_amount ? Number(loc.period1_labour_amount).toFixed(3) : '-'}</td><td style="text-align: right; color: #059669; font-weight: 600;">${loc.period2_labour_amount ? Number(loc.period2_labour_amount).toFixed(3) : '-'}</td>`
+          : '';
+        const catCells = compCategories.map(c => {
+          const item = catMap.get(c);
+          const p1v = item?.period1_amount || 0;
+          const p2v = item?.period2_amount || 0;
+          return `<td style="text-align: right;">${p1v > 0 ? p1v.toFixed(3) : '-'}</td><td style="text-align: right; font-weight: 600;">${p2v > 0 ? p2v.toFixed(3) : '-'}</td>`;
         }).join('');
+        return `
+          <tr>
+            <td style="text-align: center; color: #6b7280;">${idx + 1}</td>
+            <td style="font-weight: 600; color: #111827;">${loc.location_name}</td>
+            ${labourCells}
+            ${catCells}
+            <td style="text-align: right; background: #f9fafb; font-weight: 600;">${Number(loc.period1_amount).toFixed(3)}</td>
+            <td style="text-align: right; background: #f9fafb; font-weight: 700;">${Number(loc.period2_amount).toFixed(3)}</td>
+            <td style="text-align: right; font-weight: 700; color: ${varColor};">${isUp ? '+' : ''}${Number(loc.variance).toFixed(3)}</td>
+            <td style="text-align: right; font-weight: 700; color: ${varColor};">${isUp ? '+' : ''}${loc.percent_change.toFixed(2)}%</td>
+          </tr>
+        `;
+      };
+
+      const buildPrintCompSubtotalHtml = (
+        label: string,
+        p1Sub: number,
+        p2Sub: number,
+        variance: number,
+        pctChange: number,
+        p1Lab: number,
+        p2Lab: number,
+        catSubtotals: Record<string, { p1: number; p2: number }>
+      ) => {
+        const fs = showCatCols ? (isVerticalOrientation ? '7px' : '8px') : (isVerticalOrientation ? '8px' : '9.5px');
+        if (!showCatCols) {
+          return `
+            <tr style="background: #f9fafb; font-weight: 700; border-top: 1px solid #e5e7eb; border-bottom: 1px solid #e5e7eb;">
+              <td colspan="2" style="text-align: right; padding: 4px 6px; font-size: ${fs}; color: #374151;">Subtotal (${label}):</td>
+              <td style="text-align: right; font-size: ${fs};">${p1Sub.toFixed(3)}</td>
+              <td style="text-align: right; font-weight: 700; color: #4f46e5; font-size: ${fs};">${p2Sub.toFixed(3)}</td>
+              <td style="text-align: right; font-weight: 700; color: ${variance > 0 ? '#dc2626' : '#16a34a'}; font-size: ${fs};">${variance >= 0 ? '+' : ''}${variance.toFixed(3)}</td>
+              <td style="text-align: right; font-size: ${fs};">${variance >= 0 ? '+' : ''}${pctChange.toFixed(1)}%</td>
+            </tr>
+          `;
+        }
+        const labourCells = hasComparisonLabour
+          ? `<td style="text-align: right; color: #059669; font-size: ${fs};">${p1Lab > 0 ? p1Lab.toFixed(3) : '-'}</td><td style="text-align: right; color: #059669; font-size: ${fs};">${p2Lab > 0 ? p2Lab.toFixed(3) : '-'}</td>`
+          : '';
+        const catCells = compCategories.map(c => {
+          const sub = catSubtotals[c];
+          const p1v = sub?.p1 || 0;
+          const p2v = sub?.p2 || 0;
+          return `<td style="text-align: right; font-size: ${fs};">${p1v > 0 ? p1v.toFixed(3) : '-'}</td><td style="text-align: right; font-size: ${fs};">${p2v > 0 ? p2v.toFixed(3) : '-'}</td>`;
+        }).join('');
+        return `
+          <tr style="background: #f9fafb; font-weight: 700; border-top: 1px solid #e5e7eb; border-bottom: 1px solid #e5e7eb;">
+            <td colspan="2" style="text-align: right; padding: 4px 6px; font-size: ${fs}; color: #374151;">Subtotal (${label}):</td>
+            ${labourCells}
+            ${catCells}
+            <td style="text-align: right; font-size: ${fs};">${p1Sub.toFixed(3)}</td>
+            <td style="text-align: right; font-weight: 700; color: #4f46e5; font-size: ${fs};">${p2Sub.toFixed(3)}</td>
+            <td style="text-align: right; font-weight: 700; color: ${variance > 0 ? '#dc2626' : '#16a34a'}; font-size: ${fs};">${variance >= 0 ? '+' : ''}${variance.toFixed(3)}</td>
+            <td style="text-align: right; font-size: ${fs};">${variance >= 0 ? '+' : ''}${pctChange.toFixed(1)}%</td>
+          </tr>
+        `;
+      };
+
+      if (groupingMode === 'batch') {
+        tableBodyHtml = filteredComparisonBatches.map(batch => `
+          <tr style="background: #eef2ff; font-weight: 700; color: #3730a3;">
+            <td colspan="${printCompCols}" style="padding: 6px 10px; font-size: ${isVerticalOrientation ? '9px' : '10px'};">
+              🔹 LEDGER BATCH: ${batch.batch_name} — ${batch.locations.length} Stores | P1: ${batch.p1Subtotal.toFixed(3)} | P2: ${batch.p2Subtotal.toFixed(3)} | Var: ${batch.variance >= 0 ? '+' : ''}${batch.variance.toFixed(3)}
+            </td>
+          </tr>
+          ${batch.locations.map((loc, idx) => buildPrintCompRowHtml(loc, idx)).join('')}
+          ${buildPrintCompSubtotalHtml(batch.batch_name, batch.p1Subtotal, batch.p2Subtotal, batch.variance, batch.pctChange, batch.p1TotalLabour, batch.p2TotalLabour, batch.categorySubtotals)}
+        `).join('');
+      } else if (groupingMode === 'store_type') {
+        tableBodyHtml = comparisonLocationsByStoreType.map(typeGroup => `
+          <tr style="background: #eef2ff; font-weight: 700; color: #3730a3;">
+            <td colspan="${printCompCols}" style="padding: 6px 10px; font-size: ${isVerticalOrientation ? '9px' : '10px'};">
+              🔹 STORE TYPE: ${typeGroup.typeLabel} — ${typeGroup.locations.length} Stores | P1: ${typeGroup.p1Subtotal.toFixed(3)} | P2: ${typeGroup.p2Subtotal.toFixed(3)} | Var: ${typeGroup.variance >= 0 ? '+' : ''}${typeGroup.variance.toFixed(3)}
+            </td>
+          </tr>
+          ${typeGroup.locations.map((loc, idx) => buildPrintCompRowHtml(loc, idx)).join('')}
+          ${buildPrintCompSubtotalHtml(typeGroup.typeLabel, typeGroup.p1Subtotal, typeGroup.p2Subtotal, typeGroup.variance, typeGroup.pctChange, typeGroup.p1TotalLabour, typeGroup.p2TotalLabour, typeGroup.categorySubtotals)}
+        `).join('');
+      } else if (groupingMode === 'worker') {
+        tableBodyHtml = filteredComparisonWorkers.map((w, idx) => buildPrintCompRowHtml({
+          store_id: String(w.worker_id),
+          location_name: w.employee_no ? `${w.worker_name} (${w.employee_no})` : w.worker_name,
+          period1_amount: w.period1_amount,
+          period2_amount: w.period2_amount,
+          variance: w.variance,
+          percent_change: w.percent_change,
+          period1_labour_amount: w.period1_labour_amount,
+          period2_labour_amount: w.period2_labour_amount,
+          categories: w.categories,
+        }, idx)).join('');
+      } else {
+        tableBodyHtml = filteredComparisonLocations.map((loc, idx) => buildPrintCompRowHtml(loc, idx)).join('');
       }
 
       const s = comparisonData.summary;
       const isUp = s.variance > 0;
       const varColor = isUp ? '#dc2626' : (s.variance < 0 ? '#16a34a' : '#4b5563');
+      const footPad = showCatCols ? (isVerticalOrientation ? '3px 2px' : '5px 4px') : (isVerticalOrientation ? '5px 6px' : '8px 10px');
+      const grandLabourCells = (showCatCols && hasComparisonLabour)
+        ? `<td style="text-align: right; padding: ${footPad}; color: #059669;">${Number(s.period1_total_labour_amount || 0).toFixed(3)}</td><td style="text-align: right; padding: ${footPad}; color: #059669;">${Number(s.period2_total_labour_amount || 0).toFixed(3)}</td>`
+        : '';
+      const grandCatCells = showCatCols
+        ? compCategories.map(c => {
+          const p1c = Number(comparisonData.category_totals?.period1?.[c] || 0);
+          const p2c = Number(comparisonData.category_totals?.period2?.[c] || 0);
+          return `<td style="text-align: right; padding: ${footPad};">${p1c > 0 ? p1c.toFixed(3) : '-'}</td><td style="text-align: right; padding: ${footPad};">${p2c > 0 ? p2c.toFixed(3) : '-'}</td>`;
+        }).join('')
+        : '';
       tableFootHtml = `
         <tr style="background: #f3f4f6; font-weight: 800;">
-          <td colspan="2" style="text-align: left; padding: ${isVerticalOrientation ? '5px 6px' : '8px 10px'};">GRAND TOTAL</td>
-          <td style="text-align: right; padding: ${isVerticalOrientation ? '5px 6px' : '8px 10px'};">${Number(s.period1_grand_total).toFixed(3)}</td>
-          <td style="text-align: right; padding: ${isVerticalOrientation ? '5px 6px' : '8px 10px'}; color: #005bbf;">${Number(s.period2_grand_total).toFixed(3)}</td>
-          <td style="text-align: right; padding: ${isVerticalOrientation ? '5px 6px' : '8px 10px'}; color: ${varColor};">${isUp ? '+' : ''}${Number(s.variance).toFixed(3)}</td>
-          <td style="text-align: right; padding: ${isVerticalOrientation ? '5px 6px' : '8px 10px'}; color: ${varColor};">${isUp ? '+' : ''}${s.percent_change.toFixed(2)}%</td>
+          <td colspan="2" style="text-align: left; padding: ${footPad};">GRAND TOTAL</td>
+          ${grandLabourCells}
+          ${grandCatCells}
+          <td style="text-align: right; padding: ${footPad};">${Number(s.period1_grand_total).toFixed(3)}</td>
+          <td style="text-align: right; padding: ${footPad}; color: #005bbf;">${Number(s.period2_grand_total).toFixed(3)}</td>
+          <td style="text-align: right; padding: ${footPad}; color: ${varColor};">${isUp ? '+' : ''}${Number(s.variance).toFixed(3)}</td>
+          <td style="text-align: right; padding: ${footPad}; color: ${varColor};">${isUp ? '+' : ''}${s.percent_change.toFixed(2)}%</td>
         </tr>
       `;
     }
@@ -934,7 +1121,7 @@ export const MonthlyLocationReportModal: React.FC<MonthlyLocationReportModalProp
             table {
               width: 100%;
               border-collapse: collapse;
-              font-size: ${isVerticalOrientation ? '8.5px' : '9.5px'};
+              font-size: ${(isComp && showDetailedCategoriesInComparison && compCategories.length > 0) ? (isVerticalOrientation ? '7px' : '8px') : (isVerticalOrientation ? '8.5px' : '9.5px')};
               margin-bottom: 6px;
               table-layout: auto;
             }
@@ -950,7 +1137,7 @@ export const MonthlyLocationReportModal: React.FC<MonthlyLocationReportModalProp
             }
             th, td {
               border: 1px solid #d1d5db;
-              padding: ${isVerticalOrientation ? '3.5px 4.5px' : '5px 7px'};
+              padding: ${(isComp && showDetailedCategoriesInComparison && compCategories.length > 0) ? (isVerticalOrientation ? '2.5px 2px' : '3.5px 4px') : (isVerticalOrientation ? '3.5px 4.5px' : '5px 7px')};
               overflow-wrap: break-word;
               word-wrap: break-word;
             }
@@ -959,7 +1146,7 @@ export const MonthlyLocationReportModal: React.FC<MonthlyLocationReportModalProp
               color: #111827;
               font-weight: 700;
               text-transform: uppercase;
-              font-size: ${isVerticalOrientation ? '8px' : '9px'};
+              font-size: ${(isComp && showDetailedCategoriesInComparison && compCategories.length > 0) ? (isVerticalOrientation ? '6.5px' : '7.5px') : (isVerticalOrientation ? '8px' : '9px')};
             }
             tr:nth-child(even) {
               background: #fafafa !important;
@@ -1015,6 +1202,7 @@ export const MonthlyLocationReportModal: React.FC<MonthlyLocationReportModalProp
               <div class="meta-bar">
                 <span><strong>Generated Date:</strong> ${new Date().toLocaleString()}</span>
                 <span><strong>Status Filter:</strong> ${statusFilter.toUpperCase()}</span>
+                ${isComp && showDetailedCategoriesInComparison && comparisonData ? `<span><strong>Periods:</strong> P1 = ${comparisonData.period1.month_label} | P2 = ${comparisonData.period2.month_label}</span>` : ''}
                 <span><strong>Prepared By:</strong> ${currentUser?.full_name || currentUser?.username || 'Finance Department'}</span>
               </div>
             </div>
@@ -1313,7 +1501,10 @@ export const MonthlyLocationReportModal: React.FC<MonthlyLocationReportModalProp
   // EXCEL EXPORT
   const handleExportExcel = () => {
     const isComp = reportMode === 'comparison' && comparisonData;
-    const title = isComp ? 'Location Expense Comparison Report' : 'Monthly Location Expense Report';
+    const isWorkerMode = groupingMode === 'worker';
+    const title = isComp
+      ? (isWorkerMode ? 'Worker Expense Comparison Report' : 'Location Expense Comparison Report')
+      : (isWorkerMode ? 'Monthly Worker Expense Report' : 'Monthly Location Expense Report');
     const wb = XLSX.utils.book_new();
 
     const rows: any[][] = [
@@ -1329,7 +1520,7 @@ export const MonthlyLocationReportModal: React.FC<MonthlyLocationReportModalProp
     ];
 
     if (!isComp && singleData) {
-      const headerRow = ['#', 'Location / Store', 'Working Hours', 'Labour Cost (KWD)', ...singleData.categories, 'Total (KWD)', '% Share'];
+      const headerRow = ['#', isWorkerMode ? 'Worker' : 'Location / Store', 'Working Hours', 'Labour Cost (KWD)', ...singleData.categories, 'Total (KWD)', '% Share'];
       rows.push(headerRow);
 
       if (groupingMode === 'batch') {
@@ -1388,6 +1579,21 @@ export const MonthlyLocationReportModal: React.FC<MonthlyLocationReportModalProp
           ]);
           rows.push([]);
         });
+      } else if (groupingMode === 'worker') {
+        filteredSingleWorkers.forEach((w, idx) => {
+          const share = singleData.grand_total > 0
+            ? ((w.total_amount / singleData.grand_total) * 100).toFixed(1)
+            : '0.0';
+          rows.push([
+            idx + 1,
+            w.employee_no ? `${w.worker_name} (${w.employee_no})` : w.worker_name,
+            formatWorkHours(w.allocated_hours),
+            w.labour_amount || 0,
+            ...singleData.categories.map(c => w.categories[c] || 0),
+            w.total_amount,
+            `${share}%`
+          ]);
+        });
       } else {
         filteredSingleLocations.forEach((loc, idx) => {
           const share = singleData.grand_total > 0
@@ -1416,123 +1622,177 @@ export const MonthlyLocationReportModal: React.FC<MonthlyLocationReportModalProp
         '100.0%'
       ]);
     } else if (isComp && comparisonData) {
-      const headerRow = [
-        '#',
-        'Location / Store',
-        `Period 1 (${comparisonData.period1.month_label})`,
-        `Period 2 (${comparisonData.period2.month_label})`,
-        'Variance (KWD)',
-        '% Change'
-      ];
-      rows.push(headerRow);
+      const showCatCols = showDetailedCategoriesInComparison && compCategories.length > 0;
+      const headerRowIdx = rows.length;
+      const excelMerges: XLSX.Range[] = [];
 
-      if (groupingMode === 'batch') {
-        filteredComparisonBatches.forEach(batch => {
-          rows.push([`LEDGER BATCH: ${batch.batch_name} (${batch.locations.length} Stores)`]);
-          batch.locations.forEach((loc, idx) => {
-            rows.push([
-              idx + 1,
-              loc.location_name,
-              loc.period1_amount,
-              loc.period2_amount,
-              loc.variance,
-              `${loc.percent_change.toFixed(2)}%`
-            ]);
-
-            if (showDetailedCategoriesInComparison && loc.categories) {
-              loc.categories.forEach(cat => {
-                rows.push([
-                  '',
-                  `  - ${cat.category_name}`,
-                  cat.period1_amount,
-                  cat.period2_amount,
-                  cat.variance,
-                  `${cat.percent_change.toFixed(2)}%`
-                ]);
-              });
-            }
-          });
-          rows.push([
-            '',
-            `Subtotal (${batch.batch_name})`,
-            batch.p1Subtotal,
-            batch.p2Subtotal,
-            batch.variance,
-            `${batch.pctChange.toFixed(2)}%`
-          ]);
-          rows.push([]);
-        });
-      } else if (groupingMode === 'store_type') {
-        comparisonLocationsByStoreType.forEach(typeGroup => {
-          rows.push([`STORE TYPE: ${typeGroup.typeLabel} (${typeGroup.locations.length} Stores)`]);
-          typeGroup.locations.forEach((loc, idx) => {
-            rows.push([
-              idx + 1,
-              loc.location_name,
-              loc.period1_amount,
-              loc.period2_amount,
-              loc.variance,
-              `${loc.percent_change.toFixed(2)}%`
-            ]);
-
-            if (showDetailedCategoriesInComparison && loc.categories) {
-              loc.categories.forEach(cat => {
-                rows.push([
-                  '',
-                  `  - ${cat.category_name}`,
-                  cat.period1_amount,
-                  cat.period2_amount,
-                  cat.variance,
-                  `${cat.percent_change.toFixed(2)}%`
-                ]);
-              });
-            }
-          });
-          rows.push([
-            '',
-            `Subtotal (${typeGroup.typeLabel})`,
-            typeGroup.p1Subtotal,
-            typeGroup.p2Subtotal,
-            typeGroup.variance,
-            `${typeGroup.pctChange.toFixed(2)}%`
-          ]);
-          rows.push([]);
-        });
+      if (showCatCols) {
+        const headerRow1: any[] = ['#', isWorkerMode ? 'Worker' : 'Location / Store'];
+        const headerRow2: any[] = ['', ''];
+        excelMerges.push(
+          { s: { r: headerRowIdx, c: 0 }, e: { r: headerRowIdx + 1, c: 0 } },
+          { s: { r: headerRowIdx, c: 1 }, e: { r: headerRowIdx + 1, c: 1 } }
+        );
+        let colPtr = 2;
+        if (hasComparisonLabour) {
+          headerRow1.push('Labour (KWD)', '');
+          headerRow2.push('P1', 'P2');
+          excelMerges.push({ s: { r: headerRowIdx, c: colPtr }, e: { r: headerRowIdx, c: colPtr + 1 } });
+          colPtr += 2;
+        }
+        for (const cat of compCategories) {
+          headerRow1.push(cat, '');
+          headerRow2.push('P1', 'P2');
+          excelMerges.push({ s: { r: headerRowIdx, c: colPtr }, e: { r: headerRowIdx, c: colPtr + 1 } });
+          colPtr += 2;
+        }
+        headerRow1.push('Total (KWD)', '', 'Variance (KWD)', '% Change');
+        headerRow2.push(`P1 (${comparisonData.period1.month_label})`, `P2 (${comparisonData.period2.month_label})`, '', '');
+        excelMerges.push(
+          { s: { r: headerRowIdx, c: colPtr }, e: { r: headerRowIdx, c: colPtr + 1 } },
+          { s: { r: headerRowIdx, c: colPtr + 2 }, e: { r: headerRowIdx + 1, c: colPtr + 2 } },
+          { s: { r: headerRowIdx, c: colPtr + 3 }, e: { r: headerRowIdx + 1, c: colPtr + 3 } }
+        );
+        rows.push(headerRow1);
+        rows.push(headerRow2);
       } else {
-        filteredComparisonLocations.forEach((loc, idx) => {
-          rows.push([
+        rows.push([
+          '#',
+          isWorkerMode ? 'Worker' : 'Location / Store',
+          `Period 1 (${comparisonData.period1.month_label})`,
+          `Period 2 (${comparisonData.period2.month_label})`,
+          'Variance (KWD)',
+          '% Change'
+        ]);
+      }
+
+      const buildExcelCompLocRow = (loc: ComparisonLocationItem, idx: number) => {
+        if (!showCatCols) {
+          return [
             idx + 1,
             loc.location_name,
             loc.period1_amount,
             loc.period2_amount,
             loc.variance,
             `${loc.percent_change.toFixed(2)}%`
-          ]);
+          ];
+        }
+        const catMap = getCategoryLookup(loc.categories);
+        const row: any[] = [idx + 1, loc.location_name];
+        if (hasComparisonLabour) {
+          row.push(loc.period1_labour_amount || 0, loc.period2_labour_amount || 0);
+        }
+        for (const cat of compCategories) {
+          const cObj = catMap.get(cat);
+          row.push(cObj?.period1_amount || 0, cObj?.period2_amount || 0);
+        }
+        row.push(loc.period1_amount, loc.period2_amount, loc.variance, `${loc.percent_change.toFixed(2)}%`);
+        return row;
+      };
 
-          if (showDetailedCategoriesInComparison && loc.categories) {
-            loc.categories.forEach(cat => {
-              rows.push([
-                '',
-                `  - ${cat.category_name}`,
-                cat.period1_amount,
-                cat.period2_amount,
-                cat.variance,
-                `${cat.percent_change.toFixed(2)}%`
-              ]);
-            });
-          }
+      const buildExcelCompSubtotalRow = (
+        label: string,
+        p1Sub: number,
+        p2Sub: number,
+        variance: number,
+        pctChange: number,
+        p1Lab: number,
+        p2Lab: number,
+        catSubtotals: Record<string, { p1: number; p2: number }>
+      ) => {
+        if (!showCatCols) {
+          return ['', `Subtotal (${label})`, p1Sub, p2Sub, variance, `${pctChange.toFixed(2)}%`];
+        }
+        const row: any[] = ['', `Subtotal (${label})`];
+        if (hasComparisonLabour) {
+          row.push(p1Lab || 0, p2Lab || 0);
+        }
+        for (const cat of compCategories) {
+          const sub = catSubtotals[cat];
+          row.push(sub?.p1 || 0, sub?.p2 || 0);
+        }
+        row.push(p1Sub, p2Sub, variance, `${pctChange.toFixed(2)}%`);
+        return row;
+      };
+
+      if (groupingMode === 'batch') {
+        filteredComparisonBatches.forEach(batch => {
+          rows.push([`LEDGER BATCH: ${batch.batch_name} (${batch.locations.length} Stores)`]);
+          batch.locations.forEach((loc, idx) => {
+            rows.push(buildExcelCompLocRow(loc, idx));
+          });
+          rows.push(buildExcelCompSubtotalRow(batch.batch_name, batch.p1Subtotal, batch.p2Subtotal, batch.variance, batch.pctChange, batch.p1TotalLabour, batch.p2TotalLabour, batch.categorySubtotals));
+          rows.push([]);
+        });
+      } else if (groupingMode === 'store_type') {
+        comparisonLocationsByStoreType.forEach(typeGroup => {
+          rows.push([`STORE TYPE: ${typeGroup.typeLabel} (${typeGroup.locations.length} Stores)`]);
+          typeGroup.locations.forEach((loc, idx) => {
+            rows.push(buildExcelCompLocRow(loc, idx));
+          });
+          rows.push(buildExcelCompSubtotalRow(typeGroup.typeLabel, typeGroup.p1Subtotal, typeGroup.p2Subtotal, typeGroup.variance, typeGroup.pctChange, typeGroup.p1TotalLabour, typeGroup.p2TotalLabour, typeGroup.categorySubtotals));
+          rows.push([]);
+        });
+      } else if (groupingMode === 'worker') {
+        filteredComparisonWorkers.forEach((w, idx) => {
+          rows.push(buildExcelCompLocRow({
+            store_id: String(w.worker_id),
+            location_name: w.employee_no ? `${w.worker_name} (${w.employee_no})` : w.worker_name,
+            period1_amount: w.period1_amount,
+            period2_amount: w.period2_amount,
+            variance: w.variance,
+            percent_change: w.percent_change,
+            period1_labour_amount: w.period1_labour_amount,
+            period2_labour_amount: w.period2_labour_amount,
+            categories: w.categories,
+          }, idx));
+        });
+      } else {
+        filteredComparisonLocations.forEach((loc, idx) => {
+          rows.push(buildExcelCompLocRow(loc, idx));
         });
       }
 
       const s = comparisonData.summary;
-      rows.push([
-        '',
-        'GRAND TOTAL',
-        s.period1_grand_total,
-        s.period2_grand_total,
-        s.variance,
-        `${s.percent_change.toFixed(2)}%`
-      ]);
+      if (showCatCols) {
+        const grandRow: any[] = ['', 'GRAND TOTAL'];
+        if (hasComparisonLabour) {
+          grandRow.push(s.period1_total_labour_amount || 0, s.period2_total_labour_amount || 0);
+        }
+        for (const cat of compCategories) {
+          grandRow.push(
+            Number(comparisonData.category_totals?.period1?.[cat] || 0),
+            Number(comparisonData.category_totals?.period2?.[cat] || 0)
+          );
+        }
+        grandRow.push(s.period1_grand_total, s.period2_grand_total, s.variance, `${s.percent_change.toFixed(2)}%`);
+        rows.push(grandRow);
+      } else {
+        rows.push([
+          '',
+          'GRAND TOTAL',
+          s.period1_grand_total,
+          s.period2_grand_total,
+          s.variance,
+          `${s.percent_change.toFixed(2)}%`
+        ]);
+      }
+
+      // Signatures rows in Excel
+      rows.push([]);
+      rows.push(['SIGNATURES & VERIFICATIONS:']);
+      rows.push(signaturesList.map(sig => sig.title));
+      rows.push(signaturesList.map(sig => sig.name));
+
+      const ws = XLSX.utils.aoa_to_sheet(rows);
+      if (excelMerges.length > 0) {
+        ws['!merges'] = excelMerges;
+      }
+      XLSX.utils.book_append_sheet(wb, ws, 'Location Expense Report');
+
+      const fileName = `${title.replace(/\s+/g, '_')}_${new Date().toISOString().split('T')[0]}.xlsx`;
+      XLSX.writeFile(wb, fileName);
+      return;
     }
 
     // Signatures rows in Excel
@@ -1686,6 +1946,19 @@ export const MonthlyLocationReportModal: React.FC<MonthlyLocationReportModalProp
                   <Store className="w-3.5 h-3.5" />
                   <span>By Store Type</span>
                 </button>
+
+                <button
+                  type="button"
+                  onClick={() => setGroupingMode('worker')}
+                  className={`px-2.5 py-1.5 rounded-md text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer ${groupingMode === 'worker'
+                    ? 'bg-primary text-on-primary shadow-xs'
+                    : 'text-on-surface-variant hover:text-on-surface hover:bg-surface-container'
+                    }`}
+                  title="View worker-wise monthly reports"
+                >
+                  <User className="w-3.5 h-3.5" />
+                  <span>By Worker</span>
+                </button>
               </div>
             </div>
 
@@ -1732,7 +2005,7 @@ export const MonthlyLocationReportModal: React.FC<MonthlyLocationReportModalProp
                 <Search className="w-3.5 h-3.5 absolute left-2.5 top-2.5 text-on-surface-variant pointer-events-none" />
                 <input
                   type="text"
-                  placeholder="Filter store..."
+                  placeholder={groupingMode === 'worker' ? 'Filter worker...' : 'Filter store...'}
                   value={searchTerm}
                   onChange={e => setSearchTerm(e.target.value)}
                   className="w-full h-8 bg-surface dark:bg-dark-surface border border-outline-variant text-on-surface text-xs rounded-md pl-8 pr-7 focus:outline-none focus:border-primary placeholder:text-outline"
@@ -1947,11 +2220,10 @@ export const MonthlyLocationReportModal: React.FC<MonthlyLocationReportModalProp
                           onClick={() => {
                             setSelectedBatch(isSelected ? 'all' : b.batch_name);
                           }}
-                          className={`px-2.5 py-1 rounded text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer border ${
-                            isSelected
-                              ? 'bg-primary text-on-primary border-primary shadow-xs'
-                              : 'bg-surface dark:bg-dark-surface border-outline-variant text-on-surface hover:border-primary/50'
-                          }`}
+                          className={`px-2.5 py-1 rounded text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer border ${isSelected
+                            ? 'bg-primary text-on-primary border-primary shadow-xs'
+                            : 'bg-surface dark:bg-dark-surface border-outline-variant text-on-surface hover:border-primary/50'
+                            }`}
                           title={`Filter statement by ${b.batch_name}`}
                         >
                           <span>{b.batch_name}</span>
@@ -1978,7 +2250,7 @@ export const MonthlyLocationReportModal: React.FC<MonthlyLocationReportModalProp
                         />
                         <div>
                           <h3 className="text-base sm:text-lg font-black text-primary uppercase tracking-tight">
-                            Monthly Location Expense Report
+                            {groupingMode === 'worker' ? 'Monthly Worker Expense Report' : 'Monthly Location Expense Report'}
                           </h3>
                           <p className="text-xs sm:text-sm font-medium text-on-surface-variant">
                             Grand Hypermarket — {singleData?.department_name ? `${singleData.department_name} Operations` : 'Maintenance & Facilities Operations'}
@@ -2002,7 +2274,9 @@ export const MonthlyLocationReportModal: React.FC<MonthlyLocationReportModalProp
                         <thead>
                           <tr className="bg-surface-container-low border-b border-outline-variant text-[10.5px] font-semibold text-on-surface-variant uppercase">
                             <th className={`py-2 px-2.5 ${isVerticalOrientation ? 'w-8' : 'w-10'} text-center`}>#</th>
-                            <th className={`py-2 px-2.5 ${isVerticalOrientation ? 'min-w-[140px]' : 'min-w-[180px]'}`}>Location / Store</th>
+                            <th className={`py-2 px-2.5 ${isVerticalOrientation ? 'min-w-[140px]' : 'min-w-[180px]'}`}>
+                              {groupingMode === 'worker' ? 'Worker' : 'Location / Store'}
+                            </th>
                             <th className={`py-2 px-2.5 text-right font-bold text-sky-600 dark:text-sky-400 ${isVerticalOrientation ? 'w-20' : 'w-24'}`}>Working Hours</th>
                             <th className={`py-2 px-2.5 text-right font-bold text-emerald-600 dark:text-emerald-400 ${isVerticalOrientation ? 'w-24' : 'w-28'}`}>Labour (KWD)</th>
                             {singleData.categories.map(cat => (
@@ -2199,6 +2473,109 @@ export const MonthlyLocationReportModal: React.FC<MonthlyLocationReportModalProp
                                 </React.Fragment>
                               ))
                             )
+                          ) : groupingMode === 'worker' ? (
+                            filteredSingleWorkers.length === 0 ? (
+                              <tr>
+                                <td colSpan={singleData.categories.length + 6} className="py-8 text-center text-outline">
+                                  No worker expenses found for the selected period.
+                                </td>
+                              </tr>
+                            ) : (
+                              filteredSingleWorkers.map((w, idx) => {
+                                const share = singleData.grand_total > 0
+                                  ? ((w.total_amount / singleData.grand_total) * 100).toFixed(1)
+                                  : '0.0';
+                                const expandKey = `single_worker_${w.worker_id}`;
+                                const hasStores = Boolean(w.locations && w.locations.length > 0);
+                                const isExpanded = hasStores && Boolean(expandedLocations[expandKey]);
+
+                                return (
+                                  <React.Fragment key={w.worker_id || idx}>
+                                    <tr
+                                      className={`hover:bg-surface-container-high/50 transition-colors ${hasStores ? 'cursor-pointer' : ''}`}
+                                      onClick={hasStores ? () => toggleLocationExpand(expandKey) : undefined}
+                                    >
+                                      <td className="py-1.5 px-2.5 text-center text-outline">{idx + 1}</td>
+                                      <td className="py-1.5 px-2.5 font-semibold text-on-surface">
+                                        <div className="flex items-center gap-1.5">
+                                          {hasStores && (
+                                            <span className="text-outline shrink-0">
+                                              {isExpanded ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
+                                            </span>
+                                          )}
+                                          <User className="w-3.5 h-3.5 text-primary shrink-0" />
+                                          <span>{w.worker_name}</span>
+                                          {w.employee_no && (
+                                            <span className="px-1.5 py-0.5 rounded bg-surface-container-high text-[10px] font-mono text-on-surface-variant">
+                                              {w.employee_no}
+                                            </span>
+                                          )}
+                                          {w.locations_count > 0 && (
+                                            <span className="text-[10px] text-outline font-normal">
+                                              ({w.locations_count} {w.locations_count === 1 ? 'store' : 'stores'})
+                                            </span>
+                                          )}
+                                        </div>
+                                      </td>
+                                      <td className="py-1.5 px-2.5 text-right font-semibold text-sky-600 dark:text-sky-400 font-mono">
+                                        {formatWorkHours(w.allocated_hours)}
+                                      </td>
+                                      <td className="py-1.5 px-2.5 text-right font-semibold text-emerald-600 dark:text-emerald-400 font-mono">
+                                        {Number(w.labour_amount || 0).toFixed(3)}
+                                      </td>
+                                      {singleData.categories.map(cat => {
+                                        const val = w.categories[cat];
+                                        return (
+                                          <td key={cat} className="py-1.5 px-2 text-right text-on-surface font-mono">
+                                            {val ? Number(val).toFixed(3) : '-'}
+                                          </td>
+                                        );
+                                      })}
+                                      <td className="py-1.5 px-2.5 text-right font-bold text-on-surface font-mono">
+                                        {Number(w.total_amount).toFixed(3)}
+                                      </td>
+                                      <td className="py-1.5 px-2.5 text-right text-on-surface-variant font-medium">
+                                        {share}%
+                                      </td>
+                                    </tr>
+
+                                    {isExpanded && w.locations && w.locations.map((wloc, lIdx) => {
+                                      const locShare = singleData.grand_total > 0
+                                        ? ((wloc.total_amount / singleData.grand_total) * 100).toFixed(1)
+                                        : '0.0';
+                                      return (
+                                        <tr key={`${w.worker_id}_${wloc.store_id || lIdx}`} className="bg-surface-container-low/40 text-[10.5px]">
+                                          <td className="py-1 px-2.5 text-center text-outline"></td>
+                                          <td className="py-1 px-2.5 pl-8 text-on-surface-variant font-medium">
+                                            └ {wloc.location_name}
+                                          </td>
+                                          <td className="py-1 px-2.5 text-right font-mono text-sky-600/80 dark:text-sky-400/80">
+                                            {formatWorkHours(wloc.allocated_hours)}
+                                          </td>
+                                          <td className="py-1 px-2.5 text-right font-mono text-emerald-600/80 dark:text-emerald-400/80">
+                                            {Number(wloc.labour_amount || 0).toFixed(3)}
+                                          </td>
+                                          {singleData.categories.map(cat => {
+                                            const val = wloc.categories[cat];
+                                            return (
+                                              <td key={cat} className="py-1 px-2 text-right font-mono text-on-surface-variant">
+                                                {val ? Number(val).toFixed(3) : '-'}
+                                              </td>
+                                            );
+                                          })}
+                                          <td className="py-1 px-2.5 text-right font-mono font-semibold text-on-surface-variant">
+                                            {Number(wloc.total_amount).toFixed(3)}
+                                          </td>
+                                          <td className="py-1 px-2.5 text-right text-outline">
+                                            {locShare}%
+                                          </td>
+                                        </tr>
+                                      );
+                                    })}
+                                  </React.Fragment>
+                                );
+                              })
+                            )
                           ) : (
                             filteredSingleLocations.length === 0 ? (
                               <tr>
@@ -2353,11 +2730,10 @@ export const MonthlyLocationReportModal: React.FC<MonthlyLocationReportModalProp
                           onClick={() => {
                             setSelectedBatch(isSelected ? 'all' : b.batch_name);
                           }}
-                          className={`px-2.5 py-1 rounded text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer border ${
-                            isSelected
-                              ? 'bg-primary text-on-primary border-primary shadow-xs'
-                              : 'bg-surface dark:bg-dark-surface border-outline-variant text-on-surface hover:border-primary/50'
-                          }`}
+                          className={`px-2.5 py-1 rounded text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer border ${isSelected
+                            ? 'bg-primary text-on-primary border-primary shadow-xs'
+                            : 'bg-surface dark:bg-dark-surface border-outline-variant text-on-surface hover:border-primary/50'
+                            }`}
                           title={`Filter comparison by ${b.batch_name}`}
                         >
                           <span>{b.batch_name}</span>
@@ -2386,7 +2762,7 @@ export const MonthlyLocationReportModal: React.FC<MonthlyLocationReportModalProp
                         />
                         <div>
                           <h3 className="text-base sm:text-lg font-black text-primary uppercase tracking-tight">
-                            Location Expense Comparison Statement
+                            {groupingMode === 'worker' ? 'Worker Expense Comparison Statement' : 'Location Expense Comparison Statement'}
                           </h3>
                           <p className="text-xs sm:text-sm font-medium text-on-surface-variant">
                             {comparisonData?.department_name ? `${comparisonData.department_name} — ` : ''}{comparisonData.period1.month_label} vs {comparisonData.period2.month_label}
@@ -2412,346 +2788,361 @@ export const MonthlyLocationReportModal: React.FC<MonthlyLocationReportModalProp
                     <div className="overflow-x-auto border border-outline-variant rounded">
                       <table className={`w-full text-left border-collapse ${isVerticalOrientation ? 'text-[11px]' : 'text-xs'}`}>
                         <thead>
-                          <tr className="bg-surface-container-low border-b border-outline-variant text-[10.5px] font-semibold text-on-surface-variant uppercase">
-                            <th className={`py-2 px-2.5 ${isVerticalOrientation ? 'w-8' : 'w-10'} text-center`}>#</th>
-                            <th className={`py-2 px-2.5 ${isVerticalOrientation ? 'min-w-[150px]' : 'min-w-[200px]'}`}>Location / Store</th>
-                            <th className="py-2 px-2.5 text-right font-semibold">
-                              Period 1 ({comparisonData.period1.month_label})
-                            </th>
-                            <th className="py-2 px-2.5 text-right font-semibold">
-                              Period 2 ({comparisonData.period2.month_label})
-                            </th>
-                            <th className={`py-2 px-2.5 text-right font-bold ${isVerticalOrientation ? 'w-28' : 'w-32'}`}>Variance (KWD)</th>
-                            <th className={`py-2 px-2.5 text-right font-bold ${isVerticalOrientation ? 'w-20' : 'w-24'}`}>% Change</th>
-                          </tr>
+                          {showDetailedCategoriesInComparison && compCategories.length > 0 ? (
+                            <>
+                              <tr className="bg-surface-container-low border-b border-outline-variant text-[10.5px] font-semibold text-on-surface-variant uppercase">
+                                <th rowSpan={2} className={`py-2 px-2.5 border-r border-outline-variant ${isVerticalOrientation ? 'w-8' : 'w-10'} text-center`}>#</th>
+                                <th rowSpan={2} className={`py-2 px-2.5 border-r border-outline-variant ${isVerticalOrientation ? 'min-w-[140px]' : 'min-w-[180px]'}`}>
+                                  {groupingMode === 'worker' ? 'Worker' : 'Location / Store'}
+                                </th>
+                                {hasComparisonLabour && (
+                                  <th colSpan={2} className="py-1.5 px-2 text-center border-r border-outline-variant font-bold text-emerald-600 dark:text-emerald-400">
+                                    Labour (KWD)
+                                  </th>
+                                )}
+                                {compCategories.map(cat => (
+                                  <th key={cat} colSpan={2} className="py-1.5 px-2 text-center border-r border-outline-variant whitespace-nowrap text-primary font-bold">
+                                    {cat}
+                                  </th>
+                                ))}
+                                <th colSpan={2} className="py-1.5 px-2 text-center border-r border-outline-variant font-bold bg-surface-container">
+                                  Total (KWD)
+                                </th>
+                                <th rowSpan={2} className={`py-2 px-2.5 border-r border-outline-variant text-right font-bold ${isVerticalOrientation ? 'w-24' : 'w-28'}`}>Variance (KWD)</th>
+                                <th rowSpan={2} className={`py-2 px-2.5 text-right font-bold ${isVerticalOrientation ? 'w-20' : 'w-24'}`}>% Change</th>
+                              </tr>
+                              <tr className="bg-surface-container-lowest border-b border-outline-variant text-[10px] font-semibold text-on-surface-variant">
+                                {hasComparisonLabour && (
+                                  <>
+                                    <th className="py-1 px-2 text-right border-r border-outline-variant/60 whitespace-nowrap" title={comparisonData.period1.month_label}>P1</th>
+                                    <th className="py-1 px-2 text-right border-r border-outline-variant whitespace-nowrap" title={comparisonData.period2.month_label}>P2</th>
+                                  </>
+                                )}
+                                {compCategories.map(cat => (
+                                  <React.Fragment key={`${cat}_sub`}>
+                                    <th className="py-1 px-2 text-right border-r border-outline-variant/60 whitespace-nowrap" title={comparisonData.period1.month_label}>P1</th>
+                                    <th className="py-1 px-2 text-right border-r border-outline-variant whitespace-nowrap" title={comparisonData.period2.month_label}>P2</th>
+                                  </React.Fragment>
+                                ))}
+                                <th className="py-1 px-2 text-right border-r border-outline-variant/60 bg-surface-container whitespace-nowrap" title={comparisonData.period1.month_label}>
+                                  P1 ({comparisonData.period1.month_label})
+                                </th>
+                                <th className="py-1 px-2 text-right border-r border-outline-variant bg-surface-container whitespace-nowrap" title={comparisonData.period2.month_label}>
+                                  P2 ({comparisonData.period2.month_label})
+                                </th>
+                              </tr>
+                            </>
+                          ) : (
+                            <tr className="bg-surface-container-low border-b border-outline-variant text-[10.5px] font-semibold text-on-surface-variant uppercase">
+                              <th className={`py-2 px-2.5 ${isVerticalOrientation ? 'w-8' : 'w-10'} text-center`}>#</th>
+                              <th className={`py-2 px-2.5 ${isVerticalOrientation ? 'min-w-[150px]' : 'min-w-[200px]'}`}>
+                                {groupingMode === 'worker' ? 'Worker' : 'Location / Store'}
+                              </th>
+                              <th className="py-2 px-2.5 text-right font-semibold">
+                                Period 1 ({comparisonData.period1.month_label})
+                              </th>
+                              <th className="py-2 px-2.5 text-right font-semibold">
+                                Period 2 ({comparisonData.period2.month_label})
+                              </th>
+                              <th className={`py-2 px-2.5 text-right font-bold ${isVerticalOrientation ? 'w-28' : 'w-32'}`}>Variance (KWD)</th>
+                              <th className={`py-2 px-2.5 text-right font-bold ${isVerticalOrientation ? 'w-20' : 'w-24'}`}>% Change</th>
+                            </tr>
+                          )}
                         </thead>
                         <tbody className="divide-y divide-outline-variant/60">
-                          {groupingMode === 'batch' ? (
-                            filteredComparisonBatches.length === 0 ? (
-                              <tr>
-                                <td colSpan={6} className="py-8 text-center text-outline">
-                                  No comparative data found.
-                                </td>
-                              </tr>
-                            ) : (
-                              filteredComparisonBatches.map(batch => (
-                                <React.Fragment key={batch.batch_name}>
-                                  {/* LEDGER BATCH HEADER ROW */}
-                                  <tr className="bg-primary/10 border-y border-primary/25 font-bold text-primary">
-                                    <td colSpan={6} className="py-2 px-3 text-xs tracking-wide">
-                                      <div className="flex items-center justify-between">
-                                        <div className="flex items-center gap-2">
-                                          <Layers className="w-4 h-4 text-primary" />
-                                          <span className="font-bold">LEDGER BATCH: {batch.batch_name}</span>
-                                          <span className="text-[11px] font-normal text-on-surface-variant">
-                                            — {batch.locations.length} Stores
+                          {(() => {
+                            const showCatCols = showDetailedCategoriesInComparison && compCategories.length > 0;
+
+                            const renderLocRow = (loc: ComparisonLocationItem, idx: number, expandKey: string) => {
+                              const isUp = loc.variance > 0;
+                              const isExpanded = !showCatCols && Boolean(expandedLocations[expandKey]);
+                              const catMap = showCatCols ? getCategoryLookup(loc.categories) : null;
+
+                              return (
+                                <React.Fragment key={loc.store_id || idx}>
+                                  <tr
+                                    className={`hover:bg-surface-container-high/50 transition-colors ${!showCatCols ? 'cursor-pointer' : ''}`}
+                                    onClick={!showCatCols ? () => toggleLocationExpand(expandKey) : undefined}
+                                  >
+                                    <td className="py-1.5 px-2.5 text-center text-outline border-r border-outline-variant/40">{idx + 1}</td>
+                                    <td className="py-1.5 px-2.5 font-bold text-on-surface border-r border-outline-variant/40">
+                                      <div className="flex items-center gap-2">
+                                        {!showCatCols && (
+                                          <span className="text-outline">
+                                            {isExpanded ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
                                           </span>
-                                        </div>
-                                        <div className="flex items-center gap-3 text-xs font-mono">
-                                          <span>P1: {batch.p1Subtotal.toFixed(3)}</span>
-                                          <span>P2: {batch.p2Subtotal.toFixed(3)}</span>
-                                          <span className={batch.variance > 0 ? 'text-red-500 font-bold' : 'text-emerald-500 font-bold'}>
-                                            Var: {batch.variance >= 0 ? '+' : ''}{batch.variance.toFixed(3)}
-                                          </span>
-                                        </div>
-                                      </div>
-                                    </td>
-                                  </tr>
-
-                                  {/* BATCH LOCATION ROWS */}
-                                  {batch.locations.map((loc, idx) => {
-                                    const isUp = loc.variance > 0;
-                                    const isExpanded = expandedLocations[`${batch.batch_name}_${loc.store_id}`] || showDetailedCategoriesInComparison;
-
-                                    return (
-                                      <React.Fragment key={loc.store_id || idx}>
-                                        <tr
-                                          className="hover:bg-surface-container-high/50 transition-colors cursor-pointer"
-                                          onClick={() => toggleLocationExpand(`${batch.batch_name}_${loc.store_id}`)}
-                                        >
-                                          <td className="py-1.5 px-2.5 text-center text-outline">{idx + 1}</td>
-                                          <td className="py-1.5 px-2.5 font-bold text-on-surface flex items-center gap-2">
-                                            <span className="text-outline">
-                                              {isExpanded ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
-                                            </span>
-                                            <span>{loc.location_name}</span>
-                                          </td>
-                                          <td className="py-1.5 px-2.5 text-right text-on-surface">
-                                            {Number(loc.period1_amount).toFixed(3)}
-                                          </td>
-                                          <td className="py-1.5 px-2.5 text-right font-semibold text-on-surface">
-                                            {Number(loc.period2_amount).toFixed(3)}
-                                          </td>
-                                          <td className={`py-1.5 px-2.5 text-right font-bold ${isUp ? 'text-red-500' : (loc.variance < 0 ? 'text-emerald-500' : 'text-on-surface')}`}>
-                                            {isUp ? '+' : ''}{Number(loc.variance).toFixed(3)}
-                                          </td>
-                                          <td className="py-1.5 px-2.5 text-right">
-                                            <span className={`inline-block px-1.5 py-0.5 rounded text-[10.5px] font-extrabold ${isUp ? 'bg-red-500/10 text-red-600' : (loc.variance < 0 ? 'bg-emerald-500/10 text-emerald-600' : 'bg-surface-container text-outline')}`}>
-                                              {isUp ? '+' : ''}{loc.percent_change.toFixed(2)}%
-                                            </span>
-                                          </td>
-                                        </tr>
-
-                                        {/* Expanded Category Rows for this Location in Batch */}
-                                        {isExpanded && loc.categories && (
-                                          loc.categories.map((cat, cIdx) => {
-                                            const cUp = cat.variance > 0;
-                                            return (
-                                              <tr key={cIdx} className="bg-surface-container-low/40 text-[10.5px]">
-                                                <td className="py-1 px-2.5 text-center text-outline"></td>
-                                                <td className="py-1 px-2.5 pl-8 text-on-surface-variant font-medium">
-                                                  └ {cat.category_name}
-                                                </td>
-                                                <td className="py-1 px-2.5 text-right text-outline">
-                                                  {Number(cat.period1_amount).toFixed(3)}
-                                                </td>
-                                                <td className="py-1 px-2.5 text-right text-on-surface-variant">
-                                                  {Number(cat.period2_amount).toFixed(3)}
-                                                </td>
-                                                <td className={`py-1 px-2.5 text-right font-medium ${cUp ? 'text-red-500' : (cat.variance < 0 ? 'text-emerald-500' : 'text-outline')}`}>
-                                                  {cUp ? '+' : ''}{Number(cat.variance).toFixed(3)}
-                                                </td>
-                                                <td className="py-1 px-2.5 text-right text-outline">
-                                                  {cUp ? '+' : ''}{cat.percent_change.toFixed(1)}%
-                                                </td>
-                                              </tr>
-                                            );
-                                          })
                                         )}
-                                      </React.Fragment>
-                                    );
-                                  })}
-
-                                  {/* BATCH SUBTOTAL ROW */}
-                                  <tr className="bg-surface-container-high/60 font-bold border-t border-b border-outline-variant text-[11px]">
-                                    <td colSpan={2} className="py-1.5 px-2.5 text-right text-on-surface uppercase font-bold">
-                                      Subtotal ({batch.batch_name}):
-                                    </td>
-                                    <td className="py-1.5 px-2.5 text-right font-mono text-on-surface">
-                                      {batch.p1Subtotal.toFixed(3)}
-                                    </td>
-                                    <td className="py-1.5 px-2.5 text-right font-mono text-primary font-bold">
-                                      {batch.p2Subtotal.toFixed(3)}
-                                    </td>
-                                    <td className={`py-1.5 px-2.5 text-right font-mono font-bold ${batch.variance > 0 ? 'text-red-500' : (batch.variance < 0 ? 'text-emerald-500' : 'text-on-surface')}`}>
-                                      {batch.variance >= 0 ? '+' : ''}{batch.variance.toFixed(3)}
-                                    </td>
-                                    <td className="py-1.5 px-2.5 text-right">
-                                      <span className={`inline-block px-1.5 py-0.5 rounded text-[10.5px] font-bold ${batch.variance > 0 ? 'bg-red-500/10 text-red-600' : (batch.variance < 0 ? 'bg-emerald-500/10 text-emerald-600' : 'bg-surface-container text-outline')}`}>
-                                        {batch.variance >= 0 ? '+' : ''}{batch.pctChange.toFixed(1)}%
-                                      </span>
-                                    </td>
-                                  </tr>
-                                </React.Fragment>
-                              ))
-                            )
-                          ) : groupingMode === 'store_type' ? (
-                            comparisonLocationsByStoreType.length === 0 ? (
-                              <tr>
-                                <td colSpan={6} className="py-8 text-center text-outline">
-                                  No comparative data found.
-                                </td>
-                              </tr>
-                            ) : (
-                              comparisonLocationsByStoreType.map(typeGroup => (
-                                <React.Fragment key={typeGroup.typeLabel}>
-                                  {/* STORE TYPE HEADER ROW */}
-                                  <tr className="bg-primary/10 border-y border-primary/25 font-bold text-primary">
-                                    <td colSpan={6} className="py-2 px-3 text-xs tracking-wide">
-                                      <div className="flex items-center justify-between">
-                                        <div className="flex items-center gap-2">
-                                          <Store className="w-4 h-4 text-primary" />
-                                          <span className="font-bold">STORE TYPE: {typeGroup.typeLabel}</span>
-                                          <span className="text-[11px] font-normal text-on-surface-variant">
-                                            — {typeGroup.locations.length} Stores
-                                          </span>
-                                        </div>
-                                        <div className="flex items-center gap-3 text-xs font-mono">
-                                          <span>P1: {typeGroup.p1Subtotal.toFixed(3)}</span>
-                                          <span>P2: {typeGroup.p2Subtotal.toFixed(3)}</span>
-                                          <span className={typeGroup.variance > 0 ? 'text-red-500 font-bold' : 'text-emerald-500 font-bold'}>
-                                            Var: {typeGroup.variance >= 0 ? '+' : ''}{typeGroup.variance.toFixed(3)}
-                                          </span>
-                                        </div>
-                                      </div>
-                                    </td>
-                                  </tr>
-
-                                  {/* STORE TYPE LOCATION ROWS */}
-                                  {typeGroup.locations.map((loc, idx) => {
-                                    const isUp = loc.variance > 0;
-                                    const isExpanded = expandedLocations[loc.store_id] || showDetailedCategoriesInComparison;
-
-                                    return (
-                                      <React.Fragment key={loc.store_id || idx}>
-                                        <tr
-                                          className="hover:bg-surface-container-high/50 transition-colors cursor-pointer"
-                                          onClick={() => toggleLocationExpand(loc.store_id)}
-                                        >
-                                          <td className="py-1.5 px-2.5 text-center text-outline">{idx + 1}</td>
-                                          <td className="py-1.5 px-2.5 font-bold text-on-surface flex items-center gap-2">
-                                            <span className="text-outline">
-                                              {isExpanded ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
-                                            </span>
-                                            <span>{loc.location_name}</span>
-                                          </td>
-                                          <td className="py-1.5 px-2.5 text-right text-on-surface">
-                                            {Number(loc.period1_amount).toFixed(3)}
-                                          </td>
-                                          <td className="py-1.5 px-2.5 text-right font-semibold text-on-surface">
-                                            {Number(loc.period2_amount).toFixed(3)}
-                                          </td>
-                                          <td className={`py-1.5 px-2.5 text-right font-bold ${isUp ? 'text-red-500' : (loc.variance < 0 ? 'text-emerald-500' : 'text-on-surface')}`}>
-                                            {isUp ? '+' : ''}{Number(loc.variance).toFixed(3)}
-                                          </td>
-                                          <td className="py-1.5 px-2.5 text-right">
-                                            <span className={`inline-block px-1.5 py-0.5 rounded text-[10.5px] font-extrabold ${isUp ? 'bg-red-500/10 text-red-600' : (loc.variance < 0 ? 'bg-emerald-500/10 text-emerald-600' : 'bg-surface-container text-outline')
-                                              }`}>
-                                              {isUp ? '+' : ''}{loc.percent_change.toFixed(2)}%
-                                            </span>
-                                          </td>
-                                        </tr>
-
-                                        {/* Expanded Category Rows for this Location */}
-                                        {isExpanded && loc.categories && (
-                                          loc.categories.map((cat, cIdx) => {
-                                            const cUp = cat.variance > 0;
-                                            return (
-                                              <tr key={cIdx} className="bg-surface-container-low/40 text-[10.5px]">
-                                                <td className="py-1 px-2.5 text-center text-outline"></td>
-                                                <td className="py-1 px-2.5 pl-8 text-on-surface-variant font-medium">
-                                                  └ {cat.category_name}
-                                                </td>
-                                                <td className="py-1 px-2.5 text-right text-outline">
-                                                  {Number(cat.period1_amount).toFixed(3)}
-                                                </td>
-                                                <td className="py-1 px-2.5 text-right text-on-surface-variant">
-                                                  {Number(cat.period2_amount).toFixed(3)}
-                                                </td>
-                                                <td className={`py-1 px-2.5 text-right font-medium ${cUp ? 'text-red-500' : (cat.variance < 0 ? 'text-emerald-500' : 'text-outline')}`}>
-                                                  {cUp ? '+' : ''}{Number(cat.variance).toFixed(3)}
-                                                </td>
-                                                <td className="py-1 px-2.5 text-right text-outline">
-                                                  {cUp ? '+' : ''}{cat.percent_change.toFixed(1)}%
-                                                </td>
-                                              </tr>
-                                            );
-                                          })
-                                        )}
-                                      </React.Fragment>
-                                    );
-                                  })}
-
-                                  {/* STORE TYPE SUBTOTAL ROW */}
-                                  <tr className="bg-surface-container-high/60 font-bold border-t border-b border-outline-variant text-[11px]">
-                                    <td colSpan={2} className="py-1.5 px-2.5 text-right text-on-surface uppercase font-bold">
-                                      Subtotal ({typeGroup.typeLabel}):
-                                    </td>
-                                    <td className="py-1.5 px-2.5 text-right font-mono text-on-surface">
-                                      {typeGroup.p1Subtotal.toFixed(3)}
-                                    </td>
-                                    <td className="py-1.5 px-2.5 text-right font-mono text-primary font-bold">
-                                      {typeGroup.p2Subtotal.toFixed(3)}
-                                    </td>
-                                    <td className={`py-1.5 px-2.5 text-right font-mono font-bold ${typeGroup.variance > 0 ? 'text-red-500' : (typeGroup.variance < 0 ? 'text-emerald-500' : 'text-on-surface')}`}>
-                                      {typeGroup.variance >= 0 ? '+' : ''}{typeGroup.variance.toFixed(3)}
-                                    </td>
-                                    <td className="py-1.5 px-2.5 text-right">
-                                      <span className={`inline-block px-1.5 py-0.5 rounded text-[10.5px] font-bold ${typeGroup.variance > 0 ? 'bg-red-500/10 text-red-600' : (typeGroup.variance < 0 ? 'bg-emerald-500/10 text-emerald-600' : 'bg-surface-container text-outline')}`}>
-                                        {typeGroup.variance >= 0 ? '+' : ''}{typeGroup.pctChange.toFixed(1)}%
-                                      </span>
-                                    </td>
-                                  </tr>
-                                </React.Fragment>
-                              ))
-                            )
-                          ) : (
-                            filteredComparisonLocations.length === 0 ? (
-                              <tr>
-                                <td colSpan={6} className="py-8 text-center text-outline">
-                                  No comparative data found.
-                                </td>
-                              </tr>
-                            ) : (
-                              filteredComparisonLocations.map((loc, idx) => {
-                                const isUp = loc.variance > 0;
-                                const isExpanded = expandedLocations[loc.store_id] || showDetailedCategoriesInComparison;
-
-                                return (
-                                  <React.Fragment key={loc.store_id || idx}>
-                                    <tr
-                                      className="hover:bg-surface-container-high/50 transition-colors cursor-pointer"
-                                      onClick={() => toggleLocationExpand(loc.store_id)}
-                                    >
-                                      <td className="py-1.5 px-2.5 text-center text-outline">{idx + 1}</td>
-                                      <td className="py-1.5 px-2.5 font-bold text-on-surface flex items-center gap-2">
-                                        <span className="text-outline">
-                                          {isExpanded ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
-                                        </span>
                                         <span>{loc.location_name}</span>
+                                      </div>
+                                    </td>
+                                    {showCatCols && hasComparisonLabour && (
+                                      <>
+                                        <td className="py-1.5 px-2 text-right font-mono text-emerald-600 dark:text-emerald-400 border-r border-outline-variant/40 whitespace-nowrap">
+                                          {loc.period1_labour_amount ? Number(loc.period1_labour_amount).toFixed(3) : '-'}
+                                        </td>
+                                        <td className="py-1.5 px-2 text-right font-mono font-semibold text-emerald-600 dark:text-emerald-400 border-r border-outline-variant whitespace-nowrap">
+                                          {loc.period2_labour_amount ? Number(loc.period2_labour_amount).toFixed(3) : '-'}
+                                        </td>
+                                      </>
+                                    )}
+                                    {showCatCols && catMap && compCategories.map(cat => {
+                                      const item = catMap.get(cat);
+                                      const p1v = item?.period1_amount || 0;
+                                      const p2v = item?.period2_amount || 0;
+                                      return (
+                                        <React.Fragment key={cat}>
+                                          <td className="py-1.5 px-2 text-right font-mono text-on-surface-variant border-r border-outline-variant/40 whitespace-nowrap">
+                                            {p1v > 0 ? p1v.toFixed(3) : <span className="text-on-surface-variant/40">-</span>}
+                                          </td>
+                                          <td className="py-1.5 px-2 text-right font-mono font-semibold text-on-surface border-r border-outline-variant whitespace-nowrap">
+                                            {p2v > 0 ? p2v.toFixed(3) : <span className="text-on-surface-variant/40">-</span>}
+                                          </td>
+                                        </React.Fragment>
+                                      );
+                                    })}
+                                    <td className={`py-1.5 px-2.5 text-right font-mono text-on-surface whitespace-nowrap ${showCatCols ? 'bg-surface-container/40 border-r border-outline-variant/40' : ''}`}>
+                                      {Number(loc.period1_amount).toFixed(3)}
+                                    </td>
+                                    <td className={`py-1.5 px-2.5 text-right font-mono font-semibold text-on-surface whitespace-nowrap ${showCatCols ? 'bg-surface-container/40 border-r border-outline-variant' : ''}`}>
+                                      {Number(loc.period2_amount).toFixed(3)}
+                                    </td>
+                                    <td className={`py-1.5 px-2.5 text-right font-mono font-bold whitespace-nowrap ${showCatCols ? 'border-r border-outline-variant/40' : ''} ${isUp ? 'text-red-500' : (loc.variance < 0 ? 'text-emerald-500' : 'text-on-surface')}`}>
+                                      {isUp ? '+' : ''}{Number(loc.variance).toFixed(3)}
+                                    </td>
+                                    <td className="py-1.5 px-2.5 text-right whitespace-nowrap">
+                                      <span className={`inline-block px-1.5 py-0.5 rounded text-[10.5px] font-extrabold ${isUp ? 'bg-red-500/10 text-red-600' : (loc.variance < 0 ? 'bg-emerald-500/10 text-emerald-600' : 'bg-surface-container text-outline')}`}>
+                                        {isUp ? '+' : ''}{loc.percent_change.toFixed(2)}%
+                                      </span>
+                                    </td>
+                                  </tr>
+
+                                  {isExpanded && loc.categories && loc.categories.map((cat, cIdx) => {
+                                    const cUp = cat.variance > 0;
+                                    return (
+                                      <tr key={cIdx} className="bg-surface-container-low/40 text-[10.5px]">
+                                        <td className="py-1 px-2.5 text-center text-outline"></td>
+                                        <td className="py-1 px-2.5 pl-8 text-on-surface-variant font-medium">
+                                          └ {cat.category_name}
+                                        </td>
+                                        <td className="py-1 px-2.5 text-right text-outline">
+                                          {Number(cat.period1_amount).toFixed(3)}
+                                        </td>
+                                        <td className="py-1 px-2.5 text-right text-on-surface-variant">
+                                          {Number(cat.period2_amount).toFixed(3)}
+                                        </td>
+                                        <td className={`py-1 px-2.5 text-right font-medium ${cUp ? 'text-red-500' : (cat.variance < 0 ? 'text-emerald-500' : 'text-outline')}`}>
+                                          {cUp ? '+' : ''}{Number(cat.variance).toFixed(3)}
+                                        </td>
+                                        <td className="py-1 px-2.5 text-right text-outline">
+                                          {cUp ? '+' : ''}{cat.percent_change.toFixed(1)}%
+                                        </td>
+                                      </tr>
+                                    );
+                                  })}
+                                </React.Fragment>
+                              );
+                            };
+
+                            const renderSubtotalRow = (
+                              label: string,
+                              p1Sub: number,
+                              p2Sub: number,
+                              variance: number,
+                              pctChange: number,
+                              p1Lab: number,
+                              p2Lab: number,
+                              catSubtotals: Record<string, { p1: number; p2: number }>
+                            ) => (
+                              <tr className="bg-surface-container-high/60 font-bold border-t border-b border-outline-variant text-[11px]">
+                                <td colSpan={2} className="py-1.5 px-2.5 text-right text-on-surface uppercase font-bold border-r border-outline-variant/40">
+                                  Subtotal ({label}):
+                                </td>
+                                {showCatCols && hasComparisonLabour && (
+                                  <>
+                                    <td className="py-1.5 px-2 text-right font-mono text-emerald-600 dark:text-emerald-400 border-r border-outline-variant/40 whitespace-nowrap">
+                                      {p1Lab > 0 ? p1Lab.toFixed(3) : '-'}
+                                    </td>
+                                    <td className="py-1.5 px-2 text-right font-mono text-emerald-600 dark:text-emerald-400 border-r border-outline-variant whitespace-nowrap">
+                                      {p2Lab > 0 ? p2Lab.toFixed(3) : '-'}
+                                    </td>
+                                  </>
+                                )}
+                                {showCatCols && compCategories.map(cat => {
+                                  const sub = catSubtotals[cat];
+                                  const p1v = sub?.p1 || 0;
+                                  const p2v = sub?.p2 || 0;
+                                  return (
+                                    <React.Fragment key={cat}>
+                                      <td className="py-1.5 px-2 text-right font-mono text-on-surface-variant border-r border-outline-variant/40 whitespace-nowrap">
+                                        {p1v > 0 ? p1v.toFixed(3) : '-'}
                                       </td>
-                                      <td className="py-1.5 px-2.5 text-right text-on-surface">
-                                        {Number(loc.period1_amount).toFixed(3)}
+                                      <td className="py-1.5 px-2 text-right font-mono text-on-surface border-r border-outline-variant whitespace-nowrap">
+                                        {p2v > 0 ? p2v.toFixed(3) : '-'}
                                       </td>
-                                      <td className="py-1.5 px-2.5 text-right font-semibold text-on-surface">
-                                        {Number(loc.period2_amount).toFixed(3)}
-                                      </td>
-                                      <td className={`py-1.5 px-2.5 text-right font-bold ${isUp ? 'text-red-500' : (loc.variance < 0 ? 'text-emerald-500' : 'text-on-surface')}`}>
-                                        {isUp ? '+' : ''}{Number(loc.variance).toFixed(3)}
-                                      </td>
-                                      <td className="py-1.5 px-2.5 text-right">
-                                        <span className={`inline-block px-1.5 py-0.5 rounded text-[10.5px] font-extrabold ${isUp ? 'bg-red-500/10 text-red-600' : (loc.variance < 0 ? 'bg-emerald-500/10 text-emerald-600' : 'bg-surface-container text-outline')
-                                          }`}>
-                                          {isUp ? '+' : ''}{loc.percent_change.toFixed(2)}%
-                                        </span>
+                                    </React.Fragment>
+                                  );
+                                })}
+                                <td className="py-1.5 px-2.5 text-right font-mono text-on-surface border-r border-outline-variant/40 whitespace-nowrap">
+                                  {p1Sub.toFixed(3)}
+                                </td>
+                                <td className="py-1.5 px-2.5 text-right font-mono text-primary font-bold border-r border-outline-variant whitespace-nowrap">
+                                  {p2Sub.toFixed(3)}
+                                </td>
+                                <td className={`py-1.5 px-2.5 text-right font-mono font-bold border-r border-outline-variant/40 whitespace-nowrap ${variance > 0 ? 'text-red-500' : (variance < 0 ? 'text-emerald-500' : 'text-on-surface')}`}>
+                                  {variance >= 0 ? '+' : ''}{variance.toFixed(3)}
+                                </td>
+                                <td className="py-1.5 px-2.5 text-right whitespace-nowrap">
+                                  <span className={`inline-block px-1.5 py-0.5 rounded text-[10.5px] font-bold ${variance > 0 ? 'bg-red-500/10 text-red-600' : (variance < 0 ? 'bg-emerald-500/10 text-emerald-600' : 'bg-surface-container text-outline')}`}>
+                                    {variance >= 0 ? '+' : ''}{pctChange.toFixed(1)}%
+                                  </span>
+                                </td>
+                              </tr>
+                            );
+
+                            if (groupingMode === 'batch') {
+                              return filteredComparisonBatches.length === 0 ? (
+                                <tr>
+                                  <td colSpan={compTotalCols} className="py-8 text-center text-outline">
+                                    No comparative data found.
+                                  </td>
+                                </tr>
+                              ) : (
+                                filteredComparisonBatches.map(batch => (
+                                  <React.Fragment key={batch.batch_name}>
+                                    <tr className="bg-primary/10 border-y border-primary/25 font-bold text-primary">
+                                      <td colSpan={compTotalCols} className="py-2 px-3 text-xs tracking-wide">
+                                        <div className="flex items-center justify-between">
+                                          <div className="flex items-center gap-2">
+                                            <Layers className="w-4 h-4 text-primary" />
+                                            <span className="font-bold">LEDGER BATCH: {batch.batch_name}</span>
+                                            <span className="text-[11px] font-normal text-on-surface-variant">
+                                              — {batch.locations.length} Stores
+                                            </span>
+                                          </div>
+                                          <div className="flex items-center gap-3 text-xs font-mono">
+                                            <span>P1: {batch.p1Subtotal.toFixed(3)}</span>
+                                            <span>P2: {batch.p2Subtotal.toFixed(3)}</span>
+                                            <span className={batch.variance > 0 ? 'text-red-500 font-bold' : 'text-emerald-500 font-bold'}>
+                                              Var: {batch.variance >= 0 ? '+' : ''}{batch.variance.toFixed(3)}
+                                            </span>
+                                          </div>
+                                        </div>
                                       </td>
                                     </tr>
-
-                                    {/* Expanded Category Rows for this Location */}
-                                    {isExpanded && loc.categories && (
-                                      loc.categories.map((cat, cIdx) => {
-                                        const cUp = cat.variance > 0;
-                                        return (
-                                          <tr key={cIdx} className="bg-surface-container-low/40 text-[10.5px]">
-                                            <td className="py-1 px-2.5 text-center text-outline"></td>
-                                            <td className="py-1 px-2.5 pl-8 text-on-surface-variant font-medium">
-                                              └ {cat.category_name}
-                                            </td>
-                                            <td className="py-1 px-2.5 text-right text-outline">
-                                              {Number(cat.period1_amount).toFixed(3)}
-                                            </td>
-                                            <td className="py-1 px-2.5 text-right text-on-surface-variant">
-                                              {Number(cat.period2_amount).toFixed(3)}
-                                            </td>
-                                            <td className={`py-1 px-2.5 text-right font-medium ${cUp ? 'text-red-500' : (cat.variance < 0 ? 'text-emerald-500' : 'text-outline')}`}>
-                                              {cUp ? '+' : ''}{Number(cat.variance).toFixed(3)}
-                                            </td>
-                                            <td className="py-1 px-2.5 text-right text-outline">
-                                              {cUp ? '+' : ''}{cat.percent_change.toFixed(1)}%
-                                            </td>
-                                          </tr>
-                                        );
-                                      })
-                                    )}
+                                    {batch.locations.map((loc, idx) => renderLocRow(loc, idx, `${batch.batch_name}_${loc.store_id}`))}
+                                    {renderSubtotalRow(batch.batch_name, batch.p1Subtotal, batch.p2Subtotal, batch.variance, batch.pctChange, batch.p1TotalLabour, batch.p2TotalLabour, batch.categorySubtotals)}
                                   </React.Fragment>
-                                );
-                              })
-                            )
-                          )}
+                                ))
+                              );
+                            }
+
+                            if (groupingMode === 'store_type') {
+                              return comparisonLocationsByStoreType.length === 0 ? (
+                                <tr>
+                                  <td colSpan={compTotalCols} className="py-8 text-center text-outline">
+                                    No comparative data found.
+                                  </td>
+                                </tr>
+                              ) : (
+                                comparisonLocationsByStoreType.map(typeGroup => (
+                                  <React.Fragment key={typeGroup.typeLabel}>
+                                    <tr className="bg-primary/10 border-y border-primary/25 font-bold text-primary">
+                                      <td colSpan={compTotalCols} className="py-2 px-3 text-xs tracking-wide">
+                                        <div className="flex items-center justify-between">
+                                          <div className="flex items-center gap-2">
+                                            <Store className="w-4 h-4 text-primary" />
+                                            <span className="font-bold">STORE TYPE: {typeGroup.typeLabel}</span>
+                                            <span className="text-[11px] font-normal text-on-surface-variant">
+                                              — {typeGroup.locations.length} Stores
+                                            </span>
+                                          </div>
+                                          <div className="flex items-center gap-3 text-xs font-mono">
+                                            <span>P1: {typeGroup.p1Subtotal.toFixed(3)}</span>
+                                            <span>P2: {typeGroup.p2Subtotal.toFixed(3)}</span>
+                                            <span className={typeGroup.variance > 0 ? 'text-red-500 font-bold' : 'text-emerald-500 font-bold'}>
+                                              Var: {typeGroup.variance >= 0 ? '+' : ''}{typeGroup.variance.toFixed(3)}
+                                            </span>
+                                          </div>
+                                        </div>
+                                      </td>
+                                    </tr>
+                                    {typeGroup.locations.map((loc, idx) => renderLocRow(loc, idx, loc.store_id))}
+                                    {renderSubtotalRow(typeGroup.typeLabel, typeGroup.p1Subtotal, typeGroup.p2Subtotal, typeGroup.variance, typeGroup.pctChange, typeGroup.p1TotalLabour, typeGroup.p2TotalLabour, typeGroup.categorySubtotals)}
+                                  </React.Fragment>
+                                ))
+                              );
+                            }
+
+                            if (groupingMode === 'worker') {
+                              return filteredComparisonWorkers.length === 0 ? (
+                                <tr>
+                                  <td colSpan={compTotalCols} className="py-8 text-center text-outline">
+                                    No comparative worker data found.
+                                  </td>
+                                </tr>
+                              ) : (
+                                filteredComparisonWorkers.map((w, idx) => renderLocRow({
+                                  store_id: `worker_${w.worker_id}`,
+                                  location_name: w.employee_no ? `${w.worker_name} (${w.employee_no})` : w.worker_name,
+                                  period1_amount: w.period1_amount,
+                                  period2_amount: w.period2_amount,
+                                  variance: w.variance,
+                                  percent_change: w.percent_change,
+                                  period1_labour_amount: w.period1_labour_amount,
+                                  period2_labour_amount: w.period2_labour_amount,
+                                  categories: w.categories,
+                                }, idx, `comp_worker_${w.worker_id}`))
+                              );
+                            }
+
+                            return filteredComparisonLocations.length === 0 ? (
+                              <tr>
+                                <td colSpan={compTotalCols} className="py-8 text-center text-outline">
+                                  No comparative data found.
+                                </td>
+                              </tr>
+                            ) : (
+                              filteredComparisonLocations.map((loc, idx) => renderLocRow(loc, idx, loc.store_id))
+                            );
+                          })()}
                         </tbody>
                         <tfoot>
                           <tr className="bg-surface-container-high/80 font-bold border-t-2 border-outline-variant text-xs">
-                            <td colSpan={2} className="py-2 px-2.5 text-on-surface uppercase">Grand Total</td>
-                            <td className="py-2 px-2.5 text-right text-on-surface">
+                            <td colSpan={2} className="py-2 px-2.5 text-on-surface uppercase border-r border-outline-variant/40">Grand Total</td>
+                            {showDetailedCategoriesInComparison && compCategories.length > 0 && hasComparisonLabour && (
+                              <>
+                                <td className="py-2 px-2 text-right font-mono text-emerald-600 dark:text-emerald-400 border-r border-outline-variant/40 whitespace-nowrap">
+                                  {Number(comparisonData.summary.period1_total_labour_amount || 0).toFixed(3)}
+                                </td>
+                                <td className="py-2 px-2 text-right font-mono text-emerald-600 dark:text-emerald-400 border-r border-outline-variant whitespace-nowrap">
+                                  {Number(comparisonData.summary.period2_total_labour_amount || 0).toFixed(3)}
+                                </td>
+                              </>
+                            )}
+                            {showDetailedCategoriesInComparison && compCategories.length > 0 && compCategories.map(cat => {
+                              const p1c = Number(comparisonData.category_totals?.period1?.[cat] || 0);
+                              const p2c = Number(comparisonData.category_totals?.period2?.[cat] || 0);
+                              return (
+                                <React.Fragment key={`grand_${cat}`}>
+                                  <td className="py-2 px-2 text-right font-mono text-on-surface border-r border-outline-variant/40 whitespace-nowrap">
+                                    {p1c > 0 ? p1c.toFixed(3) : '-'}
+                                  </td>
+                                  <td className="py-2 px-2 text-right font-mono text-on-surface border-r border-outline-variant whitespace-nowrap">
+                                    {p2c > 0 ? p2c.toFixed(3) : '-'}
+                                  </td>
+                                </React.Fragment>
+                              );
+                            })}
+                            <td className="py-2 px-2.5 text-right font-mono text-on-surface border-r border-outline-variant/40 whitespace-nowrap">
                               {Number(comparisonData.summary.period1_grand_total).toFixed(3)}
                             </td>
-                            <td className="py-2 px-2.5 text-right text-primary text-sm font-black">
+                            <td className="py-2 px-2.5 text-right font-mono text-primary text-sm font-black border-r border-outline-variant whitespace-nowrap">
                               {Number(comparisonData.summary.period2_grand_total).toFixed(3)}
                             </td>
-                            <td className={`py-2 px-2.5 text-right font-black ${comparisonData.summary.variance > 0 ? 'text-red-500' : 'text-emerald-500'}`}>
+                            <td className={`py-2 px-2.5 text-right font-mono font-black border-r border-outline-variant/40 whitespace-nowrap ${comparisonData.summary.variance > 0 ? 'text-red-500' : 'text-emerald-500'}`}>
                               {comparisonData.summary.variance > 0 ? '+' : ''}{Number(comparisonData.summary.variance).toFixed(3)}
                             </td>
-                            <td className="py-2 px-2.5 text-right font-extrabold">
+                            <td className="py-2 px-2.5 text-right font-extrabold whitespace-nowrap">
                               <span className={`inline-block px-1.5 py-0.5 rounded text-[10.5px] ${comparisonData.summary.variance > 0 ? 'bg-red-500/10 text-red-600' : 'bg-emerald-500/10 text-emerald-600'
                                 }`}>
                                 {comparisonData.summary.variance > 0 ? '+' : ''}{comparisonData.summary.percent_change.toFixed(2)}%
@@ -2794,9 +3185,13 @@ export const MonthlyLocationReportModal: React.FC<MonthlyLocationReportModalProp
         {/* MODAL FOOTER */}
         <div className="px-4 py-2.5 border-t border-outline-variant dark:border-dark-outline-variant bg-surface-container dark:bg-dark-surface-container flex items-center justify-between shrink-0">
           <div className="text-xs text-on-surface-variant font-medium">
-            {reportMode === 'single'
-              ? `${filteredSingleLocations.length} store${filteredSingleLocations.length === 1 ? '' : 's'} displayed`
-              : `${filteredComparisonLocations.length} store${filteredComparisonLocations.length === 1 ? '' : 's'} displayed`}
+            {groupingMode === 'worker'
+              ? (reportMode === 'single'
+                ? `${filteredSingleWorkers.length} worker${filteredSingleWorkers.length === 1 ? '' : 's'} displayed`
+                : `${filteredComparisonWorkers.length} worker${filteredComparisonWorkers.length === 1 ? '' : 's'} displayed`)
+              : (reportMode === 'single'
+                ? `${filteredSingleLocations.length} store${filteredSingleLocations.length === 1 ? '' : 's'} displayed`
+                : `${filteredComparisonLocations.length} store${filteredComparisonLocations.length === 1 ? '' : 's'} displayed`)}
           </div>
 
           <div className="flex items-center gap-2">
