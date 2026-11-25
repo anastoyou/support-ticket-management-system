@@ -64,7 +64,7 @@ export const BundleReportModal: React.FC<BundleReportModalProps> = ({
       (bundle as any).submitted_by?.username ||
       activeUser?.full_name ||
       activeUser?.username ||
-      'Site Accountant'
+      'Maintenance Supervisor'
     );
   }, [bundle, activeUser]);
 

@@ -705,6 +705,74 @@ class WorkLogAndTimeTrackingTestCase(TestCase):
         self.assertTrue(serializer.is_valid(), serializer.errors)
 
 
+    def test_ticket_worklog_rejects_date_before_ticket_created_or_future(self):
+        from datetime import timedelta
+        from django.utils import timezone
+        from apps.maintenance.models import Ticket, WorkLog
+        from apps.maintenance.serializers import WorkLogWriteSerializer
+
+        now = timezone.now()
+        Ticket.objects.filter(pk=self.ticket.pk).update(created_date=now - timedelta(days=5))
+        self.ticket.refresh_from_db()
+
+        created_local_date = timezone.localtime(self.ticket.created_date).date()
+        today_local = timezone.localdate()
+
+        # Before ticket created date -> rejected
+        serializer_old = WorkLogWriteSerializer(data={
+            "ticket": self.ticket.ticket_id,
+            "worker": self.worker1.user_id,
+            "from_time": "09:00:00",
+            "to_time": "11:00:00",
+            "work_done": "Too old",
+            "work_date": (created_local_date - timedelta(days=1)).isoformat(),
+        })
+        self.assertFalse(serializer_old.is_valid())
+        self.assertIn("work_date", serializer_old.errors)
+
+        # Future date -> rejected
+        serializer_future = WorkLogWriteSerializer(data={
+            "ticket": self.ticket.ticket_id,
+            "worker": self.worker1.user_id,
+            "from_time": "09:00:00",
+            "to_time": "11:00:00",
+            "work_done": "Future",
+            "work_date": (today_local + timedelta(days=1)).isoformat(),
+        })
+        self.assertFalse(serializer_future.is_valid())
+        self.assertIn("work_date", serializer_future.errors)
+
+        # Exactly ticket created date -> allowed
+        serializer_created = WorkLogWriteSerializer(data={
+            "ticket": self.ticket.ticket_id,
+            "worker": self.worker1.user_id,
+            "from_time": "09:00:00",
+            "to_time": "11:00:00",
+            "work_done": "On created day",
+            "work_date": created_local_date.isoformat(),
+        })
+        self.assertTrue(serializer_created.is_valid(), serializer_created.errors)
+        worklog = serializer_created.save()
+
+        # Updating existing worklog to before created date -> rejected
+        serializer_patch = WorkLogWriteSerializer(
+            instance=worklog,
+            data={"work_date": (created_local_date - timedelta(days=2)).isoformat()},
+            partial=True,
+        )
+        self.assertFalse(serializer_patch.is_valid())
+        self.assertIn("work_date", serializer_patch.errors)
+
+        # Updating existing worklog to today -> allowed
+        serializer_patch_ok = WorkLogWriteSerializer(
+            instance=worklog,
+            data={"work_date": today_local.isoformat()},
+            partial=True,
+        )
+        self.assertTrue(serializer_patch_ok.is_valid(), serializer_patch_ok.errors)
+        self.assertIsInstance(WorkLog.objects.get(pk=worklog.pk), WorkLog)
+
+
 class LocationApprovalThrottleTestCase(TestCase):
     def setUp(self):
         self.role_mgr = Role.objects.create(role_name="Store Manager")

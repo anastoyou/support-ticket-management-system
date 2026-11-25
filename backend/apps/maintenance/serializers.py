@@ -380,6 +380,27 @@ class WorkLogWriteSerializer(serializers.ModelSerializer):
         req_user = self.context.get('request').user if getattr(self, 'context', None) and self.context.get('request') and not self.context.get('request').user.is_anonymous else None
         worker = data.get('worker') or req_user or getattr(self.instance, 'worker', None)
         work_date = data.get('work_date') or getattr(self.instance, 'work_date', None)
+        ticket = data.get('ticket') or getattr(self.instance, 'ticket', None)
+
+        # Ticket work logs cannot be recorded before the ticket's created date or in the future
+        if ticket and work_date:
+            from django.utils import timezone
+            created_dt = getattr(ticket, 'created_date', None)
+            if created_dt is not None:
+                created_local_date = (
+                    timezone.localtime(created_dt).date()
+                    if timezone.is_aware(created_dt)
+                    else created_dt.date()
+                )
+                if work_date < created_local_date:
+                    raise serializers.ValidationError({
+                        "work_date": f"Work date cannot be earlier than the ticket created date ({created_local_date.isoformat()})."
+                    })
+            today_local = timezone.localdate()
+            if work_date > today_local:
+                raise serializers.ValidationError({
+                    "work_date": f"Work date cannot be in the future (after {today_local.isoformat()})."
+                })
 
         # Validate that work is NOT logged during marked leave periods
         if worker and work_date:
@@ -425,7 +446,6 @@ class WorkLogWriteSerializer(serializers.ModelSerializer):
             data['hourly_rate'] = hourly_rate
             data['labour_amount'] = Decimal(str(hours)) * hourly_rate
 
-        ticket = data.get('ticket') or getattr(self.instance, 'ticket', None)
         if not data.get('allocation') and worker and ticket:
             from .models import Allocation
             alloc = Allocation.objects.filter(ticket=ticket, worker=worker).first()

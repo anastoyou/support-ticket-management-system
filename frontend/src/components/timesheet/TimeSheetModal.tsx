@@ -438,6 +438,9 @@ export const TimeSheetModal: React.FC<TimeSheetModalProps> = ({
     const { token } = useSelector((state: RootState) => state.auth);
 
     const todayKey = useMemo(() => toDateKey(new Date()), []);
+    const effectiveMaxKey = useMemo(() => {
+        return minDateKey && minDateKey > todayKey ? minDateKey : todayKey;
+    }, [minDateKey, todayKey]);
     const [selectedDateKey, setSelectedDateKey] = useState<string>(initialDate || todayKey);
 
     // Month picker calendar popup state
@@ -580,154 +583,176 @@ export const TimeSheetModal: React.FC<TimeSheetModalProps> = ({
             setWindowStart(DAYTIME_WINDOW_START);
             const defaultDate = initialDate || todayKey;
             let targetDate = defaultDate;
-            if (defaultDate > todayKey) {
-                targetDate = todayKey;
-            }
-            setSelectedDateKey(targetDate);
-            const dateObj = parseDateKey(targetDate);
-            setCalendarViewYear(dateObj.getFullYear());
-            setCalendarViewMonth(dateObj.getMonth());
-            setSelection(null);
-            setSelectedSessionForView(null);
-            setEditingSessionId(null);
-            setActiveConflict(null);
-            setRemarks('');
-            setSelectedStoreIds(fixedLocationId ? [fixedLocationId] : []);
+                if (!initialEditingWorklogId) {
+                    if (minDateKey && targetDate < minDateKey) {
+                        targetDate = minDateKey;
+                    }
+                    if (targetDate > effectiveMaxKey) {
+                        targetDate = effectiveMaxKey;
+                    }
+                } else if (targetDate > effectiveMaxKey) {
+                    targetDate = effectiveMaxKey;
+                }
+                setSelectedDateKey(targetDate);
+                const dateObj = parseDateKey(targetDate);
+                setCalendarViewYear(dateObj.getFullYear());
+                setCalendarViewMonth(dateObj.getMonth());
+                setSelection(null);
+                setSelectedSessionForView(null);
+                setEditingSessionId(null);
+                setActiveConflict(null);
+                setRemarks('');
+                setSelectedStoreIds(fixedLocationId ? [fixedLocationId] : []);
 
-            const shouldOpenCalendar = initialCalendarOpen !== undefined
-                ? initialCalendarOpen
-                : (!initialEditingWorklogId);
-            setIsCalendarOpen(shouldOpenCalendar);
+                const shouldOpenCalendar = initialCalendarOpen !== undefined
+                    ? initialCalendarOpen
+                    : (!initialEditingWorklogId);
+                setIsCalendarOpen(shouldOpenCalendar);
         } else {
             setIsCalendarOpen(false);
         }
-    }, [isOpen, initialDate, todayKey, minDateKey, fixedLocationId, initialCalendarOpen, initialEditingWorklogId]);
+    }, [isOpen, initialDate, todayKey, effectiveMaxKey, minDateKey, fixedLocationId, initialCalendarOpen, initialEditingWorklogId]);
 
-    const handleCloseModal = () => {
-        const urlParams = new URLSearchParams(window.location.search);
-        if (urlParams.has('log')) {
-            urlParams.delete('log');
-            const nextQuery = urlParams.toString();
-            const newUrl = nextQuery ? `${window.location.pathname}?${nextQuery}` : window.location.pathname;
-            window.history.replaceState(null, '', newUrl);
-        }
-        setWindowStart(DAYTIME_WINDOW_START);
-        setSelection(null);
-        setSelectedSessionForView(null);
-        setEditingSessionId(null);
-        setActiveConflict(null);
-        setIsCalendarOpen(false);
-        onClose();
+const handleCloseModal = () => {
+    const urlParams = new URLSearchParams(window.location.search);
+    if (urlParams.has('log')) {
+        urlParams.delete('log');
+        const nextQuery = urlParams.toString();
+        const newUrl = nextQuery ? `${window.location.pathname}?${nextQuery}` : window.location.pathname;
+        window.history.replaceState(null, '', newUrl);
+    }
+    setWindowStart(DAYTIME_WINDOW_START);
+    setSelection(null);
+    setSelectedSessionForView(null);
+    setEditingSessionId(null);
+    setActiveConflict(null);
+    setIsCalendarOpen(false);
+    onClose();
+};
+
+useEffect(() => {
+    if (!isOpen || typeof window === 'undefined' || !window.visualViewport) return;
+
+    const handleViewportResize = () => {
+        const vv = window.visualViewport;
+        if (!vv) return;
+        const offset = window.innerHeight - vv.height - (vv.offsetTop || 0);
+        setKeyboardHeight(offset > 80 ? Math.round(offset) : 0);
     };
 
-    useEffect(() => {
-        if (!isOpen || typeof window === 'undefined' || !window.visualViewport) return;
+    const vv = window.visualViewport;
+    vv.addEventListener('resize', handleViewportResize);
+    vv.addEventListener('scroll', handleViewportResize);
 
-        const handleViewportResize = () => {
-            const vv = window.visualViewport;
-            if (!vv) return;
-            const offset = window.innerHeight - vv.height - (vv.offsetTop || 0);
-            setKeyboardHeight(offset > 80 ? Math.round(offset) : 0);
-        };
+    return () => {
+        vv.removeEventListener('resize', handleViewportResize);
+        vv.removeEventListener('scroll', handleViewportResize);
+    };
+}, [isOpen]);
 
-        const vv = window.visualViewport;
-        vv.addEventListener('resize', handleViewportResize);
-        vv.addEventListener('scroll', handleViewportResize);
-
-        return () => {
-            vv.removeEventListener('resize', handleViewportResize);
-            vv.removeEventListener('scroll', handleViewportResize);
-        };
-    }, [isOpen]);
-
-    // Fetch Stores on open
-    useEffect(() => {
-        if (!isOpen || !token) return;
-        const fetchStores = async () => {
-            try {
-                const res = await fetch(`${API_URL}/stores/store/?all=true`, {
-                    headers: { Authorization: `Token ${token}` },
-                });
-                if (res.ok) {
-                    const data = await res.json();
-                    const list: StoreItem[] = Array.isArray(data) ? data : (data.results || []);
-                    setStores(list);
-                    if (fixedLocationId) {
-                        setSelectedStoreIds([fixedLocationId]);
-                    }
+// Fetch Stores on open
+useEffect(() => {
+    if (!isOpen || !token) return;
+    const fetchStores = async () => {
+        try {
+            const res = await fetch(`${API_URL}/stores/store/?all=true`, {
+                headers: { Authorization: `Token ${token}` },
+            });
+            if (res.ok) {
+                const data = await res.json();
+                const list: StoreItem[] = Array.isArray(data) ? data : (data.results || []);
+                setStores(list);
+                if (fixedLocationId) {
+                    setSelectedStoreIds([fixedLocationId]);
                 }
-            } catch (err) {
-                console.error('Failed to fetch stores:', err);
-            }
-        };
-        fetchStores();
-    }, [isOpen, token, fixedLocationId]);
-
-    // Fetch Timesheet for selectedDateKey
-    const fetchDayTimesheet = useCallback(async () => {
-        if (!isOpen || !token) return;
-        setLoadingDay(true);
-        try {
-            const workerParam = workerId ? `&worker=${workerId}` : '';
-            const res = await fetch(`${API_URL}/maintenance/worklog/timesheet/?date=${selectedDateKey}${workerParam}`, {
-                headers: { Authorization: `Token ${token}` },
-            });
-            if (res.ok) {
-                const data = await res.json();
-                setSessions(data.sessions || []);
-                setTotalBookedHours(data.total_booked_hours || 0);
-                setCompletionPercentage(data.completion_percentage || 0);
-                setDayLeave(data.is_on_leave ? data.leave : null);
             }
         } catch (err) {
-            console.error('Failed to fetch timesheet:', err);
-        } finally {
-            setLoadingDay(false);
+            console.error('Failed to fetch stores:', err);
         }
-    }, [isOpen, token, selectedDateKey, workerId]);
+    };
+    fetchStores();
+}, [isOpen, token, fixedLocationId]);
 
-    useEffect(() => {
-        fetchDayTimesheet();
-    }, [fetchDayTimesheet]);
+// Fetch Timesheet for selectedDateKey
+const fetchDayTimesheet = useCallback(async () => {
+    if (!isOpen || !token) return;
+    setLoadingDay(true);
+    try {
+        const workerParam = workerId ? `&worker=${workerId}` : '';
+        const res = await fetch(`${API_URL}/maintenance/worklog/timesheet/?date=${selectedDateKey}${workerParam}`, {
+            headers: { Authorization: `Token ${token}` },
+        });
+        if (res.ok) {
+            const data = await res.json();
+            setSessions(data.sessions || []);
+            setTotalBookedHours(data.total_booked_hours || 0);
+            setCompletionPercentage(data.completion_percentage || 0);
+            setDayLeave(data.is_on_leave ? data.leave : null);
+        }
+    } catch (err) {
+        console.error('Failed to fetch timesheet:', err);
+    } finally {
+        setLoadingDay(false);
+    }
+}, [isOpen, token, selectedDateKey, workerId]);
 
-    // Fetch Month Calendar completion stats
-    const fetchMonthStats = useCallback(async (year: number, month: number) => {
-        if (!token) return;
-        try {
-            const workerParam = workerId ? `&worker=${workerId}` : '';
-            const res = await fetch(`${API_URL}/maintenance/worklog/timesheet_calendar/?year=${year}&month=${month + 1}${workerParam}`, {
-                headers: { Authorization: `Token ${token}` },
+useEffect(() => {
+    fetchDayTimesheet();
+}, [fetchDayTimesheet]);
+
+// Fetch Month Calendar completion stats
+const fetchMonthStats = useCallback(async (year: number, month: number) => {
+    if (!token) return;
+    try {
+        const workerParam = workerId ? `&worker=${workerId}` : '';
+        const res = await fetch(`${API_URL}/maintenance/worklog/timesheet_calendar/?year=${year}&month=${month + 1}${workerParam}`, {
+            headers: { Authorization: `Token ${token}` },
+        });
+        if (res.ok) {
+            const data = await res.json();
+            setMonthDaysStats(data.days || {});
+        }
+    } catch (err) {
+        console.error('Failed to fetch month timesheet stats:', err);
+    }
+}, [token, workerId]);
+
+useEffect(() => {
+    if (isCalendarOpen) {
+        fetchMonthStats(calendarViewYear, calendarViewMonth);
+    }
+}, [isCalendarOpen, calendarViewYear, calendarViewMonth, fetchMonthStats]);
+
+// Unslotted sessions (sessions recorded with hours but no specific time slot)
+const unslottedSessions = useMemo(() => {
+    return sessions.filter((s) => s.start === null || s.end === null);
+}, [sessions]);
+
+// Effective Locked Intervals for current date (with rich ticket details & remarks)
+const effectiveLockedIntervals = useMemo<LockedConflictInfo[]>(() => {
+    const intervals: LockedConflictInfo[] = [];
+    sessions.forEach((s) => {
+        if (s.id === editingSessionId) return;
+        if (s.start !== null && s.end !== null) {
+            intervals.push({
+                id: s.id,
+                start: s.start,
+                end: s.end,
+                is_ticket: s.is_ticket,
+                ticket_id: s.ticket_id,
+                ticket_work_order_no: s.ticket_work_order_no,
+                ticket_title: s.ticket_title,
+                remarks: s.remarks,
+                work_done: s.work_done,
+                is_claimed: s.is_claimed,
+                is_locked: s.is_locked,
             });
-            if (res.ok) {
-                const data = await res.json();
-                setMonthDaysStats(data.days || {});
-            }
-        } catch (err) {
-            console.error('Failed to fetch month timesheet stats:', err);
-        }
-    }, [token, workerId]);
-
-    useEffect(() => {
-        if (isCalendarOpen) {
-            fetchMonthStats(calendarViewYear, calendarViewMonth);
-        }
-    }, [isCalendarOpen, calendarViewYear, calendarViewMonth, fetchMonthStats]);
-
-    // Unslotted sessions (sessions recorded with hours but no specific time slot)
-    const unslottedSessions = useMemo(() => {
-        return sessions.filter((s) => s.start === null || s.end === null);
-    }, [sessions]);
-
-    // Effective Locked Intervals for current date (with rich ticket details & remarks)
-    const effectiveLockedIntervals = useMemo<LockedConflictInfo[]>(() => {
-        const intervals: LockedConflictInfo[] = [];
-        sessions.forEach((s) => {
-            if (s.id === editingSessionId) return;
-            if (s.start !== null && s.end !== null) {
+            // Wrap-around support for Part 2 night shift (12 AM - 1 AM is 1440 - 1500)
+            if (s.start < 180) {
                 intervals.push({
                     id: s.id,
-                    start: s.start,
-                    end: s.end,
+                    start: s.start + 1440,
+                    end: s.end + 1440,
                     is_ticket: s.is_ticket,
                     ticket_id: s.ticket_id,
                     ticket_work_order_no: s.ticket_work_order_no,
@@ -737,377 +762,350 @@ export const TimeSheetModal: React.FC<TimeSheetModalProps> = ({
                     is_claimed: s.is_claimed,
                     is_locked: s.is_locked,
                 });
-                // Wrap-around support for Part 2 night shift (12 AM - 1 AM is 1440 - 1500)
-                if (s.start < 180) {
-                    intervals.push({
-                        id: s.id,
-                        start: s.start + 1440,
-                        end: s.end + 1440,
-                        is_ticket: s.is_ticket,
-                        ticket_id: s.ticket_id,
-                        ticket_work_order_no: s.ticket_work_order_no,
-                        ticket_title: s.ticket_title,
-                        remarks: s.remarks,
-                        work_done: s.work_done,
-                        is_claimed: s.is_claimed,
-                        is_locked: s.is_locked,
-                    });
-                }
-                if (s.start >= 1440) {
-                    intervals.push({
-                        id: s.id,
-                        start: s.start - 1440,
-                        end: s.end - 1440,
-                        is_ticket: s.is_ticket,
-                        ticket_id: s.ticket_id,
-                        ticket_work_order_no: s.ticket_work_order_no,
-                        ticket_title: s.ticket_title,
-                        remarks: s.remarks,
-                        work_done: s.work_done,
-                        is_claimed: s.is_claimed,
-                        is_locked: s.is_locked,
-                    });
-                }
             }
-        });
-
-        // Automatically lock periods marked with approved or pending leave
-        if (dayLeave) {
-            if (!dayLeave.is_half_day) {
-                // Full Day Leave: Lock all 24 hours of the day (0 to 1500)
+            if (s.start >= 1440) {
                 intervals.push({
-                    id: -999,
-                    start: 0,
-                    end: 1500,
-                    is_ticket: false,
-                    is_leave: true,
-                    leave_type: dayLeave.leave_type,
-                    leave_type_display: dayLeave.leave_type_display,
-                    leave_slot: 'full_day',
-                    leave_status: dayLeave.status,
-                    work_done: `On Leave: ${dayLeave.leave_type_display}`,
-                    is_locked: true,
-                });
-            } else {
-                // Half Day Leave: Lock the specific marked half-day slot
-                // 'first_half': Morning to Afternoon (08:00 AM to 01:00 PM) -> 480 to 780
-                // 'second_half': Afternoon to Evening (01:00 PM to 06:00 PM) -> 780 to 1080
-                const slotStart = dayLeave.half_day_slot === 'second_half' ? 780 : 480;
-                const slotEnd = dayLeave.half_day_slot === 'second_half' ? 1080 : 780;
-                const slotName = dayLeave.half_day_slot === 'second_half' ? '2nd Half: Afternoon' : '1st Half: Morning';
-
-                intervals.push({
-                    id: -998,
-                    start: slotStart,
-                    end: slotEnd,
-                    is_ticket: false,
-                    is_leave: true,
-                    leave_type: dayLeave.leave_type,
-                    leave_type_display: dayLeave.leave_type_display,
-                    leave_slot: dayLeave.half_day_slot,
-                    leave_status: dayLeave.status,
-                    work_done: `${dayLeave.leave_type_display} (${slotName})`,
-                    is_locked: true,
+                    id: s.id,
+                    start: s.start - 1440,
+                    end: s.end - 1440,
+                    is_ticket: s.is_ticket,
+                    ticket_id: s.ticket_id,
+                    ticket_work_order_no: s.ticket_work_order_no,
+                    ticket_title: s.ticket_title,
+                    remarks: s.remarks,
+                    work_done: s.work_done,
+                    is_claimed: s.is_claimed,
+                    is_locked: s.is_locked,
                 });
             }
         }
+    });
 
-        return intervals;
-    }, [sessions, editingSessionId, dayLeave]);
+    // Automatically lock periods marked with approved or pending leave
+    if (dayLeave) {
+        if (!dayLeave.is_half_day) {
+            // Full Day Leave: Lock all 24 hours of the day (0 to 1500)
+            intervals.push({
+                id: -999,
+                start: 0,
+                end: 1500,
+                is_ticket: false,
+                is_leave: true,
+                leave_type: dayLeave.leave_type,
+                leave_type_display: dayLeave.leave_type_display,
+                leave_slot: 'full_day',
+                leave_status: dayLeave.status,
+                work_done: `On Leave: ${dayLeave.leave_type_display}`,
+                is_locked: true,
+            });
+        } else {
+            // Half Day Leave: Lock the specific marked half-day slot
+            // 'first_half': Morning to Afternoon (08:00 AM to 01:00 PM) -> 480 to 780
+            // 'second_half': Afternoon to Evening (01:00 PM to 06:00 PM) -> 780 to 1080
+            const slotStart = dayLeave.half_day_slot === 'second_half' ? 780 : 480;
+            const slotEnd = dayLeave.half_day_slot === 'second_half' ? 1080 : 780;
+            const slotName = dayLeave.half_day_slot === 'second_half' ? '2nd Half: Afternoon' : '1st Half: Morning';
 
-    const isPeriodLocked = useCallback((start: number, end: number) => {
-        return effectiveLockedIntervals.some((iv) => intervalOverlap(start, end, iv.start, iv.end));
-    }, [effectiveLockedIntervals]);
-
-    const getLockedConflict = useCallback((start: number, end: number): LockedConflictInfo | null => {
-        return effectiveLockedIntervals.find((iv) => intervalOverlap(start, end, iv.start, iv.end)) || null;
-    }, [effectiveLockedIntervals]);
-
-    // Persistent color cache:
-    // 1) Assigns pastel colors strictly from order (0, 1, 2, 3...)
-    // 2) Never repeats a color until all 16 colors in PASTEL_SESSION_COLORS have been used
-    // 3) Existing sessions permanently retain their assigned color when new sessions are added
-    const sessionColorCache = useRef<Map<number, number>>(new Map());
-
-    useEffect(() => {
-        sessionColorCache.current.clear();
-    }, [selectedDateKey]);
-
-    const sessionColorMap = useMemo(() => {
-        const cache = sessionColorCache.current;
-        const currentManualSessions = sessions.filter((s) => !s.is_ticket && s.id !== undefined && s.id !== null);
-        const currentManualIds = new Set(currentManualSessions.map((s) => s.id));
-
-        // Purge deleted session IDs
-        for (const id of Array.from(cache.keys())) {
-            if (!currentManualIds.has(id)) {
-                cache.delete(id);
-            }
+            intervals.push({
+                id: -998,
+                start: slotStart,
+                end: slotEnd,
+                is_ticket: false,
+                is_leave: true,
+                leave_type: dayLeave.leave_type,
+                leave_type_display: dayLeave.leave_type_display,
+                leave_slot: dayLeave.half_day_slot,
+                leave_status: dayLeave.status,
+                work_done: `${dayLeave.leave_type_display} (${slotName})`,
+                is_locked: true,
+            });
         }
+    }
 
-        // Sort manual sessions by permanent ID ascending (creation order)
-        const sortedSessions = currentManualSessions.slice().sort((a, b) => (a.id ?? 0) - (b.id ?? 0));
+    return intervals;
+}, [sessions, editingSessionId, dayLeave]);
 
-        // Assign colors in strict order (0, 1, 2...) without repeating until all colors are used
-        sortedSessions.forEach((s) => {
-            if (!cache.has(s.id)) {
-                const usedIndices = new Set(cache.values());
-                let nextIdx = -1;
-                for (let i = 0; i < PASTEL_SESSION_COLORS.length; i++) {
-                    if (!usedIndices.has(i)) {
-                        nextIdx = i;
-                        break;
-                    }
+const isPeriodLocked = useCallback((start: number, end: number) => {
+    return effectiveLockedIntervals.some((iv) => intervalOverlap(start, end, iv.start, iv.end));
+}, [effectiveLockedIntervals]);
+
+const getLockedConflict = useCallback((start: number, end: number): LockedConflictInfo | null => {
+    return effectiveLockedIntervals.find((iv) => intervalOverlap(start, end, iv.start, iv.end)) || null;
+}, [effectiveLockedIntervals]);
+
+// Persistent color cache:
+// 1) Assigns pastel colors strictly from order (0, 1, 2, 3...)
+// 2) Never repeats a color until all 16 colors in PASTEL_SESSION_COLORS have been used
+// 3) Existing sessions permanently retain their assigned color when new sessions are added
+const sessionColorCache = useRef<Map<number, number>>(new Map());
+
+useEffect(() => {
+    sessionColorCache.current.clear();
+}, [selectedDateKey]);
+
+const sessionColorMap = useMemo(() => {
+    const cache = sessionColorCache.current;
+    const currentManualSessions = sessions.filter((s) => !s.is_ticket && s.id !== undefined && s.id !== null);
+    const currentManualIds = new Set(currentManualSessions.map((s) => s.id));
+
+    // Purge deleted session IDs
+    for (const id of Array.from(cache.keys())) {
+        if (!currentManualIds.has(id)) {
+            cache.delete(id);
+        }
+    }
+
+    // Sort manual sessions by permanent ID ascending (creation order)
+    const sortedSessions = currentManualSessions.slice().sort((a, b) => (a.id ?? 0) - (b.id ?? 0));
+
+    // Assign colors in strict order (0, 1, 2...) without repeating until all colors are used
+    sortedSessions.forEach((s) => {
+        if (!cache.has(s.id)) {
+            const usedIndices = new Set(cache.values());
+            let nextIdx = -1;
+            for (let i = 0; i < PASTEL_SESSION_COLORS.length; i++) {
+                if (!usedIndices.has(i)) {
+                    nextIdx = i;
+                    break;
                 }
-                // If all 16 colors in the palette are in use, wrap around based on count
-                if (nextIdx === -1) {
-                    nextIdx = cache.size % PASTEL_SESSION_COLORS.length;
-                }
-                cache.set(s.id, nextIdx);
             }
-        });
-
-        return new Map(cache);
-    }, [sessions]);
-
-    // Retrieve session color:
-    // 1) All tickets use a common permanent non-pastel color (TICKET_PERMANENT_COLOR)
-    // 2) Manual sessions use a stable pastel color assigned in strict order without repeating
-    const getSessionColor = useCallback((isTicket: boolean, sessionId?: number, ticketId?: number | null, startMinutes?: number): PastelColor => {
-        if (isTicket) {
-            return TICKET_PERMANENT_COLOR;
+            // If all 16 colors in the palette are in use, wrap around based on count
+            if (nextIdx === -1) {
+                nextIdx = cache.size % PASTEL_SESSION_COLORS.length;
+            }
+            cache.set(s.id, nextIdx);
         }
+    });
 
-        if (sessionId !== undefined && sessionId !== null && sessionColorMap.has(sessionId)) {
-            const colorIdx = sessionColorMap.get(sessionId)!;
-            return PASTEL_SESSION_COLORS[colorIdx];
-        }
+    return new Map(cache);
+}, [sessions]);
 
-        if (sessionId !== undefined && sessionId !== null) {
-            const colorIdx = Math.abs(sessionId) % PASTEL_SESSION_COLORS.length;
-            return PASTEL_SESSION_COLORS[colorIdx];
-        }
+// Retrieve session color:
+// 1) All tickets use a common permanent non-pastel color (TICKET_PERMANENT_COLOR)
+// 2) Manual sessions use a stable pastel color assigned in strict order without repeating
+const getSessionColor = useCallback((isTicket: boolean, sessionId?: number, ticketId?: number | null, startMinutes?: number): PastelColor => {
+    if (isTicket) {
+        return TICKET_PERMANENT_COLOR;
+    }
 
-        const rawKey = ticketId ?? startMinutes ?? 0;
-        const colorIdx = Math.abs(typeof rawKey === 'number' ? rawKey : 0) % PASTEL_SESSION_COLORS.length;
+    if (sessionId !== undefined && sessionId !== null && sessionColorMap.has(sessionId)) {
+        const colorIdx = sessionColorMap.get(sessionId)!;
         return PASTEL_SESSION_COLORS[colorIdx];
-    }, [sessionColorMap]);
+    }
 
-    /**
-     * Generates all valid anchor states in xxdemo.html order:
-     * 1) First half (:00 – :30)
-     * 2) Full 1 hour (:00 – :60)
-     * 3) Last half (:30 – :60)
-     */
-    const getValidAnchorStates = useCallback((slotStart: number) => {
-        let firstFree = -1;
-        for (let i = 0; i < PARTS_COUNT; i++) {
-            if (!isPeriodLocked(slotStart + i * STEP, slotStart + (i + 1) * STEP)) {
-                firstFree = i;
-                break;
-            }
+    if (sessionId !== undefined && sessionId !== null) {
+        const colorIdx = Math.abs(sessionId) % PASTEL_SESSION_COLORS.length;
+        return PASTEL_SESSION_COLORS[colorIdx];
+    }
+
+    const rawKey = ticketId ?? startMinutes ?? 0;
+    const colorIdx = Math.abs(typeof rawKey === 'number' ? rawKey : 0) % PASTEL_SESSION_COLORS.length;
+    return PASTEL_SESSION_COLORS[colorIdx];
+}, [sessionColorMap]);
+
+/**
+ * Generates all valid anchor states in xxdemo.html order:
+ * 1) First half (:00 – :30)
+ * 2) Full 1 hour (:00 – :60)
+ * 3) Last half (:30 – :60)
+ */
+const getValidAnchorStates = useCallback((slotStart: number) => {
+    let firstFree = -1;
+    for (let i = 0; i < PARTS_COUNT; i++) {
+        if (!isPeriodLocked(slotStart + i * STEP, slotStart + (i + 1) * STEP)) {
+            firstFree = i;
+            break;
         }
-        if (firstFree === -1) return [];
+    }
+    if (firstFree === -1) return [];
 
-        const states: { start: number; end: number }[] = [];
+    const states: { start: number; end: number }[] = [];
 
-        // States starting at firstFree, extending step by step
-        for (let endIdx = firstFree + 1; endIdx <= PARTS_COUNT; endIdx++) {
-            const s = slotStart + firstFree * STEP;
-            const e = slotStart + endIdx * STEP;
+    // States starting at firstFree, extending step by step
+    for (let endIdx = firstFree + 1; endIdx <= PARTS_COUNT; endIdx++) {
+        const s = slotStart + firstFree * STEP;
+        const e = slotStart + endIdx * STEP;
+        if (!isPeriodLocked(s, e)) {
+            states.push({ start: s, end: e });
+        } else {
+            break;
+        }
+    }
+
+    // States starting after firstFree, ending at slot end (LAST 30 MINUTES!)
+    const lastState = states[states.length - 1];
+    if (lastState && lastState.end === slotStart + HOUR) {
+        for (let startIdx = firstFree + 1; startIdx < PARTS_COUNT; startIdx++) {
+            const s = slotStart + startIdx * STEP;
+            const e = slotStart + HOUR;
             if (!isPeriodLocked(s, e)) {
                 states.push({ start: s, end: e });
-            } else {
-                break;
             }
         }
+    }
 
-        // States starting after firstFree, ending at slot end (LAST 30 MINUTES!)
-        const lastState = states[states.length - 1];
-        if (lastState && lastState.end === slotStart + HOUR) {
-            for (let startIdx = firstFree + 1; startIdx < PARTS_COUNT; startIdx++) {
-                const s = slotStart + startIdx * STEP;
-                const e = slotStart + HOUR;
-                if (!isPeriodLocked(s, e)) {
-                    states.push({ start: s, end: e });
-                }
-            }
+    return states;
+}, [isPeriodLocked]);
+
+/**
+ * Starts a new selection with clean instructions matching xxdemo.html.
+ */
+const startNewSelection = (slotStart: number, initialStart?: number, initialEnd?: number) => {
+    setSelectedSessionForView(null);
+    const states = getValidAnchorStates(slotStart);
+    if (!states.length) {
+        const conflict = getLockedConflict(slotStart, slotStart + HOUR);
+        if (conflict) {
+            setActiveConflict(conflict);
         }
+        setMessage({ text: 'This entire hour is already booked.', error: true });
+        return false;
+    }
 
-        return states;
-    }, [isPeriodLocked]);
+    let initial = states[0];
+    let stateIdx = 0;
 
-    /**
-     * Starts a new selection with clean instructions matching xxdemo.html.
-     */
-    const startNewSelection = (slotStart: number, initialStart?: number, initialEnd?: number) => {
-        setSelectedSessionForView(null);
-        const states = getValidAnchorStates(slotStart);
-        if (!states.length) {
-            const conflict = getLockedConflict(slotStart, slotStart + HOUR);
-            if (conflict) {
-                setActiveConflict(conflict);
-            }
-            setMessage({ text: 'This entire hour is already booked.', error: true });
-            return false;
-        }
-
-        let initial = states[0];
-        let stateIdx = 0;
-
-        if (initialStart !== undefined && initialEnd !== undefined) {
-            const foundIdx = states.findIndex((st) => st.start === initialStart && st.end === initialEnd);
-            if (foundIdx !== -1) {
-                initial = states[foundIdx];
-                stateIdx = foundIdx;
-            } else {
-                initial = { start: initialStart, end: initialEnd };
-            }
-        }
-
-        setActiveConflict(null);
-        setSelection({
-            anchorSlot: slotStart,
-            anchorStart: initial.start,
-            anchorEnd: initial.end,
-            anchorStateIdx: stateIdx,
-            endpointSlot: null,
-            endpointPhase: 0,
-            start: initial.start,
-            end: initial.end,
-        });
-
-        setActiveConflict(null);
-        setMessage({ text: '' });
-        return true;
-    };
-
-    /**
-     * Cycles anchor duration or cancels on last click like xxdemo.html.
-     */
-
-
-    const navigate = useNavigate();
-
-    const clickAnchor = () => {
-        if (!selection) return;
-        const slot = selection.anchorSlot;
-        const states = getValidAnchorStates(slot);
-        const nextIdx = selection.anchorStateIdx + 1;
-
-        // Click again past last state -> CANCEL / CLEAR SELECTION!
-        if (nextIdx >= states.length) {
-            setSelection(null);
-            setActiveConflict(null);
-            setMessage({ text: 'Selection cleared.' });
-            return;
-        }
-
-        const nextState = states[nextIdx];
-        if (isPeriodLocked(nextState.start, nextState.end)) {
-            setSelection(null);
-            setActiveConflict(null);
-            setMessage({ text: 'Selection cleared.' });
-            return;
-        }
-
-        setActiveConflict(null);
-        setSelection({
-            anchorSlot: slot,
-            anchorStart: nextState.start,
-            anchorEnd: nextState.end,
-            anchorStateIdx: nextIdx,
-            endpointSlot: null,
-            endpointPhase: 0,
-            start: nextState.start,
-            end: nextState.end,
-        });
-
-        setMessage({ text: '' });
-    };
-
-    /**
-     * Extends endpoint slot or removes extension on click again.
-     */
-    const selectEndpoint = (slotStart: number, phase = 1) => {
-        if (!selection) return false;
-        const anchorSlot = selection.anchorSlot;
-        let candidateStart: number;
-        let candidateEnd: number;
-
-        if (slotStart > anchorSlot) {
-            candidateStart = selection.anchorStart;
-            candidateEnd = slotStart + phase * STEP;
+    if (initialStart !== undefined && initialEnd !== undefined) {
+        const foundIdx = states.findIndex((st) => st.start === initialStart && st.end === initialEnd);
+        if (foundIdx !== -1) {
+            initial = states[foundIdx];
+            stateIdx = foundIdx;
         } else {
-            candidateStart = slotStart + HOUR - phase * STEP;
-            candidateEnd = selection.anchorEnd;
+            initial = { start: initialStart, end: initialEnd };
         }
+    }
 
-        const norm = normalizeRange(candidateStart, candidateEnd);
-        if (isPeriodLocked(norm.start, norm.end)) {
-            const conflict = getLockedConflict(norm.start, norm.end);
-            if (conflict) {
-                setActiveConflict(conflict);
-            }
-            setMessage({ text: 'This range overlaps an existing booked session.', error: true });
-            return false;
-        }
+    setActiveConflict(null);
+    setSelection({
+        anchorSlot: slotStart,
+        anchorStart: initial.start,
+        anchorEnd: initial.end,
+        anchorStateIdx: stateIdx,
+        endpointSlot: null,
+        endpointPhase: 0,
+        start: initial.start,
+        end: initial.end,
+    });
 
+    setActiveConflict(null);
+    setMessage({ text: '' });
+    return true;
+};
+
+/**
+ * Cycles anchor duration or cancels on last click like xxdemo.html.
+ */
+
+
+const navigate = useNavigate();
+
+const clickAnchor = () => {
+    if (!selection) return;
+    const slot = selection.anchorSlot;
+    const states = getValidAnchorStates(slot);
+    const nextIdx = selection.anchorStateIdx + 1;
+
+    // Click again past last state -> CANCEL / CLEAR SELECTION!
+    if (nextIdx >= states.length) {
+        setSelection(null);
         setActiveConflict(null);
-        setSelection({
-            ...selection,
-            endpointSlot: slotStart,
-            endpointPhase: phase,
-            start: norm.start,
-            end: norm.end,
-        });
+        setMessage({ text: 'Selection cleared.' });
+        return;
+    }
 
-        setMessage({ text: '' });
-        return true;
-    };
+    const nextState = states[nextIdx];
+    if (isPeriodLocked(nextState.start, nextState.end)) {
+        setSelection(null);
+        setActiveConflict(null);
+        setMessage({ text: 'Selection cleared.' });
+        return;
+    }
 
-    /**
-     * Parent slot click handler strictly matching xxdemo.html.
-     */
-    const handleSlotClick = (index: number) => {
-        const slotStart = windowStart + index * HOUR;
+    setActiveConflict(null);
+    setSelection({
+        anchorSlot: slot,
+        anchorStart: nextState.start,
+        anchorEnd: nextState.end,
+        anchorStateIdx: nextIdx,
+        endpointSlot: null,
+        endpointPhase: 0,
+        start: nextState.start,
+        end: nextState.end,
+    });
 
-        if (!selection) {
-            startNewSelection(slotStart);
-            return;
+    setMessage({ text: '' });
+};
+
+/**
+ * Extends endpoint slot or removes extension on click again.
+ */
+const selectEndpoint = (slotStart: number, phase = 1) => {
+    if (!selection) return false;
+    const anchorSlot = selection.anchorSlot;
+    let candidateStart: number;
+    let candidateEnd: number;
+
+    if (slotStart > anchorSlot) {
+        candidateStart = selection.anchorStart;
+        candidateEnd = slotStart + phase * STEP;
+    } else {
+        candidateStart = slotStart + HOUR - phase * STEP;
+        candidateEnd = selection.anchorEnd;
+    }
+
+    const norm = normalizeRange(candidateStart, candidateEnd);
+    if (isPeriodLocked(norm.start, norm.end)) {
+        const conflict = getLockedConflict(norm.start, norm.end);
+        if (conflict) {
+            setActiveConflict(conflict);
         }
+        setMessage({ text: 'This range overlaps an existing booked session.', error: true });
+        return false;
+    }
 
-        // Clicking anchor slot again:
-        if (slotStart === selection.anchorSlot) {
-            if (selection.endpointSlot !== null) {
-                // If extended across slots, clicking anchor clears selection!
-                setSelection(null);
-                setActiveConflict(null);
-                setMessage({ text: 'Selection cleared.' });
-            } else {
-                // Cycle duration, or cancel / clear on last state!
-                clickAnchor();
-            }
-            return;
+    setActiveConflict(null);
+    setSelection({
+        ...selection,
+        endpointSlot: slotStart,
+        endpointPhase: phase,
+        start: norm.start,
+        end: norm.end,
+    });
+
+    setMessage({ text: '' });
+    return true;
+};
+
+/**
+ * Parent slot click handler strictly matching xxdemo.html.
+ */
+const handleSlotClick = (index: number) => {
+    const slotStart = windowStart + index * HOUR;
+
+    if (!selection) {
+        startNewSelection(slotStart);
+        return;
+    }
+
+    // Clicking anchor slot again:
+    if (slotStart === selection.anchorSlot) {
+        if (selection.endpointSlot !== null) {
+            // If extended across slots, clicking anchor clears selection!
+            setSelection(null);
+            setActiveConflict(null);
+            setMessage({ text: 'Selection cleared.' });
+        } else {
+            // Cycle duration, or cancel / clear on last state!
+            clickAnchor();
         }
+        return;
+    }
 
-        // Clicking endpoint slot again:
-        if (slotStart === selection.endpointSlot) {
-            if (selection.endpointPhase < PARTS_COUNT) {
-                const expanded = selectEndpoint(slotStart, selection.endpointPhase + 1);
-                if (!expanded) {
-                    setSelection({
-                        ...selection,
-                        endpointSlot: null,
-                        endpointPhase: 0,
-                        start: selection.anchorStart,
-                        end: selection.anchorEnd,
-                    });
-                    setActiveConflict(null);
-                    setMessage({ text: '' });
-                }
-            } else {
-                // Clicked endpoint again when full -> removes extension!
+    // Clicking endpoint slot again:
+    if (slotStart === selection.endpointSlot) {
+        if (selection.endpointPhase < PARTS_COUNT) {
+            const expanded = selectEndpoint(slotStart, selection.endpointPhase + 1);
+            if (!expanded) {
                 setSelection({
                     ...selection,
                     endpointSlot: null,
@@ -1118,482 +1116,524 @@ export const TimeSheetModal: React.FC<TimeSheetModalProps> = ({
                 setActiveConflict(null);
                 setMessage({ text: '' });
             }
-            return;
+        } else {
+            // Clicked endpoint again when full -> removes extension!
+            setSelection({
+                ...selection,
+                endpointSlot: null,
+                endpointPhase: 0,
+                start: selection.anchorStart,
+                end: selection.anchorEnd,
+            });
+            setActiveConflict(null);
+            setMessage({ text: '' });
         }
+        return;
+    }
 
-        // Extend to this slot
-        selectEndpoint(slotStart, 1);
-    };
+    // Extend to this slot
+    selectEndpoint(slotStart, 1);
+};
 
-    /**
-     * Direct click on an individual 30m segment (:00–:30 or :30–:60).
-     * If already locked, displays the ticket details, remark and clickable link!
-     */
-    const handleSegmentClick = (slotStart: number, pIndex: number, e: React.MouseEvent) => {
-        e.stopPropagation();
+/**
+ * Direct click on an individual 30m segment (:00–:30 or :30–:60).
+ * If already locked, displays the ticket details, remark and clickable link!
+ */
+const handleSegmentClick = (slotStart: number, pIndex: number, e: React.MouseEvent) => {
+    e.stopPropagation();
 
-        const segStart = slotStart + pIndex * STEP;
-        const segEnd = segStart + STEP;
+    const segStart = slotStart + pIndex * STEP;
+    const segEnd = segStart + STEP;
 
-        // If locked -> surface the session in the bottom bar with an Edit button & hide the time sheet!
-        const conflict = getLockedConflict(segStart, segEnd);
-        if (conflict) {
-            if (conflict.is_leave) {
-                setActiveConflict(conflict);
-                setMessage({
-                    text: `This time slot is reserved for your ${conflict.leave_type_display || 'Leave'} (${conflict.leave_slot === 'full_day' ? 'Full Day' : conflict.leave_slot === 'first_half' ? 'First Half: Morning' : 'Second Half: Afternoon'}). Work hours cannot be logged during leave.`,
-                    error: true
-                });
-                return;
-            }
-            const foundSess = sessions.find((s) => Number(s.id) === Number(conflict.id) || (s.worklog_id && Number(s.worklog_id) === Number(conflict.id))) || null;
-            if (foundSess) {
-                setSelectedSessionForView(foundSess);
-                setActiveConflict(conflict);
-                setSelection(null);
-                setEditingSessionId(null);
-                setMessage({ text: '' });
-                return;
-            }
+    // If locked -> surface the session in the bottom bar with an Edit button & hide the time sheet!
+    const conflict = getLockedConflict(segStart, segEnd);
+    if (conflict) {
+        if (conflict.is_leave) {
             setActiveConflict(conflict);
             setMessage({
-                text: `This time slot is already booked: Ticket #${conflict.ticket_id || 'N/A'} — ${conflict.remarks || conflict.work_done || conflict.ticket_title || 'Work log recorded'}`,
+                text: `This time slot is reserved for your ${conflict.leave_type_display || 'Leave'} (${conflict.leave_slot === 'full_day' ? 'Full Day' : conflict.leave_slot === 'first_half' ? 'First Half: Morning' : 'Second Half: Afternoon'}). Work hours cannot be logged during leave.`,
                 error: true
             });
             return;
         }
-
-        // Available slot clicked -> clear viewed session
-        setSelectedSessionForView(null);
-        setActiveConflict(null);
-
-        // Case 1: No active selection -> start new selection at clicked segment
-        if (!selection) {
-            startNewSelection(slotStart, segStart, segEnd);
-            return;
-        }
-
-        // Case 2: Clicked on anchor slot's segment -> cycle or cancel
-        if (slotStart === selection.anchorSlot && selection.endpointSlot === null) {
-            clickAnchor();
-            return;
-        }
-
-        // Case 3: Clicked on a segment already inside the active selection -> CANCEL / CLEAR!
-        if (intervalOverlap(segStart, segEnd, selection.start, selection.end)) {
+        const foundSess = sessions.find((s) => Number(s.id) === Number(conflict.id) || (s.worklog_id && Number(s.worklog_id) === Number(conflict.id))) || null;
+        if (foundSess) {
+            setSelectedSessionForView(foundSess);
+            setActiveConflict(conflict);
             setSelection(null);
-            setActiveConflict(null);
-            setMessage({ text: 'Selection cleared.' });
+            setEditingSessionId(null);
+            setMessage({ text: '' });
             return;
         }
-
-        // Case 4: Extend selection to this segment
-        const candidateStart = Math.min(selection.start, segStart);
-        const candidateEnd = Math.max(selection.end, segEnd);
-
-        const extConflict = getLockedConflict(candidateStart, candidateEnd);
-        if (extConflict) {
-            setActiveConflict(extConflict);
-            // Overlaps locked interval -> restart at this segment
-            startNewSelection(slotStart, segStart, segEnd);
-            return;
-        }
-
-        setActiveConflict(null);
-        setSelection({
-            ...selection,
-            endpointSlot: slotStart !== selection.anchorSlot ? slotStart : null,
-            endpointPhase: pIndex + 1,
-            start: candidateStart,
-            end: candidateEnd,
+        setActiveConflict(conflict);
+        setMessage({
+            text: `This time slot is already booked: Ticket #${conflict.ticket_id || 'N/A'} — ${conflict.remarks || conflict.work_done || conflict.ticket_title || 'Work log recorded'}`,
+            error: true
         });
+        return;
+    }
 
-        setMessage({ text: '' });
-    };
+    // Available slot clicked -> clear viewed session
+    setSelectedSessionForView(null);
+    setActiveConflict(null);
 
-    // Save or Update Session
-    const handleSaveSession = async () => {
-        if (!selection) return;
-        const effectiveStoreIds = selectedStoreIds.length > 0
-            ? selectedStoreIds
-            : (fixedLocationId ? [fixedLocationId] : []);
-        if (!effectiveStoreIds.length) {
-            setMessage({ text: 'Please select a store.', error: true });
-            return;
-        }
+    // Case 1: No active selection -> start new selection at clicked segment
+    if (!selection) {
+        startNewSelection(slotStart, segStart, segEnd);
+        return;
+    }
 
-        if (!remarks.trim()) {
-            setMessage({ text: 'Remarks are required to save session.', error: true });
-            return;
-        }
+    // Case 2: Clicked on anchor slot's segment -> cycle or cancel
+    if (slotStart === selection.anchorSlot && selection.endpointSlot === null) {
+        clickAnchor();
+        return;
+    }
 
-        const start = selection.start;
-        const end = selection.end;
-        if (isPeriodLocked(start, end)) {
-            const conflict = getLockedConflict(start, end);
-            if (conflict) setActiveConflict(conflict);
-            if (conflict?.is_leave) {
-                setMessage({
-                    text: `Cannot save work log: Selection overlaps your ${conflict.leave_type_display || 'Leave'} hours.`,
-                    error: true
-                });
-            } else {
-                setMessage({ text: 'Selection overlaps an existing booked time sheet.', error: true });
-            }
-            return;
-        }
-
-        const durationMinutes = end - start;
-        const hoursToSend = (durationMinutes / 60).toFixed(2);
-        const fromTimeStr = minutesToTimeString(start);
-        const toTimeStr = minutesToTimeString(end);
-
-        setSaving(true);
-        try {
-            if (editingSessionId !== null) {
-                const updateBody: any = {
-                    work_date: selectedDateKey,
-                    from_time: fromTimeStr,
-                    to_time: toTimeStr,
-                    hours: hoursToSend,
-                    stores: effectiveStoreIds,
-                    work_done: remarks,
-                };
-                if (ticketId) {
-                    updateBody.ticket = ticketId;
-                    if (workerId) updateBody.worker = workerId;
-                }
-                const res = await fetch(`${API_URL}/maintenance/worklog/${editingSessionId}/`, {
-                    method: 'PATCH',
-                    headers: {
-                        Authorization: `Token ${token}`,
-                        'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify(updateBody),
-                });
-                if (res.ok) {
-                    setMessage({ text: 'Session updated.' });
-                    setEditingSessionId(null);
-                    setSelection(null);
-                    setSelectedSessionForView(null);
-                    setActiveConflict(null);
-                    setRemarks('');
-                    await fetchDayTimesheet();
-                    if (onSessionsUpdated) onSessionsUpdated();
-                } else {
-                    const errData = await res.json();
-                    let errMsg = 'Failed to update.';
-                    if (errData) {
-                        if (typeof errData === 'string') errMsg = errData;
-                        else if (errData.detail) errMsg = errData.detail;
-                        else if (errData.hours) errMsg = Array.isArray(errData.hours) ? errData.hours[0] : String(errData.hours);
-                        else if (typeof errData === 'object') {
-                            const vals = Object.values(errData).flat();
-                            if (vals.length > 0) errMsg = String(vals[0]);
-                        }
-                    }
-                    setMessage({ text: errMsg, error: true });
-                }
-            } else {
-                const postBody: any = {
-                    work_date: selectedDateKey,
-                    from_time: fromTimeStr,
-                    to_time: toTimeStr,
-                    hours: hoursToSend,
-                    stores: effectiveStoreIds,
-                    work_done: remarks || (ticketId ? 'Ticket Work Log' : 'Timesheet Log'),
-                };
-                if (ticketId) {
-                    postBody.ticket = ticketId;
-                    if (workerId) {
-                        postBody.worker = workerId;
-                    }
-                } else {
-                    postBody.log_type = 'timesheet';
-                }
-                const res = await fetch(`${API_URL}/maintenance/worklog/`, {
-                    method: 'POST',
-                    headers: {
-                        Authorization: `Token ${token}`,
-                        'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify(postBody),
-                });
-                if (res.ok) {
-                    setMessage({ text: 'Time logged successfully.' });
-                    setSelection(null);
-                    setSelectedSessionForView(null);
-                    setActiveConflict(null);
-                    setRemarks('');
-                    await fetchDayTimesheet();
-                    if (onSessionsUpdated) onSessionsUpdated();
-                } else {
-                    const errData = await res.json();
-                    let errMsg = 'Failed to save.';
-                    if (errData) {
-                        if (typeof errData === 'string') errMsg = errData;
-                        else if (errData.detail) errMsg = errData.detail;
-                        else if (errData.hours) errMsg = Array.isArray(errData.hours) ? errData.hours[0] : String(errData.hours);
-                        else if (typeof errData === 'object') {
-                            const vals = Object.values(errData).flat();
-                            if (vals.length > 0) errMsg = String(vals[0]);
-                        }
-                    }
-                    setMessage({ text: errMsg, error: true });
-                }
-            }
-        } catch (err) {
-            console.error('Error saving session:', err);
-            setMessage({ text: 'Server communication error.', error: true });
-        } finally {
-            setSaving(false);
-        }
-    };
-
-    const canEditSession = useCallback((sess: BookedSession): boolean => {
-        if (sess.is_claimed) return false;
-        if (ticketId) {
-            // In ticket context, sessions belonging to this ticket can be edited from this ticket
-            return Boolean(sess.is_ticket && sess.ticket_id && Number(sess.ticket_id) === Number(ticketId));
-        } else {
-            // Booked Session only allowed to edit from dashboard
-            return !sess.is_ticket && !sess.is_locked;
-        }
-    }, [ticketId]);
-
-    const isConflictEditable = useCallback((conflict: LockedConflictInfo | null): boolean => {
-        if (!conflict) return false;
-        if (conflict.is_claimed) return false;
-        if (ticketId) {
-            return Boolean(conflict.is_ticket && conflict.ticket_id && Number(conflict.ticket_id) === Number(ticketId));
-        } else {
-            return !conflict.is_ticket && !conflict.is_locked;
-        }
-    }, [ticketId]);
-
-    // Keep URL &log=ID in sync when viewing or editing a log for this ticket
-    useEffect(() => {
-        if (!isOpen || !ticketId) return;
-
-        const currentActive = editingSessionId !== null
-            ? sessions.find((s) => s.id === editingSessionId)
-            : (selectedSessionForView && selectedSessionForView.is_ticket && Number(selectedSessionForView.ticket_id) === Number(ticketId))
-                ? selectedSessionForView
-                : null;
-
-        const urlParams = new URLSearchParams(window.location.search);
-        const queryLog = urlParams.get('log');
-
-        if (currentActive && currentActive.worklog_id) {
-            const logStr = String(currentActive.worklog_id);
-            if (queryLog !== logStr) {
-                urlParams.set('log', logStr);
-                const newUrl = `${window.location.pathname}?${urlParams.toString()}`;
-                window.history.replaceState(null, '', newUrl);
-            }
-        }
-    }, [isOpen, ticketId, editingSessionId, selectedSessionForView, sessions]);
-
-    const handleStartEdit = useCallback((session: BookedSession) => {
-        if (!canEditSession(session)) return;
-        setSelectedSessionForView(null);
-        setEditingSessionId(session.id);
-        setRemarks(session.remarks || session.work_done || '');
-        if (session.locationIds.length > 0) {
-            setSelectedStoreIds(session.locationIds);
-        } else if (fixedLocationId) {
-            setSelectedStoreIds([fixedLocationId]);
-        }
-
-        if (session.start !== null && session.end !== null) {
-            let targetWindow = DAYTIME_WINDOW_START;
-            if (session.start < DAYTIME_WINDOW_START) {
-                targetWindow = EARLY_MORNING_WINDOW_START;
-            } else if (session.start >= NIGHT_WINDOW_START) {
-                targetWindow = NIGHT_WINDOW_START;
-            }
-            setWindowStart(targetWindow);
-
-            const anchorSlot = Math.floor(session.start / HOUR) * HOUR;
-            setSelection({
-                anchorSlot,
-                anchorStart: session.start,
-                anchorEnd: Math.min(anchorSlot + HOUR, session.end),
-                anchorStateIdx: 0,
-                endpointSlot: session.end > anchorSlot + HOUR ? Math.floor((session.end - 1) / HOUR) * HOUR : null,
-                endpointPhase: Math.ceil(((session.end % HOUR) || HOUR) / STEP),
-                start: session.start,
-                end: session.end,
-            });
-            setMessage({ text: 'Editing session.' });
-        } else {
-            setWindowStart(DAYTIME_WINDOW_START);
-            setMessage({ text: 'Please select a time slot on the grid.' });
-        }
-    }, [canEditSession, fixedLocationId]);
-
-    const initialWorklogHandledRef = useRef<number | null>(null);
-
-    // Auto-enter edit mode when opened for a specific work log
-    useEffect(() => {
-        if (!isOpen) {
-            initialWorklogHandledRef.current = null;
-            return;
-        }
-        if (initialEditingWorklogId && sessions.length > 0 && initialWorklogHandledRef.current !== initialEditingWorklogId) {
-            const target = sessions.find((s) => Number(s.worklog_id) === Number(initialEditingWorklogId) || Number(s.id) === Number(initialEditingWorklogId));
-            if (target) {
-                initialWorklogHandledRef.current = initialEditingWorklogId;
-                if (canEditSession(target)) {
-                    handleStartEdit(target);
-                } else {
-                    setSelectedSessionForView(target);
-                    if (target.start !== null && target.end !== null) {
-                        let targetWindow = DAYTIME_WINDOW_START;
-                        if (target.start < DAYTIME_WINDOW_START) {
-                            targetWindow = EARLY_MORNING_WINDOW_START;
-                        } else if (target.start >= NIGHT_WINDOW_START) {
-                            targetWindow = NIGHT_WINDOW_START;
-                        }
-                        setWindowStart(targetWindow);
-                    }
-                }
-            }
-        }
-    }, [isOpen, initialEditingWorklogId, sessions, canEditSession, handleStartEdit]);
-
-    const handleCancelEdit = () => {
-        setEditingSessionId(null);
+    // Case 3: Clicked on a segment already inside the active selection -> CANCEL / CLEAR!
+    if (intervalOverlap(segStart, segEnd, selection.start, selection.end)) {
         setSelection(null);
-        setSelectedSessionForView(null);
         setActiveConflict(null);
-        setRemarks('');
-        setMessage({ text: 'Edit cancelled.' });
-    };
+        setMessage({ text: 'Selection cleared.' });
+        return;
+    }
 
-    const handleDeleteSession = async (worklogId: number) => {
-        const targetSession = sessions.find((s) => s.worklog_id === worklogId || s.id === worklogId);
-        if (targetSession && !canEditSession(targetSession)) return;
-        if (!confirm('Delete this logged session?')) return;
-        try {
-            const res = await fetch(`${API_URL}/maintenance/worklog/${worklogId}/`, {
-                method: 'DELETE',
-                headers: { Authorization: `Token ${token}` },
+    // Case 4: Extend selection to this segment
+    const candidateStart = Math.min(selection.start, segStart);
+    const candidateEnd = Math.max(selection.end, segEnd);
+
+    const extConflict = getLockedConflict(candidateStart, candidateEnd);
+    if (extConflict) {
+        setActiveConflict(extConflict);
+        // Overlaps locked interval -> restart at this segment
+        startNewSelection(slotStart, segStart, segEnd);
+        return;
+    }
+
+    setActiveConflict(null);
+    setSelection({
+        ...selection,
+        endpointSlot: slotStart !== selection.anchorSlot ? slotStart : null,
+        endpointPhase: pIndex + 1,
+        start: candidateStart,
+        end: candidateEnd,
+    });
+
+    setMessage({ text: '' });
+};
+
+// Save or Update Session
+const handleSaveSession = async () => {
+    if (!selection) return;
+    if (minDateKey && selectedDateKey < minDateKey) {
+        setMessage({
+            text: `Cannot log work hours before the ticket created date (${minDateKey}).`,
+            error: true,
+        });
+        return;
+    }
+    if (selectedDateKey > effectiveMaxKey) {
+        setMessage({
+            text: 'Cannot log work hours for a future date.',
+            error: true,
+        });
+        return;
+    }
+    const effectiveStoreIds = selectedStoreIds.length > 0
+        ? selectedStoreIds
+        : (fixedLocationId ? [fixedLocationId] : []);
+    if (!effectiveStoreIds.length) {
+        setMessage({ text: 'Please select a store.', error: true });
+        return;
+    }
+
+    if (!remarks.trim()) {
+        setMessage({ text: 'Remarks are required to save session.', error: true });
+        return;
+    }
+
+    const start = selection.start;
+    const end = selection.end;
+    if (isPeriodLocked(start, end)) {
+        const conflict = getLockedConflict(start, end);
+        if (conflict) setActiveConflict(conflict);
+        if (conflict?.is_leave) {
+            setMessage({
+                text: `Cannot save work log: Selection overlaps your ${conflict.leave_type_display || 'Leave'} hours.`,
+                error: true
+            });
+        } else {
+            setMessage({ text: 'Selection overlaps an existing booked time sheet.', error: true });
+        }
+        return;
+    }
+
+    const durationMinutes = end - start;
+    const hoursToSend = (durationMinutes / 60).toFixed(2);
+    const fromTimeStr = minutesToTimeString(start);
+    const toTimeStr = minutesToTimeString(end);
+
+    setSaving(true);
+    try {
+        if (editingSessionId !== null) {
+            const updateBody: any = {
+                work_date: selectedDateKey,
+                from_time: fromTimeStr,
+                to_time: toTimeStr,
+                hours: hoursToSend,
+                stores: effectiveStoreIds,
+                work_done: remarks,
+            };
+            if (ticketId) {
+                updateBody.ticket = ticketId;
+                if (workerId) updateBody.worker = workerId;
+            }
+            const res = await fetch(`${API_URL}/maintenance/worklog/${editingSessionId}/`, {
+                method: 'PATCH',
+                headers: {
+                    Authorization: `Token ${token}`,
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(updateBody),
             });
             if (res.ok) {
-                setMessage({ text: 'Session removed.' });
-                if (editingSessionId === worklogId) {
-                    setEditingSessionId(null);
-                    setSelection(null);
-                }
-                if (selectedSessionForView?.worklog_id === worklogId) {
-                    setSelectedSessionForView(null);
-                }
+                setMessage({ text: 'Session updated.' });
+                setEditingSessionId(null);
+                setSelection(null);
+                setSelectedSessionForView(null);
                 setActiveConflict(null);
+                setRemarks('');
                 await fetchDayTimesheet();
                 if (onSessionsUpdated) onSessionsUpdated();
+            } else {
+                const errData = await res.json();
+                let errMsg = 'Failed to update.';
+                if (errData) {
+                    if (typeof errData === 'string') errMsg = errData;
+                    else if (errData.detail) errMsg = errData.detail;
+                    else if (errData.hours) errMsg = Array.isArray(errData.hours) ? errData.hours[0] : String(errData.hours);
+                    else if (typeof errData === 'object') {
+                        const vals = Object.values(errData).flat();
+                        if (vals.length > 0) errMsg = String(vals[0]);
+                    }
+                }
+                setMessage({ text: errMsg, error: true });
             }
-        } catch (err) {
-            console.error('Failed to delete session:', err);
-        }
-    };
-
-    const handleResetAllManualSessions = async () => {
-        if (!confirm('Reset all manual timesheet sessions for this date? (Ticket logs are kept safe).')) return;
-        try {
-            const res = await fetch(`${API_URL}/maintenance/worklog/timesheet_reset/`, {
+        } else {
+            const postBody: any = {
+                work_date: selectedDateKey,
+                from_time: fromTimeStr,
+                to_time: toTimeStr,
+                hours: hoursToSend,
+                stores: effectiveStoreIds,
+                work_done: remarks || (ticketId ? 'Ticket Work Log' : 'Timesheet Log'),
+            };
+            if (ticketId) {
+                postBody.ticket = ticketId;
+                if (workerId) {
+                    postBody.worker = workerId;
+                }
+            } else {
+                postBody.log_type = 'timesheet';
+            }
+            const res = await fetch(`${API_URL}/maintenance/worklog/`, {
                 method: 'POST',
                 headers: {
                     Authorization: `Token ${token}`,
                     'Content-Type': 'application/json',
                 },
-                body: JSON.stringify({
-                    date: selectedDateKey,
-                    location_ids: selectedStoreIds,
-                }),
+                body: JSON.stringify(postBody),
             });
             if (res.ok) {
-                setMessage({ text: 'Manual sessions cleared.' });
+                setMessage({ text: 'Time logged successfully.' });
                 setSelection(null);
+                setSelectedSessionForView(null);
                 setActiveConflict(null);
-                setEditingSessionId(null);
+                setRemarks('');
                 await fetchDayTimesheet();
                 if (onSessionsUpdated) onSessionsUpdated();
+            } else {
+                const errData = await res.json();
+                let errMsg = 'Failed to save.';
+                if (errData) {
+                    if (typeof errData === 'string') errMsg = errData;
+                    else if (errData.detail) errMsg = errData.detail;
+                    else if (errData.hours) errMsg = Array.isArray(errData.hours) ? errData.hours[0] : String(errData.hours);
+                    else if (typeof errData === 'object') {
+                        const vals = Object.values(errData).flat();
+                        if (vals.length > 0) errMsg = String(vals[0]);
+                    }
+                }
+                setMessage({ text: errMsg, error: true });
             }
-        } catch (err) {
-            console.error('Failed to reset timesheet:', err);
         }
-    };
+    } catch (err) {
+        console.error('Error saving session:', err);
+        setMessage({ text: 'Server communication error.', error: true });
+    } finally {
+        setSaving(false);
+    }
+};
 
-    const selectedDateObj = useMemo(() => parseDateKey(selectedDateKey), [selectedDateKey]);
-    const monthShort = selectedDateObj.toLocaleDateString('en-US', { month: 'short' });
-    const dayNumber = pad(selectedDateObj.getDate());
-    const fullDateText = selectedDateObj.toLocaleDateString('en-US', {
-        weekday: 'short',
-        month: 'short',
-        day: 'numeric',
-        year: 'numeric',
-    });
+const canEditSession = useCallback((sess: BookedSession): boolean => {
+    if (sess.is_claimed) return false;
+    if (ticketId) {
+        // In ticket context, sessions belonging to this ticket can be edited from this ticket
+        return Boolean(sess.is_ticket && sess.ticket_id && Number(sess.ticket_id) === Number(ticketId));
+    } else {
+        // Booked Session only allowed to edit from dashboard
+        return !sess.is_ticket && !sess.is_locked;
+    }
+}, [ticketId]);
 
-    const firstDayOfMonth = new Date(calendarViewYear, calendarViewMonth, 1);
-    const daysInMonth = new Date(calendarViewYear, calendarViewMonth + 1, 0).getDate();
-    const startWeekday = firstDayOfMonth.getDay();
+const isConflictEditable = useCallback((conflict: LockedConflictInfo | null): boolean => {
+    if (!conflict) return false;
+    if (conflict.is_claimed) return false;
+    if (ticketId) {
+        return Boolean(conflict.is_ticket && conflict.ticket_id && Number(conflict.ticket_id) === Number(ticketId));
+    } else {
+        return !conflict.is_ticket && !conflict.is_locked;
+    }
+}, [ticketId]);
 
-    if (!isOpen) return null;
+// Keep URL &log=ID in sync when viewing or editing a log for this ticket
+useEffect(() => {
+    if (!isOpen || !ticketId) return;
 
-    return (
+    const currentActive = editingSessionId !== null
+        ? sessions.find((s) => s.id === editingSessionId)
+        : (selectedSessionForView && selectedSessionForView.is_ticket && Number(selectedSessionForView.ticket_id) === Number(ticketId))
+            ? selectedSessionForView
+            : null;
+
+    const urlParams = new URLSearchParams(window.location.search);
+    const queryLog = urlParams.get('log');
+
+    if (currentActive && currentActive.worklog_id) {
+        const logStr = String(currentActive.worklog_id);
+        if (queryLog !== logStr) {
+            urlParams.set('log', logStr);
+            const newUrl = `${window.location.pathname}?${urlParams.toString()}`;
+            window.history.replaceState(null, '', newUrl);
+        }
+    }
+}, [isOpen, ticketId, editingSessionId, selectedSessionForView, sessions]);
+
+const handleStartEdit = useCallback((session: BookedSession) => {
+    if (!canEditSession(session)) return;
+    setSelectedSessionForView(null);
+    setEditingSessionId(session.id);
+    setRemarks(session.remarks || session.work_done || '');
+    if (session.locationIds.length > 0) {
+        setSelectedStoreIds(session.locationIds);
+    } else if (fixedLocationId) {
+        setSelectedStoreIds([fixedLocationId]);
+    }
+
+    if (session.start !== null && session.end !== null) {
+        let targetWindow = DAYTIME_WINDOW_START;
+        if (session.start < DAYTIME_WINDOW_START) {
+            targetWindow = EARLY_MORNING_WINDOW_START;
+        } else if (session.start >= NIGHT_WINDOW_START) {
+            targetWindow = NIGHT_WINDOW_START;
+        }
+        setWindowStart(targetWindow);
+
+        const anchorSlot = Math.floor(session.start / HOUR) * HOUR;
+        setSelection({
+            anchorSlot,
+            anchorStart: session.start,
+            anchorEnd: Math.min(anchorSlot + HOUR, session.end),
+            anchorStateIdx: 0,
+            endpointSlot: session.end > anchorSlot + HOUR ? Math.floor((session.end - 1) / HOUR) * HOUR : null,
+            endpointPhase: Math.ceil(((session.end % HOUR) || HOUR) / STEP),
+            start: session.start,
+            end: session.end,
+        });
+        setMessage({ text: 'Editing session.' });
+    } else {
+        setWindowStart(DAYTIME_WINDOW_START);
+        setMessage({ text: 'Please select a time slot on the grid.' });
+    }
+}, [canEditSession, fixedLocationId]);
+
+const initialWorklogHandledRef = useRef<number | null>(null);
+
+// Auto-enter edit mode when opened for a specific work log
+useEffect(() => {
+    if (!isOpen) {
+        initialWorklogHandledRef.current = null;
+        return;
+    }
+    if (initialEditingWorklogId && sessions.length > 0 && initialWorklogHandledRef.current !== initialEditingWorklogId) {
+        const target = sessions.find((s) => Number(s.worklog_id) === Number(initialEditingWorklogId) || Number(s.id) === Number(initialEditingWorklogId));
+        if (target) {
+            initialWorklogHandledRef.current = initialEditingWorklogId;
+            if (canEditSession(target)) {
+                handleStartEdit(target);
+            } else {
+                setSelectedSessionForView(target);
+                if (target.start !== null && target.end !== null) {
+                    let targetWindow = DAYTIME_WINDOW_START;
+                    if (target.start < DAYTIME_WINDOW_START) {
+                        targetWindow = EARLY_MORNING_WINDOW_START;
+                    } else if (target.start >= NIGHT_WINDOW_START) {
+                        targetWindow = NIGHT_WINDOW_START;
+                    }
+                    setWindowStart(targetWindow);
+                }
+            }
+        }
+    }
+}, [isOpen, initialEditingWorklogId, sessions, canEditSession, handleStartEdit]);
+
+const handleCancelEdit = () => {
+    setEditingSessionId(null);
+    setSelection(null);
+    setSelectedSessionForView(null);
+    setActiveConflict(null);
+    setRemarks('');
+    setMessage({ text: 'Edit cancelled.' });
+};
+
+const handleDeleteSession = async (worklogId: number) => {
+    const targetSession = sessions.find((s) => s.worklog_id === worklogId || s.id === worklogId);
+    if (targetSession && !canEditSession(targetSession)) return;
+    if (!confirm('Delete this logged session?')) return;
+    try {
+        const res = await fetch(`${API_URL}/maintenance/worklog/${worklogId}/`, {
+            method: 'DELETE',
+            headers: { Authorization: `Token ${token}` },
+        });
+        if (res.ok) {
+            setMessage({ text: 'Session removed.' });
+            if (editingSessionId === worklogId) {
+                setEditingSessionId(null);
+                setSelection(null);
+            }
+            if (selectedSessionForView?.worklog_id === worklogId) {
+                setSelectedSessionForView(null);
+            }
+            setActiveConflict(null);
+            await fetchDayTimesheet();
+            if (onSessionsUpdated) onSessionsUpdated();
+        }
+    } catch (err) {
+        console.error('Failed to delete session:', err);
+    }
+};
+
+const handleResetAllManualSessions = async () => {
+    if (!confirm('Reset all manual timesheet sessions for this date? (Ticket logs are kept safe).')) return;
+    try {
+        const res = await fetch(`${API_URL}/maintenance/worklog/timesheet_reset/`, {
+            method: 'POST',
+            headers: {
+                Authorization: `Token ${token}`,
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                date: selectedDateKey,
+                location_ids: selectedStoreIds,
+            }),
+        });
+        if (res.ok) {
+            setMessage({ text: 'Manual sessions cleared.' });
+            setSelection(null);
+            setActiveConflict(null);
+            setEditingSessionId(null);
+            await fetchDayTimesheet();
+            if (onSessionsUpdated) onSessionsUpdated();
+        }
+    } catch (err) {
+        console.error('Failed to reset timesheet:', err);
+    }
+};
+
+const selectedDateObj = useMemo(() => parseDateKey(selectedDateKey), [selectedDateKey]);
+const monthShort = selectedDateObj.toLocaleDateString('en-US', { month: 'short' });
+const dayNumber = pad(selectedDateObj.getDate());
+const fullDateText = selectedDateObj.toLocaleDateString('en-US', {
+    weekday: 'short',
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+});
+
+const firstDayOfMonth = new Date(calendarViewYear, calendarViewMonth, 1);
+const daysInMonth = new Date(calendarViewYear, calendarViewMonth + 1, 0).getDate();
+const startWeekday = firstDayOfMonth.getDay();
+
+const minDateParts = minDateKey ? minDateKey.split('-').map(Number) : null;
+const maxDateParts = effectiveMaxKey.split('-').map(Number);
+const isPrevMonthDisabled = Boolean(
+    minDateParts &&
+    !isNaN(minDateParts[0]) &&
+    !isNaN(minDateParts[1]) &&
+    (calendarViewYear < minDateParts[0] ||
+        (calendarViewYear === minDateParts[0] && calendarViewMonth <= minDateParts[1] - 1))
+);
+const isNextMonthDisabled =
+    calendarViewYear > maxDateParts[0] ||
+    (calendarViewYear === maxDateParts[0] && calendarViewMonth >= maxDateParts[1] - 1);
+
+if (!isOpen) return null;
+
+return (
+    <div
+        className={`fixed inset-0 z-[65] flex justify-center p-2 sm:p-4 bg-black/50 backdrop-blur-xs overflow-y-auto transition-all duration-150 ${keyboardHeight > 0 ? 'items-end' : 'items-center'
+            }`}
+        style={{
+            paddingBottom: keyboardHeight > 0 ? `${keyboardHeight + 8}px` : undefined,
+        }}
+    >
+        {/* Modal Dialog Container - rounded-2xl like xxdemo.html */}
         <div
-            className={`fixed inset-0 z-[65] flex justify-center p-2 sm:p-4 bg-black/50 backdrop-blur-xs overflow-y-auto transition-all duration-150 ${keyboardHeight > 0 ? 'items-end' : 'items-center'
+            className={`w-full max-w-lg bg-white dark:bg-surface-container rounded-2xl shadow-2xl border border-slate-200 dark:border-outline-variant overflow-hidden flex flex-col relative transition-all duration-150 ${keyboardHeight > 0 ? 'my-0' : 'my-auto'
                 }`}
             style={{
-                paddingBottom: keyboardHeight > 0 ? `${keyboardHeight + 8}px` : undefined,
+                maxHeight: keyboardHeight > 0
+                    ? `calc(100dvh - ${keyboardHeight + 24}px)`
+                    : '94vh',
             }}
         >
-            {/* Modal Dialog Container - rounded-2xl like xxdemo.html */}
-            <div
-                className={`w-full max-w-lg bg-white dark:bg-surface-container rounded-2xl shadow-2xl border border-slate-200 dark:border-outline-variant overflow-hidden flex flex-col relative transition-all duration-150 ${keyboardHeight > 0 ? 'my-0' : 'my-auto'
-                    }`}
-                style={{
-                    maxHeight: keyboardHeight > 0
-                        ? `calc(100dvh - ${keyboardHeight + 24}px)`
-                        : '94vh',
-                }}
-            >
 
 
-                {/* Employee Info Header Banner */}
-                {workerName && (
-                    <div className="px-4 py-2 bg-slate-50 dark:bg-surface-container-low border-b border-slate-100 dark:border-outline-variant flex items-center justify-between text-xs shrink-0">
-                        <div className="flex items-center gap-2 min-w-0">
-                            <span className="font-bold text-slate-800 dark:text-on-surface truncate">{workerName}</span>
-                            {employeeNo && (
-                                <span className="text-[10px] text-slate-500 dark:text-on-surface-variant font-mono shrink-0">
-                                    (ID: {employeeNo})
-                                </span>
-                            )}
-                            {workerRole && (
-                                <span className="text-[10px] font-semibold text-primary uppercase shrink-0">
-                                    &bull; {workerRole}
-                                </span>
-                            )}
-                        </div>
-
+            {/* Employee Info Header Banner */}
+            {workerName && (
+                <div className="px-4 py-2 bg-slate-50 dark:bg-surface-container-low border-b border-slate-100 dark:border-outline-variant flex items-center justify-between text-xs shrink-0">
+                    <div className="flex items-center gap-2 min-w-0">
+                        <span className="font-bold text-slate-800 dark:text-on-surface truncate">{workerName}</span>
+                        {employeeNo && (
+                            <span className="text-[10px] text-slate-500 dark:text-on-surface-variant font-mono shrink-0">
+                                (ID: {employeeNo})
+                            </span>
+                        )}
+                        {workerRole && (
+                            <span className="text-[10px] font-semibold text-primary uppercase shrink-0">
+                                &bull; {workerRole}
+                            </span>
+                        )}
                     </div>
-                )}
 
-                {/* Main Body */}
-                <div className="flex-1 overflow-y-auto divide-y divide-slate-100 dark:divide-outline-variant">
+                </div>
+            )}
 
-                    <div className="flex items-center gap-2 p-3 pr-2 bg-white dark:bg-surface-container">
-                        {/* Date selector */}
-                        <button
-                            type="button"
-                            onClick={() => {
-                                setCalendarViewYear(selectedDateObj.getFullYear());
-                                setCalendarViewMonth(selectedDateObj.getMonth());
-                                setIsCalendarOpen(true);
-                            }}
-                            className="group flex-1 min-w-0 flex items-center justify-between gap-3
+            {/* Main Body */}
+            <div className="flex-1 overflow-y-auto divide-y divide-slate-100 dark:divide-outline-variant">
+
+                <div className="flex items-center gap-2 p-3 pr-2 bg-white dark:bg-surface-container">
+                    {/* Date selector */}
+                    <button
+                        type="button"
+                        onClick={() => {
+                            const viewDateObj = (minDateKey && selectedDateKey < minDateKey)
+                                ? parseDateKey(minDateKey)
+                                : selectedDateObj;
+                            setCalendarViewYear(viewDateObj.getFullYear());
+                            setCalendarViewMonth(viewDateObj.getMonth());
+                            setIsCalendarOpen(true);
+                        }}
+                        className="group flex-1 min-w-0 flex items-center justify-between gap-3
         rounded-xl border border-slate-200/80 dark:border-outline-variant
         bg-slate-50 hover:bg-slate-100
         dark:bg-surface-container-low dark:hover:bg-surface-container-high
@@ -1602,75 +1642,75 @@ export const TimeSheetModal: React.FC<TimeSheetModalProps> = ({
         hover:shadow-md active:scale-[0.99]
         focus-visible:outline-none focus-visible:ring-2
         focus-visible:ring-amber-400 focus-visible:ring-offset-2"
-                        >
-                            <div className="flex items-center gap-3 min-w-0">
-                                {/* Date icon */}
-                                <div className="w-10 h-10 rounded-xl bg-[#17191C] text-white
+                    >
+                        <div className="flex items-center gap-3 min-w-0">
+                            {/* Date icon */}
+                            <div className="w-10 h-10 rounded-xl bg-[#17191C] text-white
                 flex flex-col items-center justify-center flex-shrink-0
                 shadow-sm ring-1 ring-black/5">
-                                    <span className="text-[9px] font-bold uppercase tracking-wider
+                                <span className="text-[9px] font-bold uppercase tracking-wider
                     text-amber-400 leading-none">
-                                        {monthShort}
-                                    </span>
-                                    <span className="text-sm font-black leading-none mt-1">
-                                        {dayNumber}
-                                    </span>
-                                </div>
-
-                                {/* Date information */}
-                                <div className="min-w-0 flex-1">
-                                    <div className="flex items-center gap-2 min-w-0">
-                                        <span className="text-[13px] font-bold text-slate-800
-                        dark:text-on-surface truncate">
-                                            {fullDateText}
-                                        </span>
-                                        {dayLeave && (
-                                            <span
-                                                className="flex-shrink-0 text-[10px] font-bold inline-flex items-center gap-1 bg-amber-100 text-amber-900 dark:bg-amber-950/60 dark:text-amber-300 px-2 py-0.5 rounded-full border border-amber-300 dark:border-amber-800"
-                                                title={`On Leave: ${dayLeave.leave_type_display} (${dayLeave.is_half_day ? 'Half Day 5h' : 'Full Day 10h'})`}
-                                            >
-                                                <CircleOff className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400 shrink-0" />
-                                                <span>{dayLeave.leave_type_display || 'On Leave'}</span>
-                                            </span>
-                                        )}
-                                    </div>
-
-                                    <div className="flex items-center gap-1.5 mt-1">
-                                        <span className="text-[10px] text-slate-500
-                        dark:text-on-surface-variant font-medium">
-                                            {totalBookedHours} / 10 hrs booked
-                                        </span>
-                                    </div>
-                                </div>
+                                    {monthShort}
+                                </span>
+                                <span className="text-sm font-black leading-none mt-1">
+                                    {dayNumber}
+                                </span>
                             </div>
 
-                            {/* Completion + calendar */}
-                            <div className="flex items-center gap-2.5 flex-shrink-0">
-                                <span className={`text-[11px] font-extrabold tabular-nums
+                            {/* Date information */}
+                            <div className="min-w-0 flex-1">
+                                <div className="flex items-center gap-2 min-w-0">
+                                    <span className="text-[13px] font-bold text-slate-800
+                        dark:text-on-surface truncate">
+                                        {fullDateText}
+                                    </span>
+                                    {dayLeave && (
+                                        <span
+                                            className="flex-shrink-0 text-[10px] font-bold inline-flex items-center gap-1 bg-amber-100 text-amber-900 dark:bg-amber-950/60 dark:text-amber-300 px-2 py-0.5 rounded-full border border-amber-300 dark:border-amber-800"
+                                            title={`On Leave: ${dayLeave.leave_type_display} (${dayLeave.is_half_day ? 'Half Day 5h' : 'Full Day 10h'})`}
+                                        >
+                                            <CircleOff className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400 shrink-0" />
+                                            <span>{dayLeave.leave_type_display || 'On Leave'}</span>
+                                        </span>
+                                    )}
+                                </div>
+
+                                <div className="flex items-center gap-1.5 mt-1">
+                                    <span className="text-[10px] text-slate-500
+                        dark:text-on-surface-variant font-medium">
+                                        {totalBookedHours} / 10 hrs booked
+                                    </span>
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Completion + calendar */}
+                        <div className="flex items-center gap-2.5 flex-shrink-0">
+                            <span className={`text-[11px] font-extrabold tabular-nums
                 px-2.5 py-1 rounded-full border
                 transition-colors duration-200
                 ${getCompletionBadgeClasses(completionPercentage)}`}>
-                                    {completionPercentage}%
-                                </span>
+                                {completionPercentage}%
+                            </span>
 
-                                <CalendarIcon className="w-4 h-4 text-slate-400
+                            <CalendarIcon className="w-4 h-4 text-slate-400
                 group-hover:text-slate-700
                 dark:group-hover:text-on-surface
                 transition-colors" />
-                            </div>
-                        </button>
+                        </div>
+                    </button>
 
-                        {/* Leave Request & Tracking button */}
+                    {/* Leave Request & Tracking button */}
 
-                        {/* Print button */}
-                        <Can permission={'accounts.view_customuser'} >
+                    {/* Print button */}
+                    <Can permission={'accounts.view_customuser'} >
 
-                            <button
-                                type="button"
-                                onClick={() => setIsPrintModalOpen(true)}
-                                aria-label="Print timesheet"
-                                title="Print Timesheet Report (A4)"
-                                className="w-8 h-8 flex-shrink-0 rounded-full
+                        <button
+                            type="button"
+                            onClick={() => setIsPrintModalOpen(true)}
+                            aria-label="Print timesheet"
+                            title="Print Timesheet Report (A4)"
+                            className="w-8 h-8 flex-shrink-0 rounded-full
                             flex items-center justify-center
                             text-slate-400 hover:text-slate-700
                             hover:bg-slate-100
@@ -1680,17 +1720,17 @@ export const TimeSheetModal: React.FC<TimeSheetModalProps> = ({
                             active:scale-90
                             focus-visible:outline-none focus-visible:ring-2
                             focus-visible:ring-slate-400"
-                            >
-                                <Printer className="w-4 h-4" />
-                            </button>
-                        </Can>
+                        >
+                            <Printer className="w-4 h-4" />
+                        </button>
+                    </Can>
 
-                        {/* Close button */}
-                        <button
-                            type="button"
-                            onClick={handleCloseModal}
-                            aria-label="Close calendar"
-                            className="w-8 h-8 flex-shrink-0 rounded-full
+                    {/* Close button */}
+                    <button
+                        type="button"
+                        onClick={handleCloseModal}
+                        aria-label="Close calendar"
+                        className="w-8 h-8 flex-shrink-0 rounded-full
                                             flex items-center justify-center
                                             text-slate-400 hover:text-slate-700
                                             hover:bg-slate-100
@@ -1700,13 +1740,13 @@ export const TimeSheetModal: React.FC<TimeSheetModalProps> = ({
                                             active:scale-90
                                             focus-visible:outline-none focus-visible:ring-2
                                             focus-visible:ring-slate-400"
-                        >
-                            <X className="w-4 h-4" />
-                        </button>
-                    </div>
+                    >
+                        <X className="w-4 h-4" />
+                    </button>
+                </div>
 
-                    {/* Active Leave Banner on Selected Day */}
-                    {/* {dayLeave && (
+                {/* Active Leave Banner on Selected Day */}
+                {/* {dayLeave && (
                         <div className={`mx-3 mb-2 p-3 rounded-xl border flex items-center justify-between gap-3 ${dayLeave.status === 'approved'
                             ? 'bg-amber-500/10 border-amber-500/30 text-amber-950 dark:text-amber-200'
                             : 'bg-slate-500/10 border-slate-500/20 text-slate-800 dark:text-slate-200'
@@ -1749,420 +1789,420 @@ export const TimeSheetModal: React.FC<TimeSheetModalProps> = ({
                         </div>
                     )} */}
 
-                    {/* Location Selection Popup Modal */}
-                    {isStoreDropdownOpen && (
-                        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/50 backdrop-blur-md p-4 animate-in fade-in duration-150">
-                            <div
-                                ref={storeDropdownRef}
-                                className="w-full max-w-md h-[520px] max-h-[90vh] bg-white dark:bg-surface-container border border-slate-200 dark:border-outline-variant rounded-2xl shadow-2xl overflow-hidden flex flex-col animate-in zoom-in-95 duration-150"
-                            >
-                                {/* Modal Header */}
-                                <div className="px-4 py-3 border-b border-slate-100 dark:border-outline-variant flex items-center justify-between bg-slate-50 dark:bg-surface-container-low shrink-0">
-                                    <div className="flex items-center gap-2">
-                                        <MapPin className="w-4 h-4 text-amber-600" />
-                                        <h3 className="text-sm font-bold text-slate-800 dark:text-on-surface">
-                                            Select Locations
-                                        </h3>
-                                        {selectedStoreIds.length > 0 && (
-                                            <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-800 dark:bg-amber-950/40 dark:text-amber-300">
-                                                {selectedStoreIds.length} selected
-                                            </span>
-                                        )}
-                                    </div>
-                                    <button
-                                        type="button"
-                                        onClick={() => setIsStoreDropdownOpen(false)}
-                                        className="w-7 h-7 rounded-lg flex items-center justify-center text-slate-400 hover:text-slate-600 hover:bg-slate-200/60 dark:hover:bg-surface-container-high transition"
-                                        title="Close"
-                                    >
-                                        <X className="w-4 h-4" />
-                                    </button>
-                                </div>
-
-                                {/* Search Input Bar + Clear All */}
-                                <div className="p-3 border-b border-slate-100 dark:border-outline-variant flex items-center gap-2 bg-white dark:bg-surface-container shrink-0">
-                                    <Search className="w-4 h-4 text-slate-400 ml-0.5 shrink-0" />
-                                    <input
-                                        type="text"
-                                        placeholder="Search locations"
-                                        value={storeSearch}
-                                        onChange={(e) => setStoreSearch(e.target.value)}
-                                        className="w-full text-xs bg-transparent outline-none text-slate-800 dark:text-on-surface placeholder:text-slate-400"
-                                    />
-                                    {storeSearch && (
-                                        <button
-                                            type="button"
-                                            onClick={() => setStoreSearch('')}
-                                            className="text-slate-400 hover:text-slate-600 text-xs px-1"
-                                            title="Clear search"
-                                        >
-                                            &times;
-                                        </button>
-                                    )}
+                {/* Location Selection Popup Modal */}
+                {isStoreDropdownOpen && (
+                    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/50 backdrop-blur-md p-4 animate-in fade-in duration-150">
+                        <div
+                            ref={storeDropdownRef}
+                            className="w-full max-w-md h-[520px] max-h-[90vh] bg-white dark:bg-surface-container border border-slate-200 dark:border-outline-variant rounded-2xl shadow-2xl overflow-hidden flex flex-col animate-in zoom-in-95 duration-150"
+                        >
+                            {/* Modal Header */}
+                            <div className="px-4 py-3 border-b border-slate-100 dark:border-outline-variant flex items-center justify-between bg-slate-50 dark:bg-surface-container-low shrink-0">
+                                <div className="flex items-center gap-2">
+                                    <MapPin className="w-4 h-4 text-amber-600" />
+                                    <h3 className="text-sm font-bold text-slate-800 dark:text-on-surface">
+                                        Select Locations
+                                    </h3>
                                     {selectedStoreIds.length > 0 && (
-                                        <button
-                                            type="button"
-                                            onClick={() => {
-                                                setSelectedStoreIds([]);
-                                                setSelection(null);
-                                                setActiveConflict(null);
-                                            }}
-                                            className="text-[11px] font-bold text-rose-600 hover:text-rose-700 dark:text-rose-400 hover:underline shrink-0 px-1 ml-1"
-                                            title="Deselect all locations"
-                                        >
-                                            Clear
-                                        </button>
+                                        <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-800 dark:bg-amber-950/40 dark:text-amber-300">
+                                            {selectedStoreIds.length} selected
+                                        </span>
                                     )}
                                 </div>
-
-                                {/* Horizontal Quick Filter Pills with Store Type Short Code */}
-                                <div className="flex items-center gap-1.5 px-3 py-2.5 overflow-x-auto scrollbar-none border-b border-slate-100 dark:border-outline-variant bg-slate-50/50 dark:bg-surface-container-low shrink-0">
-                                    <button
-                                        type="button"
-                                        onClick={() => setSelectedTypeFilter('ALL')}
-                                        className={`h-8 px-3.5 inline-flex items-center justify-center rounded text-xs font-bold transition-all shrink-0 ${selectedTypeFilter === 'ALL'
-                                            ? 'bg-[#17191C] text-white dark:bg-amber-400 dark:text-slate-950 shadow-xs'
-                                            : 'bg-slate-200/80 dark:bg-surface-container-high text-slate-600 dark:text-on-surface-variant hover:bg-slate-300'
-                                            }`}
-                                    >
-                                        ALL
-                                    </button>
-                                    {availableStoreTypes.map((typeKey) => {
-                                        const shortCode = STORE_TYPE_SHORT_CODES[typeKey] || typeKey;
-                                        const isSelected = selectedTypeFilter === typeKey;
-                                        return (
-                                            <button
-                                                key={typeKey}
-                                                type="button"
-                                                onClick={() => setSelectedTypeFilter(isSelected ? 'ALL' : typeKey)}
-                                                title={typeKey.replace('_', ' ')}
-                                                className={`h-8 px-3.5 inline-flex items-center justify-center rounded text-xs font-bold transition-all shrink-0 ${isSelected
-                                                    ? 'bg-amber-500 text-white shadow-xs'
-                                                    : 'bg-slate-200/80 dark:bg-surface-container-high text-slate-600 dark:text-on-surface-variant hover:bg-slate-300'
-                                                    }`}
-                                            >
-                                                {shortCode}
-                                            </button>
-                                        );
-                                    })}
-                                </div>
-
-                                {/* List with fixed container flex-1 */}
-                                <div className="flex-1 min-h-0 overflow-y-auto divide-y divide-slate-100 dark:divide-outline-variant p-2">
-                                    {filteredStores.length === 0 ? (
-                                        <div className="py-8 text-center text-xs text-slate-400">
-                                            No locations found matching search.
-                                        </div>
-                                    ) : (
-                                        filteredStores.map((store) => {
-                                            const isChecked = selectedStoreIds.includes(store.store_id);
-                                            const storeCode = store.short_code || store.store_id;
-                                            return (
-                                                <label
-                                                    key={store.store_id}
-                                                    className="flex items-center justify-between px-2.5 py-2 rounded hover:bg-slate-50 dark:hover:bg-surface-container-high cursor-pointer transition text-xs"
-                                                >
-                                                    <div className="flex items-center gap-2 truncate flex-1 min-w-0">
-                                                        <input
-                                                            type="checkbox"
-                                                            checked={isChecked}
-                                                            onChange={() => {
-                                                                if (isChecked) {
-                                                                    setSelectedStoreIds(selectedStoreIds.filter((id) => id !== store.store_id));
-                                                                } else {
-                                                                    setSelectedStoreIds([...selectedStoreIds, store.store_id]);
-                                                                }
-                                                            }}
-                                                            className="w-3.5 h-3.5 accent-[#17191C] rounded cursor-pointer shrink-0"
-                                                        />
-                                                        <span className="text-slate-800 dark:text-on-surface font-medium truncate">
-                                                            {store.store_name}{' '}
-                                                            <span className="font-bold text-amber-700 dark:text-amber-400">
-                                                                {storeCode}
-                                                            </span>
-                                                        </span>
-                                                    </div>
-                                                    {store.type && (
-                                                        <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded bg-slate-100 dark:bg-surface-container-high text-slate-500 shrink-0 ml-2">
-                                                            {STORE_TYPE_SHORT_CODES[store.type] || store.type}
-                                                        </span>
-                                                    )}
-                                                </label>
-                                            );
-                                        })
-                                    )}
-                                </div>
-
-                                {/* Modal Footer with Done Button */}
-                                <div className="px-4 py-2.5 border-t border-slate-100 dark:border-outline-variant flex items-center justify-between bg-slate-50 dark:bg-surface-container-low">
-                                    <span className="text-xs text-slate-500 font-medium">
-                                        {selectedStoreIds.length === 0 ? 'No locations selected' : `${selectedStoreIds.length} location(s) selected`}
-                                    </span>
-                                    <button
-                                        type="button"
-                                        onClick={() => setIsStoreDropdownOpen(false)}
-                                        className="px-5 py-3 bg-[#17191C] hover:bg-slate-800 text-white font-bold text-xs rounded transition shadow-xs"
-                                    >
-                                        Done
-                                    </button>
-                                </div>
-                            </div>
-                        </div>
-                    )}
-
-                    {/* Window Navigation Toolbar with 3 Shifts: Early Morning (12 AM – 8 AM), Daytime (8 AM – 4 PM, default), Night (4 PM – 12 AM) */}
-                    <div className="flex items-center justify-between px-3 py-2 border-b bg-slate-50 dark:bg-surface-container-low border-slate-100 dark:border-outline-variant text-xs text-slate-800 dark:text-on-surface">
-                        {/* Left: Previous (<) button: Early Morning when in Daytime, Daytime when in Night */}
-                        <div className="w-36 flex justify-start">
-                            {isDaytime && (
                                 <button
                                     type="button"
-                                    onClick={() => setWindowStart(EARLY_MORNING_WINDOW_START)}
-                                    title="Switch to Early Morning (12 AM – 8 AM)"
-                                    className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border border-slate-200 dark:border-outline-variant bg-white dark:bg-surface-container hover:bg-slate-100 text-slate-700 dark:text-on-surface font-semibold text-xs transition shadow-xs"
+                                    onClick={() => setIsStoreDropdownOpen(false)}
+                                    className="w-7 h-7 rounded-lg flex items-center justify-center text-slate-400 hover:text-slate-600 hover:bg-slate-200/60 dark:hover:bg-surface-container-high transition"
+                                    title="Close"
                                 >
-                                    <ChevronLeft className="w-3.5 h-3.5 text-slate-500" />
-                                    <span>Morning</span>
+                                    <X className="w-4 h-4" />
                                 </button>
-                            )}
-                            {isNight && (
+                            </div>
+
+                            {/* Search Input Bar + Clear All */}
+                            <div className="p-3 border-b border-slate-100 dark:border-outline-variant flex items-center gap-2 bg-white dark:bg-surface-container shrink-0">
+                                <Search className="w-4 h-4 text-slate-400 ml-0.5 shrink-0" />
+                                <input
+                                    type="text"
+                                    placeholder="Search locations"
+                                    value={storeSearch}
+                                    onChange={(e) => setStoreSearch(e.target.value)}
+                                    className="w-full text-xs bg-transparent outline-none text-slate-800 dark:text-on-surface placeholder:text-slate-400"
+                                />
+                                {storeSearch && (
+                                    <button
+                                        type="button"
+                                        onClick={() => setStoreSearch('')}
+                                        className="text-slate-400 hover:text-slate-600 text-xs px-1"
+                                        title="Clear search"
+                                    >
+                                        &times;
+                                    </button>
+                                )}
+                                {selectedStoreIds.length > 0 && (
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            setSelectedStoreIds([]);
+                                            setSelection(null);
+                                            setActiveConflict(null);
+                                        }}
+                                        className="text-[11px] font-bold text-rose-600 hover:text-rose-700 dark:text-rose-400 hover:underline shrink-0 px-1 ml-1"
+                                        title="Deselect all locations"
+                                    >
+                                        Clear
+                                    </button>
+                                )}
+                            </div>
+
+                            {/* Horizontal Quick Filter Pills with Store Type Short Code */}
+                            <div className="flex items-center gap-1.5 px-3 py-2.5 overflow-x-auto scrollbar-none border-b border-slate-100 dark:border-outline-variant bg-slate-50/50 dark:bg-surface-container-low shrink-0">
                                 <button
                                     type="button"
-                                    onClick={() => setWindowStart(DAYTIME_WINDOW_START)}
-                                    title="Switch to Daytime (8 AM – 4 PM)"
-                                    className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border border-slate-200 dark:border-outline-variant bg-white dark:bg-surface-container hover:bg-slate-100 text-slate-700 dark:text-on-surface font-semibold text-xs transition shadow-xs"
+                                    onClick={() => setSelectedTypeFilter('ALL')}
+                                    className={`h-8 px-3.5 inline-flex items-center justify-center rounded text-xs font-bold transition-all shrink-0 ${selectedTypeFilter === 'ALL'
+                                        ? 'bg-[#17191C] text-white dark:bg-amber-400 dark:text-slate-950 shadow-xs'
+                                        : 'bg-slate-200/80 dark:bg-surface-container-high text-slate-600 dark:text-on-surface-variant hover:bg-slate-300'
+                                        }`}
                                 >
-                                    <ChevronLeft className="w-3.5 h-3.5 text-slate-500" />
-                                    <span>Daytime</span>
+                                    ALL
                                 </button>
-                            )}
-                        </div>
-
-                        {/* Center: Shift Context & Active Range */}
-                        <div className="text-center flex flex-col items-center justify-center whitespace-nowrap overflow-hidden min-h-[22px]">
-                            <div className="text-center flex items-center justify-center whitespace-nowrap overflow-hidden min-h-[20px] w-48 relative">
-                                <motion.div
-                                    className="flex w-full"
-                                    animate={{ x: `-${(windowStart === EARLY_MORNING_WINDOW_START ? 0 : windowStart === NIGHT_WINDOW_START ? 2 : 1) * 100}%` }}
-                                    transition={{
-                                        type: 'spring',
-                                        stiffness: 280,
-                                        damping: 30,
-                                        mass: 0.9,
-                                    }}
-                                >
-                                    <div className="w-full shrink-0 text-center text-xs font-bold px-1 text-slate-800 dark:text-on-surface whitespace-nowrap">
-                                        Morning (12 AM – 8 AM)
-                                    </div>
-                                    <div className="w-full shrink-0 text-center text-xs font-bold px-1 text-slate-800 dark:text-on-surface whitespace-nowrap">
-                                        Daytime (8 AM – 4 PM)
-                                    </div>
-                                    <div className="w-full shrink-0 text-center text-xs font-bold px-1 text-slate-800 dark:text-on-surface whitespace-nowrap">
-                                        Night (4 PM – 12 AM)
-                                    </div>
-                                </motion.div>
-                            </div>
-                            {/* 3 mini shift indicator dots */}
-                            <div className="flex items-center gap-1.5 mt-0.5">
-                                {[
-                                    { idx: 0, val: EARLY_MORNING_WINDOW_START, label: 'Morning' },
-                                    { idx: 1, val: DAYTIME_WINDOW_START, label: 'Daytime' },
-                                    { idx: 2, val: NIGHT_WINDOW_START, label: 'Night' },
-                                ].map((s) => {
-                                    const currentIdx = windowStart === EARLY_MORNING_WINDOW_START ? 0 : windowStart === NIGHT_WINDOW_START ? 2 : 1;
+                                {availableStoreTypes.map((typeKey) => {
+                                    const shortCode = STORE_TYPE_SHORT_CODES[typeKey] || typeKey;
+                                    const isSelected = selectedTypeFilter === typeKey;
                                     return (
                                         <button
-                                            key={s.idx}
+                                            key={typeKey}
                                             type="button"
-                                            onClick={() => setWindowStart(s.val)}
-                                            className={`h-1.5 rounded-full transition-all duration-200 ${currentIdx === s.idx ? 'w-4 bg-primary' : 'w-1.5 bg-slate-300 dark:bg-slate-600 hover:bg-slate-400'}`}
-                                            aria-label={`Jump to ${s.label}`}
-                                            title={`Jump to ${s.label}`}
-                                        />
+                                            onClick={() => setSelectedTypeFilter(isSelected ? 'ALL' : typeKey)}
+                                            title={typeKey.replace('_', ' ')}
+                                            className={`h-8 px-3.5 inline-flex items-center justify-center rounded text-xs font-bold transition-all shrink-0 ${isSelected
+                                                ? 'bg-amber-500 text-white shadow-xs'
+                                                : 'bg-slate-200/80 dark:bg-surface-container-high text-slate-600 dark:text-on-surface-variant hover:bg-slate-300'
+                                                }`}
+                                        >
+                                            {shortCode}
+                                        </button>
                                     );
                                 })}
                             </div>
-                        </div>
 
-                        {/* Right: Next (>) button: Daytime when in Early Morning, Night when in Daytime */}
-                        <div className="w-36 flex justify-end">
-                            {isEarlyMorning && (
+                            {/* List with fixed container flex-1 */}
+                            <div className="flex-1 min-h-0 overflow-y-auto divide-y divide-slate-100 dark:divide-outline-variant p-2">
+                                {filteredStores.length === 0 ? (
+                                    <div className="py-8 text-center text-xs text-slate-400">
+                                        No locations found matching search.
+                                    </div>
+                                ) : (
+                                    filteredStores.map((store) => {
+                                        const isChecked = selectedStoreIds.includes(store.store_id);
+                                        const storeCode = store.short_code || store.store_id;
+                                        return (
+                                            <label
+                                                key={store.store_id}
+                                                className="flex items-center justify-between px-2.5 py-2 rounded hover:bg-slate-50 dark:hover:bg-surface-container-high cursor-pointer transition text-xs"
+                                            >
+                                                <div className="flex items-center gap-2 truncate flex-1 min-w-0">
+                                                    <input
+                                                        type="checkbox"
+                                                        checked={isChecked}
+                                                        onChange={() => {
+                                                            if (isChecked) {
+                                                                setSelectedStoreIds(selectedStoreIds.filter((id) => id !== store.store_id));
+                                                            } else {
+                                                                setSelectedStoreIds([...selectedStoreIds, store.store_id]);
+                                                            }
+                                                        }}
+                                                        className="w-3.5 h-3.5 accent-[#17191C] rounded cursor-pointer shrink-0"
+                                                    />
+                                                    <span className="text-slate-800 dark:text-on-surface font-medium truncate">
+                                                        {store.store_name}{' '}
+                                                        <span className="font-bold text-amber-700 dark:text-amber-400">
+                                                            {storeCode}
+                                                        </span>
+                                                    </span>
+                                                </div>
+                                                {store.type && (
+                                                    <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded bg-slate-100 dark:bg-surface-container-high text-slate-500 shrink-0 ml-2">
+                                                        {STORE_TYPE_SHORT_CODES[store.type] || store.type}
+                                                    </span>
+                                                )}
+                                            </label>
+                                        );
+                                    })
+                                )}
+                            </div>
+
+                            {/* Modal Footer with Done Button */}
+                            <div className="px-4 py-2.5 border-t border-slate-100 dark:border-outline-variant flex items-center justify-between bg-slate-50 dark:bg-surface-container-low">
+                                <span className="text-xs text-slate-500 font-medium">
+                                    {selectedStoreIds.length === 0 ? 'No locations selected' : `${selectedStoreIds.length} location(s) selected`}
+                                </span>
                                 <button
                                     type="button"
-                                    onClick={() => setWindowStart(DAYTIME_WINDOW_START)}
-                                    title="Switch to Daytime (8 AM – 4 PM)"
-                                    className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border border-slate-200 dark:border-outline-variant bg-white dark:bg-surface-container hover:bg-slate-100 text-slate-700 dark:text-on-surface font-semibold text-xs transition shadow-xs"
+                                    onClick={() => setIsStoreDropdownOpen(false)}
+                                    className="px-5 py-3 bg-[#17191C] hover:bg-slate-800 text-white font-bold text-xs rounded transition shadow-xs"
                                 >
-                                    <span>Daytime</span>
-                                    <ChevronRight className="w-3.5 h-3.5 text-slate-500" />
+                                    Done
                                 </button>
-                            )}
-                            {isDaytime && (
-                                <button
-                                    type="button"
-                                    onClick={() => setWindowStart(NIGHT_WINDOW_START)}
-                                    title="Switch to Night (4 PM – 12 AM)"
-                                    className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border border-slate-200 dark:border-outline-variant bg-white dark:bg-surface-container hover:bg-slate-100 text-slate-700 dark:text-on-surface font-semibold text-xs transition shadow-xs"
-                                >
-                                    <span>Night</span>
-                                    <ChevronRight className="w-3.5 h-3.5 text-slate-500" />
-                                </button>
-                            )}
+                            </div>
+                        </div>
+                    </div>
+                )}
+
+                {/* Window Navigation Toolbar with 3 Shifts: Early Morning (12 AM – 8 AM), Daytime (8 AM – 4 PM, default), Night (4 PM – 12 AM) */}
+                <div className="flex items-center justify-between px-3 py-2 border-b bg-slate-50 dark:bg-surface-container-low border-slate-100 dark:border-outline-variant text-xs text-slate-800 dark:text-on-surface">
+                    {/* Left: Previous (<) button: Early Morning when in Daytime, Daytime when in Night */}
+                    <div className="w-36 flex justify-start">
+                        {isDaytime && (
+                            <button
+                                type="button"
+                                onClick={() => setWindowStart(EARLY_MORNING_WINDOW_START)}
+                                title="Switch to Early Morning (12 AM – 8 AM)"
+                                className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border border-slate-200 dark:border-outline-variant bg-white dark:bg-surface-container hover:bg-slate-100 text-slate-700 dark:text-on-surface font-semibold text-xs transition shadow-xs"
+                            >
+                                <ChevronLeft className="w-3.5 h-3.5 text-slate-500" />
+                                <span>Morning</span>
+                            </button>
+                        )}
+                        {isNight && (
+                            <button
+                                type="button"
+                                onClick={() => setWindowStart(DAYTIME_WINDOW_START)}
+                                title="Switch to Daytime (8 AM – 4 PM)"
+                                className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border border-slate-200 dark:border-outline-variant bg-white dark:bg-surface-container hover:bg-slate-100 text-slate-700 dark:text-on-surface font-semibold text-xs transition shadow-xs"
+                            >
+                                <ChevronLeft className="w-3.5 h-3.5 text-slate-500" />
+                                <span>Daytime</span>
+                            </button>
+                        )}
+                    </div>
+
+                    {/* Center: Shift Context & Active Range */}
+                    <div className="text-center flex flex-col items-center justify-center whitespace-nowrap overflow-hidden min-h-[22px]">
+                        <div className="text-center flex items-center justify-center whitespace-nowrap overflow-hidden min-h-[20px] w-48 relative">
+                            <motion.div
+                                className="flex w-full"
+                                animate={{ x: `-${(windowStart === EARLY_MORNING_WINDOW_START ? 0 : windowStart === NIGHT_WINDOW_START ? 2 : 1) * 100}%` }}
+                                transition={{
+                                    type: 'spring',
+                                    stiffness: 280,
+                                    damping: 30,
+                                    mass: 0.9,
+                                }}
+                            >
+                                <div className="w-full shrink-0 text-center text-xs font-bold px-1 text-slate-800 dark:text-on-surface whitespace-nowrap">
+                                    Morning (12 AM – 8 AM)
+                                </div>
+                                <div className="w-full shrink-0 text-center text-xs font-bold px-1 text-slate-800 dark:text-on-surface whitespace-nowrap">
+                                    Daytime (8 AM – 4 PM)
+                                </div>
+                                <div className="w-full shrink-0 text-center text-xs font-bold px-1 text-slate-800 dark:text-on-surface whitespace-nowrap">
+                                    Night (4 PM – 12 AM)
+                                </div>
+                            </motion.div>
+                        </div>
+                        {/* 3 mini shift indicator dots */}
+                        <div className="flex items-center gap-1.5 mt-0.5">
+                            {[
+                                { idx: 0, val: EARLY_MORNING_WINDOW_START, label: 'Morning' },
+                                { idx: 1, val: DAYTIME_WINDOW_START, label: 'Daytime' },
+                                { idx: 2, val: NIGHT_WINDOW_START, label: 'Night' },
+                            ].map((s) => {
+                                const currentIdx = windowStart === EARLY_MORNING_WINDOW_START ? 0 : windowStart === NIGHT_WINDOW_START ? 2 : 1;
+                                return (
+                                    <button
+                                        key={s.idx}
+                                        type="button"
+                                        onClick={() => setWindowStart(s.val)}
+                                        className={`h-1.5 rounded-full transition-all duration-200 ${currentIdx === s.idx ? 'w-4 bg-primary' : 'w-1.5 bg-slate-300 dark:bg-slate-600 hover:bg-slate-400'}`}
+                                        aria-label={`Jump to ${s.label}`}
+                                        title={`Jump to ${s.label}`}
+                                    />
+                                );
+                            })}
                         </div>
                     </div>
 
-                    {/* Slots Grid: Row-wise 2-column layout with continuous 3-shift horizontal strip (Morning, Daytime, Night) */}
-                    <div className="p-3 transition-colors duration-200 bg-white dark:bg-surface-container overflow-hidden">
-                        {(() => {
-                            const SHIFT_PANELS = [
-                                {
-                                    key: 'early-morning',
-                                    windowStart: EARLY_MORNING_WINDOW_START,
-                                    col1: { name: 'Midnight', range: '12 AM – 4 AM', isDay: false },
-                                    col2: { name: 'Early Morning', range: '4 AM – 8 AM', isDay: true },
-                                },
-                                {
-                                    key: 'daytime',
-                                    windowStart: DAYTIME_WINDOW_START,
-                                    col1: { name: 'Morning', range: '8 AM – 12 PM', isDay: true },
-                                    col2: { name: 'Afternoon', range: '12 PM – 4 PM', isDay: true },
-                                },
-                                {
-                                    key: 'night',
-                                    windowStart: NIGHT_WINDOW_START,
-                                    col1: { name: 'Evening', range: '4 PM – 8 PM', isDay: false },
-                                    col2: { name: 'Night', range: '8 PM – 12 AM', isDay: false },
-                                },
-                            ];
+                    {/* Right: Next (>) button: Daytime when in Early Morning, Night when in Daytime */}
+                    <div className="w-36 flex justify-end">
+                        {isEarlyMorning && (
+                            <button
+                                type="button"
+                                onClick={() => setWindowStart(DAYTIME_WINDOW_START)}
+                                title="Switch to Daytime (8 AM – 4 PM)"
+                                className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border border-slate-200 dark:border-outline-variant bg-white dark:bg-surface-container hover:bg-slate-100 text-slate-700 dark:text-on-surface font-semibold text-xs transition shadow-xs"
+                            >
+                                <span>Daytime</span>
+                                <ChevronRight className="w-3.5 h-3.5 text-slate-500" />
+                            </button>
+                        )}
+                        {isDaytime && (
+                            <button
+                                type="button"
+                                onClick={() => setWindowStart(NIGHT_WINDOW_START)}
+                                title="Switch to Night (4 PM – 12 AM)"
+                                className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border border-slate-200 dark:border-outline-variant bg-white dark:bg-surface-container hover:bg-slate-100 text-slate-700 dark:text-on-surface font-semibold text-xs transition shadow-xs"
+                            >
+                                <span>Night</span>
+                                <ChevronRight className="w-3.5 h-3.5 text-slate-500" />
+                            </button>
+                        )}
+                    </div>
+                </div>
 
-                            const shiftIndex = windowStart === EARLY_MORNING_WINDOW_START ? 0 : windowStart === NIGHT_WINDOW_START ? 2 : 1;
+                {/* Slots Grid: Row-wise 2-column layout with continuous 3-shift horizontal strip (Morning, Daytime, Night) */}
+                <div className="p-3 transition-colors duration-200 bg-white dark:bg-surface-container overflow-hidden">
+                    {(() => {
+                        const SHIFT_PANELS = [
+                            {
+                                key: 'early-morning',
+                                windowStart: EARLY_MORNING_WINDOW_START,
+                                col1: { name: 'Midnight', range: '12 AM – 4 AM', isDay: false },
+                                col2: { name: 'Early Morning', range: '4 AM – 8 AM', isDay: true },
+                            },
+                            {
+                                key: 'daytime',
+                                windowStart: DAYTIME_WINDOW_START,
+                                col1: { name: 'Morning', range: '8 AM – 12 PM', isDay: true },
+                                col2: { name: 'Afternoon', range: '12 PM – 4 PM', isDay: true },
+                            },
+                            {
+                                key: 'night',
+                                windowStart: NIGHT_WINDOW_START,
+                                col1: { name: 'Evening', range: '4 PM – 8 PM', isDay: false },
+                                col2: { name: 'Night', range: '8 PM – 12 AM', isDay: false },
+                            },
+                        ];
 
-                            // Helper to retrieve status & group identifier for any 30m block
-                            const getCellInfo = (panelStart: number, colGroup: number, r: number, c: number) => {
-                                const hourIndex = colGroup === 0 ? r : r + 4;
-                                const cellStart = panelStart + hourIndex * HOUR + c * STEP;
-                                const cellEnd = cellStart + STEP;
+                        const shiftIndex = windowStart === EARLY_MORNING_WINDOW_START ? 0 : windowStart === NIGHT_WINDOW_START ? 2 : 1;
 
-                                const normalizedHour = Math.floor((((cellStart % DAY) + DAY) % DAY) / 60);
-                                const isDaySlot = normalizedHour >= 6 && normalizedHour < 18;
+                        // Helper to retrieve status & group identifier for any 30m block
+                        const getCellInfo = (panelStart: number, colGroup: number, r: number, c: number) => {
+                            const hourIndex = colGroup === 0 ? r : r + 4;
+                            const cellStart = panelStart + hourIndex * HOUR + c * STEP;
+                            const cellEnd = cellStart + STEP;
 
-                                const isSelected = selection ? intervalOverlap(cellStart, cellEnd, selection.start, selection.end) : false;
-                                const isLocked = isPeriodLocked(cellStart, cellEnd);
-                                const conflict = getLockedConflict(cellStart, cellEnd);
+                            const normalizedHour = Math.floor((((cellStart % DAY) + DAY) % DAY) / 60);
+                            const isDaySlot = normalizedHour >= 6 && normalizedHour < 18;
 
-                                let groupId = `free-${cellStart}`;
-                                let groupType: 'selection' | 'locked' | 'available' = 'available';
+                            const isSelected = selection ? intervalOverlap(cellStart, cellEnd, selection.start, selection.end) : false;
+                            const isLocked = isPeriodLocked(cellStart, cellEnd);
+                            const conflict = getLockedConflict(cellStart, cellEnd);
 
-                                if (isSelected) {
-                                    groupId = 'active-selection';
-                                    groupType = 'selection';
-                                } else if (isLocked && conflict) {
-                                    groupId = `sess-${conflict.id ?? `${conflict.start}-${conflict.end}`}`;
-                                    groupType = 'locked';
-                                }
+                            let groupId = `free-${cellStart}`;
+                            let groupType: 'selection' | 'locked' | 'available' = 'available';
 
-                                return {
-                                    cellStart,
-                                    cellEnd,
-                                    hourIndex,
-                                    isDaySlot,
-                                    isSelected,
-                                    isLocked,
-                                    conflict,
-                                    groupId,
-                                    groupType,
-                                };
+                            if (isSelected) {
+                                groupId = 'active-selection';
+                                groupType = 'selection';
+                            } else if (isLocked && conflict) {
+                                groupId = `sess-${conflict.id ?? `${conflict.start}-${conflict.end}`}`;
+                                groupType = 'locked';
+                            }
+
+                            return {
+                                cellStart,
+                                cellEnd,
+                                hourIndex,
+                                isDaySlot,
+                                isSelected,
+                                isLocked,
+                                conflict,
+                                groupId,
+                                groupType,
                             };
+                        };
 
-                            // Render a single 30m block with contour-aware borders & corner radiuses
-                            const render30mCell = (panelStart: number, colGroup: number, r: number, c: number) => {
-                                const curr = getCellInfo(panelStart, colGroup, r, c);
-                                const color = curr.groupType === 'locked'
-                                    ? getSessionColor(Boolean(curr.conflict?.is_ticket), curr.conflict?.id, curr.conflict?.ticket_id, curr.cellStart)
-                                    : null;
+                        // Render a single 30m block with contour-aware borders & corner radiuses
+                        const render30mCell = (panelStart: number, colGroup: number, r: number, c: number) => {
+                            const curr = getCellInfo(panelStart, colGroup, r, c);
+                            const color = curr.groupType === 'locked'
+                                ? getSessionColor(Boolean(curr.conflict?.is_ticket), curr.conflict?.id, curr.conflict?.ticket_id, curr.cellStart)
+                                : null;
 
-                                let connectTop = false;
-                                let connectBottom = false;
-                                let connectLeft = false;
-                                let connectRight = false;
+                            let connectTop = false;
+                            let connectBottom = false;
+                            let connectLeft = false;
+                            let connectRight = false;
 
-                                if (curr.groupType !== 'available') {
-                                    // Top neighbor
-                                    if (r > 0) {
-                                        const top = getCellInfo(panelStart, colGroup, r - 1, c);
-                                        if (top.groupId === curr.groupId) connectTop = true;
-                                    }
-                                    // Bottom neighbor (4 rows: 0, 1, 2, 3)
-                                    if (r < 3) {
-                                        const bot = getCellInfo(panelStart, colGroup, r + 1, c);
-                                        if (bot.groupId === curr.groupId) connectBottom = true;
-                                    }
-                                    // Left neighbor
-                                    if (c === 1) {
-                                        const left = getCellInfo(panelStart, colGroup, r, 0);
-                                        if (left.groupId === curr.groupId) connectLeft = true;
-                                    }
-                                    // Right neighbor
-                                    if (c === 0) {
-                                        const right = getCellInfo(panelStart, colGroup, r, 1);
-                                        if (right.groupId === curr.groupId) connectRight = true;
-                                    }
+                            if (curr.groupType !== 'available') {
+                                // Top neighbor
+                                if (r > 0) {
+                                    const top = getCellInfo(panelStart, colGroup, r - 1, c);
+                                    if (top.groupId === curr.groupId) connectTop = true;
                                 }
-
-                                // Borders only on outer contours of the shape
-                                const borderTop = connectTop ? 'border-t-0' : 'border-t';
-                                const borderBottom = connectBottom ? 'border-b-0' : 'border-b';
-                                const borderLeft = connectLeft ? 'border-l-0' : 'border-l';
-                                const borderRight = connectRight ? 'border-r-0' : 'border-r';
-
-                                // Corner radiuses only on exterior corners
-                                const roundedTL = (!connectTop && !connectLeft) ? 'rounded-tl-md' : 'rounded-tl-none';
-                                const roundedTR = (!connectTop && !connectRight) ? 'rounded-tr-md' : 'rounded-tr-none';
-                                const roundedBL = (!connectBottom && !connectLeft) ? 'rounded-bl-md' : 'rounded-bl-none';
-                                const roundedBR = (!connectBottom && !connectRight) ? 'rounded-br-md' : 'rounded-br-none';
-
-                                const collapseClass = `${r > 0 ? '-mt-px' : ''} ${c > 0 ? '-ml-px' : ''}`;
-
-                                let colorClass = '';
-                                if (curr.groupType === 'selection') {
-                                    colorClass = 'bg-yellow-300 dark:bg-yellow-400 border-yellow-500 text-yellow-950 font-semibold shadow-xs z-10';
-                                } else if (curr.groupType === 'locked' && curr.conflict?.is_leave) {
-                                    colorClass = 'bg-amber-100/90 dark:bg-amber-950/60 border-amber-300 dark:border-amber-700/60 text-amber-950 dark:text-amber-100 font-medium cursor-not-allowed';
-                                } else if (curr.groupType === 'locked' && color) {
-                                    const isThisViewed = Boolean(
-                                        selectedSessionForView &&
-                                        curr.conflict &&
-                                        (Number(curr.conflict.id) === Number(selectedSessionForView.id) ||
-                                            (selectedSessionForView.worklog_id && Number(curr.conflict.id) === Number(selectedSessionForView.worklog_id)))
-                                    );
-                                    const ringHighlight = isThisViewed ? 'ring-2 ring-amber-400 ring-offset-1 z-20 brightness-95 shadow-sm' : '';
-                                    colorClass = `${color.bg} ${color.border} ${color.text} opacity-95 cursor-pointer hover:brightness-95 transition-all ${ringHighlight}`;
-                                } else {
-                                    colorClass = curr.isDaySlot
-                                        ? 'bg-white hover:bg-amber-50/60 dark:bg-surface-container border-slate-200 dark:border-outline-variant text-slate-700 dark:text-on-surface'
-                                        : 'bg-white hover:bg-indigo-50/60 dark:bg-surface-container border-slate-200 dark:border-outline-variant text-slate-700 dark:text-on-surface';
+                                // Bottom neighbor (4 rows: 0, 1, 2, 3)
+                                if (r < 3) {
+                                    const bot = getCellInfo(panelStart, colGroup, r + 1, c);
+                                    if (bot.groupId === curr.groupId) connectBottom = true;
                                 }
+                                // Left neighbor
+                                if (c === 1) {
+                                    const left = getCellInfo(panelStart, colGroup, r, 0);
+                                    if (left.groupId === curr.groupId) connectLeft = true;
+                                }
+                                // Right neighbor
+                                if (c === 0) {
+                                    const right = getCellInfo(panelStart, colGroup, r, 1);
+                                    if (right.groupId === curr.groupId) connectRight = true;
+                                }
+                            }
 
-                                const getCelestialState = (cellStart: number) => {
-                                    const hour = Math.floor(cellStart / 60);
+                            // Borders only on outer contours of the shape
+                            const borderTop = connectTop ? 'border-t-0' : 'border-t';
+                            const borderBottom = connectBottom ? 'border-b-0' : 'border-b';
+                            const borderLeft = connectLeft ? 'border-l-0' : 'border-l';
+                            const borderRight = connectRight ? 'border-r-0' : 'border-r';
 
-                                    if (hour < 4) return "hard-moon";
-                                    if (hour < 8) return "moon";
-                                    if (hour < 11) return "sun";
-                                    if (hour < 14) return "hard-sun";
-                                    if (hour < 16) return "sun";
-                                    if (hour < 20) return "moon";
-                                    return "hard-moon";
-                                };
-                                const celestialState = getCelestialState(curr.cellStart);
-                                return (
-                                    <button
-                                        key={`${panelStart}-${colGroup}-${r}-${c}`}
-                                        type="button"
-                                        onClick={(e) =>
-                                            handleSegmentClick(panelStart + curr.hourIndex * HOUR, c, e)
-                                        }
-                                        className={`
+                            // Corner radiuses only on exterior corners
+                            const roundedTL = (!connectTop && !connectLeft) ? 'rounded-tl-md' : 'rounded-tl-none';
+                            const roundedTR = (!connectTop && !connectRight) ? 'rounded-tr-md' : 'rounded-tr-none';
+                            const roundedBL = (!connectBottom && !connectLeft) ? 'rounded-bl-md' : 'rounded-bl-none';
+                            const roundedBR = (!connectBottom && !connectRight) ? 'rounded-br-md' : 'rounded-br-none';
+
+                            const collapseClass = `${r > 0 ? '-mt-px' : ''} ${c > 0 ? '-ml-px' : ''}`;
+
+                            let colorClass = '';
+                            if (curr.groupType === 'selection') {
+                                colorClass = 'bg-yellow-300 dark:bg-yellow-400 border-yellow-500 text-yellow-950 font-semibold shadow-xs z-10';
+                            } else if (curr.groupType === 'locked' && curr.conflict?.is_leave) {
+                                colorClass = 'bg-amber-100/90 dark:bg-amber-950/60 border-amber-300 dark:border-amber-700/60 text-amber-950 dark:text-amber-100 font-medium cursor-not-allowed';
+                            } else if (curr.groupType === 'locked' && color) {
+                                const isThisViewed = Boolean(
+                                    selectedSessionForView &&
+                                    curr.conflict &&
+                                    (Number(curr.conflict.id) === Number(selectedSessionForView.id) ||
+                                        (selectedSessionForView.worklog_id && Number(curr.conflict.id) === Number(selectedSessionForView.worklog_id)))
+                                );
+                                const ringHighlight = isThisViewed ? 'ring-2 ring-amber-400 ring-offset-1 z-20 brightness-95 shadow-sm' : '';
+                                colorClass = `${color.bg} ${color.border} ${color.text} opacity-95 cursor-pointer hover:brightness-95 transition-all ${ringHighlight}`;
+                            } else {
+                                colorClass = curr.isDaySlot
+                                    ? 'bg-white hover:bg-amber-50/60 dark:bg-surface-container border-slate-200 dark:border-outline-variant text-slate-700 dark:text-on-surface'
+                                    : 'bg-white hover:bg-indigo-50/60 dark:bg-surface-container border-slate-200 dark:border-outline-variant text-slate-700 dark:text-on-surface';
+                            }
+
+                            const getCelestialState = (cellStart: number) => {
+                                const hour = Math.floor(cellStart / 60);
+
+                                if (hour < 4) return "hard-moon";
+                                if (hour < 8) return "moon";
+                                if (hour < 11) return "sun";
+                                if (hour < 14) return "hard-sun";
+                                if (hour < 16) return "sun";
+                                if (hour < 20) return "moon";
+                                return "hard-moon";
+                            };
+                            const celestialState = getCelestialState(curr.cellStart);
+                            return (
+                                <button
+                                    key={`${panelStart}-${colGroup}-${r}-${c}`}
+                                    type="button"
+                                    onClick={(e) =>
+                                        handleSegmentClick(panelStart + curr.hourIndex * HOUR, c, e)
+                                    }
+                                    className={`
                                             relative overflow-hidden
                                             h-14 sm:h-16
                                             min-w-0 w-full
@@ -2176,35 +2216,35 @@ export const TimeSheetModal: React.FC<TimeSheetModalProps> = ({
                                             ${roundedBL} ${roundedBR}
                                             ${collapseClass} ${colorClass}
                                         `}
-                                    >
-                                        {/* Background Sun / Moon Icon */}
-                                        {curr.isDaySlot ? (
-                                            <>
-                                                {celestialState.includes("sun") && (
-                                                    <Sun
-                                                        className="absolute left-2 top-1/2 -translate-y-1/2
+                                >
+                                    {/* Background Sun / Moon Icon */}
+                                    {curr.isDaySlot ? (
+                                        <>
+                                            {celestialState.includes("sun") && (
+                                                <Sun
+                                                    className="absolute left-2 top-1/2 -translate-y-1/2
                                                w-4 h-4 sm:w-5 sm:h-5 text-amber-500
                                                pointer-events-none z-0"
-                                                        fill={celestialState === "hard-sun" ? "currentColor" : "none"}
-                                                    />
-                                                )}
-                                            </>
-                                        ) : (
-                                            <>
-                                                {celestialState.includes("moon") && (
-                                                    <Moon
-                                                        className="absolute left-2 top-1/2 -translate-y-1/2
+                                                    fill={celestialState === "hard-sun" ? "currentColor" : "none"}
+                                                />
+                                            )}
+                                        </>
+                                    ) : (
+                                        <>
+                                            {celestialState.includes("moon") && (
+                                                <Moon
+                                                    className="absolute left-2 top-1/2 -translate-y-1/2
                                 min-w-0
                                 w-4 h-4 sm:w-5 sm:h-5 text-indigo-500
                                 pointer-events-none z-0"
-                                                        fill={celestialState === "hard-moon" ? "currentColor" : "none"}
-                                                    />
-                                                )}
-                                            </>
-                                        )}
+                                                    fill={celestialState === "hard-moon" ? "currentColor" : "none"}
+                                                />
+                                            )}
+                                        </>
+                                    )}
 
-                                        {/* Top Header Line: Full Start & End Time */}
-                                        <div className="
+                                    {/* Top Header Line: Full Start & End Time */}
+                                    <div className="
                                                     relative z-10
                                                     flex items-center justify-between
                                                     gap-1
@@ -2213,489 +2253,489 @@ export const TimeSheetModal: React.FC<TimeSheetModalProps> = ({
                                                     text-[10px] sm:text-[11px]
                                                     font-bold tracking-tight
                                                 ">
-                                            <span className="shrink-0">
-                                                {formatTime(curr.cellStart)}
-                                            </span>
+                                        <span className="shrink-0">
+                                            {formatTime(curr.cellStart)}
+                                        </span>
 
-                                            <span className="shrink-0">
-                                                {formatTime(curr.cellEnd)}
-                                            </span>
-                                        </div>
+                                        <span className="shrink-0">
+                                            {formatTime(curr.cellEnd)}
+                                        </span>
+                                    </div>
 
-                                        {/* Bottom Status / Ticket Info Line */}
-                                        <div className="
+                                    {/* Bottom Status / Ticket Info Line */}
+                                    <div className="
                                                 relative z-10
                                                 flex items-center justify-between
                                                 gap-1
                                                 min-w-0 w-full
                                                 text-[9px] sm:text-[10px]
                                             ">
-                                            {curr.groupType === 'locked' && curr.conflict?.is_leave ? (
-                                                <div className="min-w-0 flex-1 truncate flex items-center gap-1 font-bold text-amber-900 dark:text-amber-200">
-                                                    <CircleOff className="w-3 h-3 text-amber-600 dark:text-amber-400 shrink-0" />
-                                                    <span className="truncate">{curr.conflict.leave_type_display || 'Leave'}</span>
-                                                    <span className="text-[8px] bg-amber-200/80 dark:bg-amber-900/60 text-amber-950 dark:text-amber-100 px-1 rounded font-semibold shrink-0">
-                                                        {curr.conflict.leave_slot === 'full_day' ? 'Full' : 'Half'}
-                                                    </span>
-                                                </div>
-                                            ) : curr.groupType === 'locked' && color ? (
-                                                <>
-                                                    <div className="min-w-0 flex-1 truncate">
-                                                        {curr.conflict?.is_ticket && curr.conflict?.ticket_id ? (
-                                                            ticketId &&
-                                                                Number(curr.conflict.ticket_id) === Number(ticketId) ? (
-                                                                <span
-                                                                    className={`font-black ${color.text} truncate inline-flex items-center gap-0.5`}
-                                                                    title={`Ticket #${curr.conflict.ticket_id}${!isConflictEditable(curr.conflict) ? ' (Locked)' : ''}`}
-                                                                >
-                                                                    {!isConflictEditable(curr.conflict) && (
-                                                                        <Lock className="w-2.5 h-2.5 shrink-0" />
-                                                                    )}
-                                                                    {curr.conflict.ticket_id}
-                                                                </span>
-                                                            ) : (
-                                                                <span
-                                                                    className={`font-black ${color.linkText} inline-flex items-center gap-0.5 truncate`}
-                                                                    title={`Ticket #${curr.conflict.ticket_id} (Locked)`}
-                                                                >
-                                                                    <Lock className="w-2.5 h-2.5 shrink-0" />
-                                                                    {curr.conflict.ticket_id}
-                                                                </span>
-                                                            )
-                                                        ) : (
-                                                            <span className={`font-semibold ${color.subtext} truncate inline-flex items-center gap-0.5`}>
+                                        {curr.groupType === 'locked' && curr.conflict?.is_leave ? (
+                                            <div className="min-w-0 flex-1 truncate flex items-center gap-1 font-bold text-amber-900 dark:text-amber-200">
+                                                <CircleOff className="w-3 h-3 text-amber-600 dark:text-amber-400 shrink-0" />
+                                                <span className="truncate">{curr.conflict.leave_type_display || 'Leave'}</span>
+                                                <span className="text-[8px] bg-amber-200/80 dark:bg-amber-900/60 text-amber-950 dark:text-amber-100 px-1 rounded font-semibold shrink-0">
+                                                    {curr.conflict.leave_slot === 'full_day' ? 'Full' : 'Half'}
+                                                </span>
+                                            </div>
+                                        ) : curr.groupType === 'locked' && color ? (
+                                            <>
+                                                <div className="min-w-0 flex-1 truncate">
+                                                    {curr.conflict?.is_ticket && curr.conflict?.ticket_id ? (
+                                                        ticketId &&
+                                                            Number(curr.conflict.ticket_id) === Number(ticketId) ? (
+                                                            <span
+                                                                className={`font-black ${color.text} truncate inline-flex items-center gap-0.5`}
+                                                                title={`Ticket #${curr.conflict.ticket_id}${!isConflictEditable(curr.conflict) ? ' (Locked)' : ''}`}
+                                                            >
                                                                 {!isConflictEditable(curr.conflict) && (
                                                                     <Lock className="w-2.5 h-2.5 shrink-0" />
                                                                 )}
-                                                                {curr.conflict?.work_done || 'Booked'}
-                                                            </span>
-                                                        )}
-                                                    </div>
-
-                                                    {!isConflictEditable(curr.conflict) && (
-                                                        <span
-                                                            title="Locked (Unable to edit)"
-                                                            className="shrink-0 flex items-center"
-                                                        >
-                                                            <Lock className="w-3 h-3 text-slate-400 animate-bounce" />
-                                                        </span>
-                                                    )}
-                                                </>
-                                            ) : curr.groupType === 'selection' ? (
-                                                <span className="font-black text-yellow-950 truncate">
-                                                    Selected
-                                                </span>
-                                            ) : (
-                                                <span className="text-[9px] text-slate-400 font-medium truncate">
-                                                    {c === 0 ? ':00–:30' : ':30–:00'}
-                                                </span>
-                                            )}
-                                        </div>
-                                    </button>
-                                );
-                            };
-
-                            return (
-                                <div className="overflow-hidden w-full">
-                                    <motion.div
-                                        className="flex w-full"
-                                        animate={{ x: `-${shiftIndex * 100}%` }}
-                                        transition={{
-                                            type: 'spring',
-                                            stiffness: 280,
-                                            damping: 30,
-                                            mass: 0.9,
-                                        }}
-                                    >
-                                        {SHIFT_PANELS.map((panel) => (
-                                            <div key={panel.key} className="min-w-full w-full shrink-0">
-                                                <div className="grid grid-cols-2 gap-3 items-start">
-                                                    {/* Column 1 */}
-                                                    <div className="flex flex-col">
-                                                        <div className="flex items-center justify-between px-1 mb-1.5 text-[11px] font-bold text-slate-700 dark:text-on-surface">
-                                                            <span className="flex items-center gap-1 min-w-0">
-                                                                {panel.col1.isDay ? (
-                                                                    <Sun className="w-3 h-3 text-amber-500 shrink-0" />
-                                                                ) : (
-                                                                    <Moon className="w-3 h-3 text-indigo-500 shrink-0" />
-                                                                )}
-                                                                <span className="truncate">{panel.col1.name}</span>
-                                                            </span>
-                                                            <span className="text-[10px] font-semibold text-slate-500 dark:text-on-surface-variant bg-slate-100 dark:bg-surface-container-high px-1.5 py-0.5 rounded shrink-0">
-                                                                {panel.col1.range}
-                                                            </span>
-                                                        </div>
-                                                        <div className="grid grid-cols-2">
-                                                            {[0, 1, 2, 3].map((r) => (
-                                                                <React.Fragment key={r}>
-                                                                    {render30mCell(panel.windowStart, 0, r, 0)}
-                                                                    {render30mCell(panel.windowStart, 0, r, 1)}
-                                                                </React.Fragment>
-                                                            ))}
-                                                        </div>
-                                                    </div>
-
-                                                    {/* Column 2 */}
-                                                    <div className="flex flex-col">
-                                                        <div className="flex items-center justify-between px-1 mb-1.5 text-[11px] font-bold text-slate-700 dark:text-on-surface">
-                                                            <span className="flex items-center gap-1 min-w-0">
-                                                                {panel.col2.isDay ? (
-                                                                    <Sun className="w-3 h-3 text-amber-500 shrink-0" />
-                                                                ) : (
-                                                                    <Moon className="w-3 h-3 text-indigo-500 shrink-0" />
-                                                                )}
-                                                                <span className="truncate">{panel.col2.name}</span>
-                                                            </span>
-                                                            <span className="text-[10px] font-semibold text-slate-500 dark:text-on-surface-variant bg-slate-100 dark:bg-surface-container-high px-1.5 py-0.5 rounded shrink-0">
-                                                                {panel.col2.range}
-                                                            </span>
-                                                        </div>
-                                                        <div className="grid grid-cols-2">
-                                                            {[0, 1, 2, 3].map((r) => (
-                                                                <React.Fragment key={r}>
-                                                                    {render30mCell(panel.windowStart, 1, r, 0)}
-                                                                    {render30mCell(panel.windowStart, 1, r, 1)}
-                                                                </React.Fragment>
-                                                            ))}
-                                                        </div>
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        ))}
-                                    </motion.div>
-                                </div>
-                            );
-                        })()}
-
-                        {/* Interactive dynamic message & Clickable Ticket Conflict Banner (hidden during selection or when session is viewed or edited) */}
-                        {!selectedSessionForView && editingSessionId === null && (activeConflict || message.error || (!selection && message.text)) && (() => {
-                            const activeColor = activeConflict ? getSessionColor(Boolean(activeConflict.is_ticket), activeConflict.id, activeConflict.ticket_id, activeConflict.start) : null;
-                            return (
-                                <div className={`mt-3 p-2.5 rounded border text-xs flex items-start justify-between gap-2 transition-all ${activeColor
-                                    ? activeColor.bannerBg
-                                    : message.error
-                                        ? 'bg-rose-50 border-rose-200 text-rose-700'
-                                        : 'bg-slate-50 dark:bg-surface-container-low border-slate-200 dark:border-outline-variant text-slate-600 dark:text-on-surface-variant'
-                                    }`}>
-                                    <div className="flex items-start gap-2 min-w-0 flex-1">
-                                        {!activeConflict && (message.error ? (
-                                            <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
-                                        ) : (
-                                            <Clock className="w-4 h-4 text-slate-400 shrink-0 mt-0.5" />
-                                        ))}
-                                        {activeConflict && activeColor && (
-                                            <span className={`w-2.5 h-2.5 rounded-full ${activeColor.dotBg} shrink-0 mt-1 shadow-xs`} />
-                                        )}
-                                        <div className="min-w-0 flex-1">
-                                            {activeConflict ? (
-                                                <div>
-                                                    <span className="font-bold">
-                                                        This time slot is already booked:
-                                                    </span>{' '}
-                                                    {activeConflict.is_ticket && activeConflict.ticket_id ? (
-                                                        ticketId && Number(activeConflict.ticket_id) === Number(ticketId) ? (
-                                                            <span className={`inline-flex items-center gap-1 font-extrabold ml-1 ${activeColor ? activeColor.text : 'text-slate-900 dark:text-white'}`}>
-                                                                {!isConflictEditable(activeConflict) && <Lock className="w-3 h-3 text-slate-500 shrink-0" />}
-                                                                Ticket #{activeConflict.ticket_id}
-                                                                {activeConflict.ticket_work_order_no ? ` (${activeConflict.ticket_work_order_no})` : ''}
+                                                                {curr.conflict.ticket_id}
                                                             </span>
                                                         ) : (
-                                                            <span className={`inline-flex items-center gap-1 font-extrabold ml-1 ${activeColor ? activeColor.linkText : 'text-blue-700'}`}>
-                                                                <Lock className="w-3 h-3 text-slate-500 shrink-0" />
-                                                                Ticket #{activeConflict.ticket_id}
-                                                                {activeConflict.ticket_work_order_no ? ` (${activeConflict.ticket_work_order_no})` : ''}
+                                                            <span
+                                                                className={`font-black ${color.linkText} inline-flex items-center gap-0.5 truncate`}
+                                                                title={`Ticket #${curr.conflict.ticket_id} (Locked)`}
+                                                            >
+                                                                <Lock className="w-2.5 h-2.5 shrink-0" />
+                                                                {curr.conflict.ticket_id}
                                                             </span>
                                                         )
                                                     ) : (
-                                                        <span className="font-semibold ml-1 inline-flex items-center gap-1">
-                                                            {!isConflictEditable(activeConflict) && <Lock className="w-3 h-3 text-slate-500 shrink-0" />}
-                                                            Manual Timesheet Booking
+                                                        <span className={`font-semibold ${color.subtext} truncate inline-flex items-center gap-0.5`}>
+                                                            {!isConflictEditable(curr.conflict) && (
+                                                                <Lock className="w-2.5 h-2.5 shrink-0" />
+                                                            )}
+                                                            {curr.conflict?.work_done || 'Booked'}
                                                         </span>
                                                     )}
-                                                    <p className={`text-[11px] mt-0.5 ${activeColor ? activeColor.subtext : 'text-slate-600 dark:text-on-surface-variant'}`}>
-                                                        <span className="font-semibold">Remarks:</span>{' '}
-                                                        {activeConflict.remarks || activeConflict.work_done || activeConflict.ticket_title || 'Work log recorded on ticket.'}
-                                                        <span className="ml-1 opacity-75">
-                                                            ({formatTime(activeConflict.start)} – {formatTime(activeConflict.end)})
-                                                        </span>
-                                                    </p>
                                                 </div>
-                                            ) : (
-                                                <span>{message.text}</span>
-                                            )}
-                                        </div>
-                                    </div>
 
-                                    {activeConflict && (
-                                        <button
-                                            type="button"
-                                            onClick={() => setActiveConflict(null)}
-                                            className={`hover:opacity-75 text-xs font-bold px-1 ${activeColor ? activeColor.subtext : 'text-slate-600'}`}
-                                            title="Dismiss"
-                                        >
-                                            &times;
-                                        </button>
-                                    )}
-                                </div>
-                            );
-                        })()}
-                    </div>
-
-                    {/* Unscheduled / Legacy Work Logs (work logs with hours but no specific time slot) */}
-                    {!selectedSessionForView && editingSessionId === null && !selection && unslottedSessions.length > 0 && (
-                        <div className="mx-3 my-2 p-3 bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800 rounded-lg">
-                            <div className="flex items-center justify-between mb-2">
-                                <div className="flex items-center gap-1.5 text-xs font-bold text-amber-900 dark:text-amber-200">
-                                    <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
-                                    <span>Unscheduled Logs ({unslottedSessions.length})</span>
-                                    <span className="text-[10px] bg-amber-200/80 dark:bg-amber-800/60 text-amber-900 dark:text-amber-100 px-1.5 py-0.5 rounded font-extrabold">
-                                        {unslottedSessions.reduce((acc, s) => acc + (s.hours || 0), 0)}h total
-                                    </span>
-                                </div>
-                                <span className="text-[10px] text-amber-700/80 dark:text-amber-400 font-medium">
-                                    No time slot recorded
-                                </span>
-                            </div>
-                            <div className="space-y-1.5">
-                                {unslottedSessions.map((sess) => {
-                                    const color = getSessionColor(sess.is_ticket, sess.id, sess.ticket_id);
-                                    const locNames = (sess.locations || []).map((l) => l.short_code || l.name).join(', ');
-                                    return (
-                                        <div
-                                            key={sess.id}
-                                            onClick={() => setSelectedSessionForView(sess)}
-                                            className={`border rounded p-2 flex justify-between items-center gap-2 cursor-pointer hover:brightness-95 transition text-xs ${color.cardBorder} ${color.cardBg}`}
-                                        >
-                                            <div className="min-w-0 flex-1">
-                                                <div className="flex items-center gap-1.5 flex-wrap">
-                                                    <span className={`w-2 h-2 rounded-full ${color.dotBg} shrink-0`} />
-                                                    <span className="font-bold text-slate-800 dark:text-on-surface">
-                                                        {sess.hours}h
+                                                {!isConflictEditable(curr.conflict) && (
+                                                    <span
+                                                        title="Locked (Unable to edit)"
+                                                        className="shrink-0 flex items-center"
+                                                    >
+                                                        <Lock className="w-3 h-3 text-slate-400 animate-bounce" />
                                                     </span>
-                                                    {sess.is_ticket && sess.ticket_id ? (
-                                                        <span className={`text-[10px] font-bold ${color.badgeBg} border px-1.5 py-0.5 rounded flex items-center gap-1`}>
-                                                            Ticket #{sess.ticket_id} {sess.ticket_work_order_no ? `(${sess.ticket_work_order_no})` : ''}
+                                                )}
+                                            </>
+                                        ) : curr.groupType === 'selection' ? (
+                                            <span className="font-black text-yellow-950 truncate">
+                                                Selected
+                                            </span>
+                                        ) : (
+                                            <span className="text-[9px] text-slate-400 font-medium truncate">
+                                                {c === 0 ? ':00–:30' : ':30–:00'}
+                                            </span>
+                                        )}
+                                    </div>
+                                </button>
+                            );
+                        };
+
+                        return (
+                            <div className="overflow-hidden w-full">
+                                <motion.div
+                                    className="flex w-full"
+                                    animate={{ x: `-${shiftIndex * 100}%` }}
+                                    transition={{
+                                        type: 'spring',
+                                        stiffness: 280,
+                                        damping: 30,
+                                        mass: 0.9,
+                                    }}
+                                >
+                                    {SHIFT_PANELS.map((panel) => (
+                                        <div key={panel.key} className="min-w-full w-full shrink-0">
+                                            <div className="grid grid-cols-2 gap-3 items-start">
+                                                {/* Column 1 */}
+                                                <div className="flex flex-col">
+                                                    <div className="flex items-center justify-between px-1 mb-1.5 text-[11px] font-bold text-slate-700 dark:text-on-surface">
+                                                        <span className="flex items-center gap-1 min-w-0">
+                                                            {panel.col1.isDay ? (
+                                                                <Sun className="w-3 h-3 text-amber-500 shrink-0" />
+                                                            ) : (
+                                                                <Moon className="w-3 h-3 text-indigo-500 shrink-0" />
+                                                            )}
+                                                            <span className="truncate">{panel.col1.name}</span>
+                                                        </span>
+                                                        <span className="text-[10px] font-semibold text-slate-500 dark:text-on-surface-variant bg-slate-100 dark:bg-surface-container-high px-1.5 py-0.5 rounded shrink-0">
+                                                            {panel.col1.range}
+                                                        </span>
+                                                    </div>
+                                                    <div className="grid grid-cols-2">
+                                                        {[0, 1, 2, 3].map((r) => (
+                                                            <React.Fragment key={r}>
+                                                                {render30mCell(panel.windowStart, 0, r, 0)}
+                                                                {render30mCell(panel.windowStart, 0, r, 1)}
+                                                            </React.Fragment>
+                                                        ))}
+                                                    </div>
+                                                </div>
+
+                                                {/* Column 2 */}
+                                                <div className="flex flex-col">
+                                                    <div className="flex items-center justify-between px-1 mb-1.5 text-[11px] font-bold text-slate-700 dark:text-on-surface">
+                                                        <span className="flex items-center gap-1 min-w-0">
+                                                            {panel.col2.isDay ? (
+                                                                <Sun className="w-3 h-3 text-amber-500 shrink-0" />
+                                                            ) : (
+                                                                <Moon className="w-3 h-3 text-indigo-500 shrink-0" />
+                                                            )}
+                                                            <span className="truncate">{panel.col2.name}</span>
+                                                        </span>
+                                                        <span className="text-[10px] font-semibold text-slate-500 dark:text-on-surface-variant bg-slate-100 dark:bg-surface-container-high px-1.5 py-0.5 rounded shrink-0">
+                                                            {panel.col2.range}
+                                                        </span>
+                                                    </div>
+                                                    <div className="grid grid-cols-2">
+                                                        {[0, 1, 2, 3].map((r) => (
+                                                            <React.Fragment key={r}>
+                                                                {render30mCell(panel.windowStart, 1, r, 0)}
+                                                                {render30mCell(panel.windowStart, 1, r, 1)}
+                                                            </React.Fragment>
+                                                        ))}
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </motion.div>
+                            </div>
+                        );
+                    })()}
+
+                    {/* Interactive dynamic message & Clickable Ticket Conflict Banner (hidden during selection or when session is viewed or edited) */}
+                    {!selectedSessionForView && editingSessionId === null && (activeConflict || message.error || (!selection && message.text)) && (() => {
+                        const activeColor = activeConflict ? getSessionColor(Boolean(activeConflict.is_ticket), activeConflict.id, activeConflict.ticket_id, activeConflict.start) : null;
+                        return (
+                            <div className={`mt-3 p-2.5 rounded border text-xs flex items-start justify-between gap-2 transition-all ${activeColor
+                                ? activeColor.bannerBg
+                                : message.error
+                                    ? 'bg-rose-50 border-rose-200 text-rose-700'
+                                    : 'bg-slate-50 dark:bg-surface-container-low border-slate-200 dark:border-outline-variant text-slate-600 dark:text-on-surface-variant'
+                                }`}>
+                                <div className="flex items-start gap-2 min-w-0 flex-1">
+                                    {!activeConflict && (message.error ? (
+                                        <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+                                    ) : (
+                                        <Clock className="w-4 h-4 text-slate-400 shrink-0 mt-0.5" />
+                                    ))}
+                                    {activeConflict && activeColor && (
+                                        <span className={`w-2.5 h-2.5 rounded-full ${activeColor.dotBg} shrink-0 mt-1 shadow-xs`} />
+                                    )}
+                                    <div className="min-w-0 flex-1">
+                                        {activeConflict ? (
+                                            <div>
+                                                <span className="font-bold">
+                                                    This time slot is already booked:
+                                                </span>{' '}
+                                                {activeConflict.is_ticket && activeConflict.ticket_id ? (
+                                                    ticketId && Number(activeConflict.ticket_id) === Number(ticketId) ? (
+                                                        <span className={`inline-flex items-center gap-1 font-extrabold ml-1 ${activeColor ? activeColor.text : 'text-slate-900 dark:text-white'}`}>
+                                                            {!isConflictEditable(activeConflict) && <Lock className="w-3 h-3 text-slate-500 shrink-0" />}
+                                                            Ticket #{activeConflict.ticket_id}
+                                                            {activeConflict.ticket_work_order_no ? ` (${activeConflict.ticket_work_order_no})` : ''}
                                                         </span>
                                                     ) : (
-                                                        <span className="text-[10px] font-semibold text-slate-600 bg-slate-100 px-1.5 py-0.5 rounded">
-                                                            Manual Log
+                                                        <span className={`inline-flex items-center gap-1 font-extrabold ml-1 ${activeColor ? activeColor.linkText : 'text-blue-700'}`}>
+                                                            <Lock className="w-3 h-3 text-slate-500 shrink-0" />
+                                                            Ticket #{activeConflict.ticket_id}
+                                                            {activeConflict.ticket_work_order_no ? ` (${activeConflict.ticket_work_order_no})` : ''}
                                                         </span>
-                                                    )}
-                                                </div>
-                                                <p className="text-[11px] text-slate-600 dark:text-on-surface-variant truncate mt-0.5">
-                                                    {sess.work_done || sess.remarks || 'No remarks recorded'} {locNames ? `· ${locNames}` : ''}
+                                                    )
+                                                ) : (
+                                                    <span className="font-semibold ml-1 inline-flex items-center gap-1">
+                                                        {!isConflictEditable(activeConflict) && <Lock className="w-3 h-3 text-slate-500 shrink-0" />}
+                                                        Manual Timesheet Booking
+                                                    </span>
+                                                )}
+                                                <p className={`text-[11px] mt-0.5 ${activeColor ? activeColor.subtext : 'text-slate-600 dark:text-on-surface-variant'}`}>
+                                                    <span className="font-semibold">Remarks:</span>{' '}
+                                                    {activeConflict.remarks || activeConflict.work_done || activeConflict.ticket_title || 'Work log recorded on ticket.'}
+                                                    <span className="ml-1 opacity-75">
+                                                        ({formatTime(activeConflict.start)} – {formatTime(activeConflict.end)})
+                                                    </span>
                                                 </p>
                                             </div>
-                                            <div className="flex items-center gap-1 shrink-0">
-                                                <span className="text-[10px] font-semibold text-amber-700 dark:text-amber-400 bg-amber-100 dark:bg-amber-900/40 px-2 py-0.5 rounded">
-                                                    View Details
-                                                </span>
-                                            </div>
-                                        </div>
-                                    );
-                                })}
+                                        ) : (
+                                            <span>{message.text}</span>
+                                        )}
+                                    </div>
+                                </div>
+
+                                {activeConflict && (
+                                    <button
+                                        type="button"
+                                        onClick={() => setActiveConflict(null)}
+                                        className={`hover:opacity-75 text-xs font-bold px-1 ${activeColor ? activeColor.subtext : 'text-slate-600'}`}
+                                        title="Dismiss"
+                                    >
+                                        &times;
+                                    </button>
+                                )}
                             </div>
+                        );
+                    })()}
+                </div>
+
+                {/* Unscheduled / Legacy Work Logs (work logs with hours but no specific time slot) */}
+                {!selectedSessionForView && editingSessionId === null && !selection && unslottedSessions.length > 0 && (
+                    <div className="mx-3 my-2 p-3 bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800 rounded-lg">
+                        <div className="flex items-center justify-between mb-2">
+                            <div className="flex items-center gap-1.5 text-xs font-bold text-amber-900 dark:text-amber-200">
+                                <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
+                                <span>Unscheduled Logs ({unslottedSessions.length})</span>
+                                <span className="text-[10px] bg-amber-200/80 dark:bg-amber-800/60 text-amber-900 dark:text-amber-100 px-1.5 py-0.5 rounded font-extrabold">
+                                    {unslottedSessions.reduce((acc, s) => acc + (s.hours || 0), 0)}h total
+                                </span>
+                            </div>
+                            <span className="text-[10px] text-amber-700/80 dark:text-amber-400 font-medium">
+                                No time slot recorded
+                            </span>
                         </div>
-                    )}
-
-                    {/* Booked Sessions List (hidden when a session is selected from slot or being edited) */}
-                    {!selectedSessionForView && editingSessionId === null && !selection && (
-                        <div className="p-3 bg-white dark:bg-surface-container border-t border-slate-200 dark:border-outline-variant">
-                            <div className="flex justify-between items-center">
-                                <h3 className="text-xs font-bold text-slate-800 dark:text-on-surface flex items-center gap-1.5">
-                                    <span>Time Sheet ({sessions.length})</span>
-                                    {totalBookedHours > 0 && (
-                                        <span className="text-[10px] font-semibold text-slate-500 bg-slate-100 dark:bg-surface-container-high px-1.5 py-0.5 rounded">
-                                            {totalBookedHours}h total
-                                        </span>
-                                    )}
-                                </h3>
-                                <button
-                                    type="button"
-                                    onClick={() => setShowManualSessions(prev => !prev)}
-                                    className="text-[10px] font-semibold text-gray-500 hover:text-gray-800 px-2.5 py-1 rounded-md border border-gray-200 dark:border-outline-variant hover:bg-slate-50 dark:hover:bg-surface-container-high transition"
-                                >
-                                    {showManualSessions ? "Hide List" : "Show All"}
-                                </button>
-                            </div>
-
-                            {showManualSessions && (
-                                <div className="mt-2.5">
-                                    {loadingDay ? (
-                                        <div className="py-3 text-center text-xs text-slate-400 animate-pulse">
-                                            Loading...
+                        <div className="space-y-1.5">
+                            {unslottedSessions.map((sess) => {
+                                const color = getSessionColor(sess.is_ticket, sess.id, sess.ticket_id);
+                                const locNames = (sess.locations || []).map((l) => l.short_code || l.name).join(', ');
+                                return (
+                                    <div
+                                        key={sess.id}
+                                        onClick={() => setSelectedSessionForView(sess)}
+                                        className={`border rounded p-2 flex justify-between items-center gap-2 cursor-pointer hover:brightness-95 transition text-xs ${color.cardBorder} ${color.cardBg}`}
+                                    >
+                                        <div className="min-w-0 flex-1">
+                                            <div className="flex items-center gap-1.5 flex-wrap">
+                                                <span className={`w-2 h-2 rounded-full ${color.dotBg} shrink-0`} />
+                                                <span className="font-bold text-slate-800 dark:text-on-surface">
+                                                    {sess.hours}h
+                                                </span>
+                                                {sess.is_ticket && sess.ticket_id ? (
+                                                    <span className={`text-[10px] font-bold ${color.badgeBg} border px-1.5 py-0.5 rounded flex items-center gap-1`}>
+                                                        Ticket #{sess.ticket_id} {sess.ticket_work_order_no ? `(${sess.ticket_work_order_no})` : ''}
+                                                    </span>
+                                                ) : (
+                                                    <span className="text-[10px] font-semibold text-slate-600 bg-slate-100 px-1.5 py-0.5 rounded">
+                                                        Manual Log
+                                                    </span>
+                                                )}
+                                            </div>
+                                            <p className="text-[11px] text-slate-600 dark:text-on-surface-variant truncate mt-0.5">
+                                                {sess.work_done || sess.remarks || 'No remarks recorded'} {locNames ? `· ${locNames}` : ''}
+                                            </p>
                                         </div>
-                                    ) : sessions.length === 0 ? (
-                                        <div className="text-center py-3 text-xs text-slate-400 border border-dashed border-slate-200 dark:border-outline-variant rounded">
-                                            No sessions booked for this date.
+                                        <div className="flex items-center gap-1 shrink-0">
+                                            <span className="text-[10px] font-semibold text-amber-700 dark:text-amber-400 bg-amber-100 dark:bg-amber-900/40 px-2 py-0.5 rounded">
+                                                View Details
+                                            </span>
                                         </div>
-                                    ) : (
-                                        <div className="space-y-1.5">
-                                            {sessions.map((sess) => {
-                                                const isEditingThis = sess.id === editingSessionId;
-                                                const locNames = (sess.locations || [])
-                                                    .map((l) => `${l.short_code || l.name}`)
-                                                    .join(', ');
-                                                const color = getSessionColor(sess.is_ticket, sess.id, sess.ticket_id, sess.start ?? undefined);
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    </div>
+                )}
 
-                                                return (
-                                                    <div
-                                                        key={sess.id}
-                                                        onClick={() => setSelectedSessionForView(sess)}
-                                                        className={`border rounded p-2.5 flex justify-between items-center gap-2 transition text-xs cursor-pointer hover:brightness-95 ${isEditingThis
-                                                            ? 'border-yellow-400 bg-yellow-50/50 dark:bg-yellow-950/20 shadow-xs'
-                                                            : `${color.cardBorder} ${color.cardBg}`
-                                                            }`}
-                                                    >
-                                                        <div className="min-w-0 flex-1">
-                                                            <div className="flex items-center gap-1.5 flex-wrap">
-                                                                <span className={`w-2.5 h-2.5 rounded-full ${color.dotBg} shrink-0 shadow-xs`} />
+                {/* Booked Sessions List (hidden when a session is selected from slot or being edited) */}
+                {!selectedSessionForView && editingSessionId === null && !selection && (
+                    <div className="p-3 bg-white dark:bg-surface-container border-t border-slate-200 dark:border-outline-variant">
+                        <div className="flex justify-between items-center">
+                            <h3 className="text-xs font-bold text-slate-800 dark:text-on-surface flex items-center gap-1.5">
+                                <span>Time Sheet ({sessions.length})</span>
+                                {totalBookedHours > 0 && (
+                                    <span className="text-[10px] font-semibold text-slate-500 bg-slate-100 dark:bg-surface-container-high px-1.5 py-0.5 rounded">
+                                        {totalBookedHours}h total
+                                    </span>
+                                )}
+                            </h3>
+                            <button
+                                type="button"
+                                onClick={() => setShowManualSessions(prev => !prev)}
+                                className="text-[10px] font-semibold text-gray-500 hover:text-gray-800 px-2.5 py-1 rounded-md border border-gray-200 dark:border-outline-variant hover:bg-slate-50 dark:hover:bg-surface-container-high transition"
+                            >
+                                {showManualSessions ? "Hide List" : "Show All"}
+                            </button>
+                        </div>
 
-                                                                <span className="font-bold text-slate-800 dark:text-on-surface">
-                                                                    {sess.start !== null && sess.end !== null
-                                                                        ? `${formatTime(sess.start)} – ${formatTime(sess.end)}`
-                                                                        : `${sess.hours}h (Unscheduled)`}
-                                                                </span>
+                        {showManualSessions && (
+                            <div className="mt-2.5">
+                                {loadingDay ? (
+                                    <div className="py-3 text-center text-xs text-slate-400 animate-pulse">
+                                        Loading...
+                                    </div>
+                                ) : sessions.length === 0 ? (
+                                    <div className="text-center py-3 text-xs text-slate-400 border border-dashed border-slate-200 dark:border-outline-variant rounded">
+                                        No sessions booked for this date.
+                                    </div>
+                                ) : (
+                                    <div className="space-y-1.5">
+                                        {sessions.map((sess) => {
+                                            const isEditingThis = sess.id === editingSessionId;
+                                            const locNames = (sess.locations || [])
+                                                .map((l) => `${l.short_code || l.name}`)
+                                                .join(', ');
+                                            const color = getSessionColor(sess.is_ticket, sess.id, sess.ticket_id, sess.start ?? undefined);
 
-                                                                <span className="text-[10px] font-bold text-slate-600 dark:text-on-surface-variant bg-slate-100 dark:bg-surface-container-high px-1.5 py-0.2 rounded">
-                                                                    {sess.hours}h
-                                                                </span>
+                                            return (
+                                                <div
+                                                    key={sess.id}
+                                                    onClick={() => setSelectedSessionForView(sess)}
+                                                    className={`border rounded p-2.5 flex justify-between items-center gap-2 transition text-xs cursor-pointer hover:brightness-95 ${isEditingThis
+                                                        ? 'border-yellow-400 bg-yellow-50/50 dark:bg-yellow-950/20 shadow-xs'
+                                                        : `${color.cardBorder} ${color.cardBg}`
+                                                        }`}
+                                                >
+                                                    <div className="min-w-0 flex-1">
+                                                        <div className="flex items-center gap-1.5 flex-wrap">
+                                                            <span className={`w-2.5 h-2.5 rounded-full ${color.dotBg} shrink-0 shadow-xs`} />
 
-                                                                {sess.is_ticket ? (
-                                                                    sess.ticket_id ? (
-                                                                        ticketId && Number(sess.ticket_id) === Number(ticketId) ? (
-                                                                            <span className={`text-[10px] font-bold ${color.badgeBg} border px-1.5 py-0.2 rounded flex items-center gap-1`}>
-                                                                                {!canEditSession(sess) && <Lock className="w-2.5 h-2.5" />}
-                                                                                Ticket {sess.ticket_id}
-                                                                            </span>
-                                                                        ) : (
-                                                                            <span
-                                                                                className={`text-[10px] font-bold ${color.badgeBg} border px-1.5 py-0.2 rounded flex items-center gap-1`}
-                                                                                title="Ticket Session (editable only from ticket)"
-                                                                            >
-                                                                                <Lock className="w-2.5 h-2.5" />
-                                                                                Ticket {sess.ticket_id}
-                                                                            </span>
-                                                                        )
-                                                                    ) : (
-                                                                        <span className={`text-[10px] font-bold ${color.badgeBg} border px-1.5 py-0.2 rounded flex items-center gap-0.5`}>
+                                                            <span className="font-bold text-slate-800 dark:text-on-surface">
+                                                                {sess.start !== null && sess.end !== null
+                                                                    ? `${formatTime(sess.start)} – ${formatTime(sess.end)}`
+                                                                    : `${sess.hours}h (Unscheduled)`}
+                                                            </span>
+
+                                                            <span className="text-[10px] font-bold text-slate-600 dark:text-on-surface-variant bg-slate-100 dark:bg-surface-container-high px-1.5 py-0.2 rounded">
+                                                                {sess.hours}h
+                                                            </span>
+
+                                                            {sess.is_ticket ? (
+                                                                sess.ticket_id ? (
+                                                                    ticketId && Number(sess.ticket_id) === Number(ticketId) ? (
+                                                                        <span className={`text-[10px] font-bold ${color.badgeBg} border px-1.5 py-0.2 rounded flex items-center gap-1`}>
                                                                             {!canEditSession(sess) && <Lock className="w-2.5 h-2.5" />}
-                                                                            Ticket
+                                                                            Ticket {sess.ticket_id}
+                                                                        </span>
+                                                                    ) : (
+                                                                        <span
+                                                                            className={`text-[10px] font-bold ${color.badgeBg} border px-1.5 py-0.2 rounded flex items-center gap-1`}
+                                                                            title="Ticket Session (editable only from ticket)"
+                                                                        >
+                                                                            <Lock className="w-2.5 h-2.5" />
+                                                                            Ticket {sess.ticket_id}
                                                                         </span>
                                                                     )
                                                                 ) : (
-                                                                    !canEditSession(sess) ? (
-                                                                        <span className="text-[10px] font-bold text-slate-500 bg-slate-100 dark:bg-surface-container border border-slate-300 dark:border-outline-variant px-1.5 py-0.2 rounded flex items-center gap-1">
-                                                                            <Lock className="w-2.5 h-2.5" />
-                                                                            Booked
-                                                                        </span>
-                                                                    ) : (
-                                                                        <></>
-                                                                    )
-                                                                )}
-                                                            </div>
-
-                                                            <p className="text-[11px] text-slate-500 dark:text-on-surface-variant truncate mt-0.5">
-                                                                {locNames || 'Store'} {sess.remarks || sess.work_done ? `· ${sess.remarks || sess.work_done}` : ''}
-                                                            </p>
-                                                        </div>
-
-                                                        <div className="flex items-center gap-1 flex-shrink-0" onClick={(e) => e.stopPropagation()}>
-                                                            {canEditSession(sess) ? (
-                                                                <>
-                                                                    <button
-                                                                        type="button"
-                                                                        onClick={() => handleStartEdit(sess)}
-                                                                        className="p-2 rounded-lg border border-slate-200 hover:bg-slate-100 text-slate-700 text-xs transition"
-                                                                        title="Edit"
-                                                                    >
-                                                                        <Edit2 className="w-4 h-4" />
-                                                                    </button>
-
-                                                                    <button
-                                                                        type="button"
-                                                                        onClick={() => handleDeleteSession(sess.worklog_id)}
-                                                                        title="Delete"
-                                                                        className="p-2 rounded-lg border border-slate-200 hover:border-rose-300 text-rose-600 text-xs transition"
-                                                                    >
-                                                                        <Trash2 className="w-4 h-4" />
-                                                                    </button>
-                                                                </>
+                                                                    <span className={`text-[10px] font-bold ${color.badgeBg} border px-1.5 py-0.2 rounded flex items-center gap-0.5`}>
+                                                                        {!canEditSession(sess) && <Lock className="w-2.5 h-2.5" />}
+                                                                        Ticket
+                                                                    </span>
+                                                                )
                                                             ) : (
-                                                                <span
-                                                                    className="p-2 text-slate-400 flex items-center justify-center"
-                                                                    title={
-                                                                        sess.is_claimed
-                                                                            ? 'Claimed work log (cannot be modified)'
-                                                                            : sess.is_ticket
-                                                                                ? (ticketId && Number(sess.ticket_id) === Number(ticketId)
-                                                                                    ? `Ticket #${sess.ticket_id} (locked)`
-                                                                                    : `Ticket #${sess.ticket_id} (editable only from ticket)`)
-                                                                                : 'Booked Session (editable only from dashboard)'
-                                                                    }
-                                                                >
-                                                                    <Lock className="w-4 h-4 text-slate-400" />
-                                                                </span>
+                                                                !canEditSession(sess) ? (
+                                                                    <span className="text-[10px] font-bold text-slate-500 bg-slate-100 dark:bg-surface-container border border-slate-300 dark:border-outline-variant px-1.5 py-0.2 rounded flex items-center gap-1">
+                                                                        <Lock className="w-2.5 h-2.5" />
+                                                                        Booked
+                                                                    </span>
+                                                                ) : (
+                                                                    <></>
+                                                                )
                                                             )}
                                                         </div>
-                                                    </div>
-                                                );
-                                            })}
-                                        </div>
-                                    )}
-                                </div>
-                            )}
-                        </div>
-                    )}
-                </div>
 
-                {/* Docked Full-Width Bottom Bar Tied with Modal UI */}
-                {(selection || selectedSessionForView) && (
-                    <div className="w-full shrink-0 border-t border-slate-800 bg-[#17191C] text-white p-3 space-y-2.5 animate-in slide-in-from-bottom-2 duration-150">
-                        {selectedSessionForView ? (
-                            <>
-                                {/* Created Session Header: Time range, Duration, Ticket link (if any), & Close (X) button */}
-                                <div className="flex items-center justify-between gap-2">
-                                    <div className="min-w-0 flex-1">
-                                        <div className="flex items-center gap-2 flex-wrap">
-                                            <span className="text-[10px] font-bold uppercase tracking-wider text-amber-400 leading-none">
-                                                {selectedSessionForView.is_ticket ? 'Ticket Session' : 'Booked Session'}
-                                            </span>
-                                            <span className="text-[10px] font-bold text-amber-300 bg-amber-950/60 border border-amber-500/30 px-1.5 py-0.5 rounded">
-                                                {selectedSessionForView.start !== null && selectedSessionForView.end !== null
-                                                    ? formatDuration(selectedSessionForView.end - selectedSessionForView.start)
-                                                    : `${selectedSessionForView.hours}h`}
-                                            </span>
-                                            {selectedSessionForView.is_ticket && selectedSessionForView.ticket_id ? (
-                                                ticketId && Number(selectedSessionForView.ticket_id) === Number(ticketId) ? (
-                                                    <span className="text-[10px] font-bold bg-white/10 text-amber-300 border border-amber-400/30 px-1.5 py-0.5 rounded inline-flex items-center gap-1">
-                                                        {!canEditSession(selectedSessionForView) && <Lock className="w-2.5 h-2.5" />}
-                                                        Ticket #{selectedSessionForView.ticket_id}
-                                                    </span>
-                                                ) : (
-                                                    <span className="text-[10px] font-bold bg-white/10 text-amber-300 border border-amber-400/30 px-1.5 py-0.5 rounded inline-flex items-center gap-1">
-                                                        <Lock className="w-2.5 h-2.5" />
-                                                        Ticket #{selectedSessionForView.ticket_id}
-                                                    </span>
-                                                )
-                                            ) : (
-                                                !canEditSession(selectedSessionForView) && (
-                                                    <span className="text-[10px] font-bold bg-white/10 text-slate-300 border border-white/20 px-1.5 py-0.5 rounded inline-flex items-center gap-1">
-                                                        <Lock className="w-2.5 h-2.5" />
-                                                        Locked
-                                                    </span>
-                                                )
-                                            )}
-                                        </div>
-                                        <span className="font-extrabold text-sm text-white mt-1 block truncate">
+                                                        <p className="text-[11px] text-slate-500 dark:text-on-surface-variant truncate mt-0.5">
+                                                            {locNames || 'Store'} {sess.remarks || sess.work_done ? `· ${sess.remarks || sess.work_done}` : ''}
+                                                        </p>
+                                                    </div>
+
+                                                    <div className="flex items-center gap-1 flex-shrink-0" onClick={(e) => e.stopPropagation()}>
+                                                        {canEditSession(sess) ? (
+                                                            <>
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => handleStartEdit(sess)}
+                                                                    className="p-2 rounded-lg border border-slate-200 hover:bg-slate-100 text-slate-700 text-xs transition"
+                                                                    title="Edit"
+                                                                >
+                                                                    <Edit2 className="w-4 h-4" />
+                                                                </button>
+
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => handleDeleteSession(sess.worklog_id)}
+                                                                    title="Delete"
+                                                                    className="p-2 rounded-lg border border-slate-200 hover:border-rose-300 text-rose-600 text-xs transition"
+                                                                >
+                                                                    <Trash2 className="w-4 h-4" />
+                                                                </button>
+                                                            </>
+                                                        ) : (
+                                                            <span
+                                                                className="p-2 text-slate-400 flex items-center justify-center"
+                                                                title={
+                                                                    sess.is_claimed
+                                                                        ? 'Claimed work log (cannot be modified)'
+                                                                        : sess.is_ticket
+                                                                            ? (ticketId && Number(sess.ticket_id) === Number(ticketId)
+                                                                                ? `Ticket #${sess.ticket_id} (locked)`
+                                                                                : `Ticket #${sess.ticket_id} (editable only from ticket)`)
+                                                                            : 'Booked Session (editable only from dashboard)'
+                                                                }
+                                                            >
+                                                                <Lock className="w-4 h-4 text-slate-400" />
+                                                            </span>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                )}
+                            </div>
+                        )}
+                    </div>
+                )}
+            </div>
+
+            {/* Docked Full-Width Bottom Bar Tied with Modal UI */}
+            {(selection || selectedSessionForView) && (
+                <div className="w-full shrink-0 border-t border-slate-800 bg-[#17191C] text-white p-3 space-y-2.5 animate-in slide-in-from-bottom-2 duration-150">
+                    {selectedSessionForView ? (
+                        <>
+                            {/* Created Session Header: Time range, Duration, Ticket link (if any), & Close (X) button */}
+                            <div className="flex items-center justify-between gap-2">
+                                <div className="min-w-0 flex-1">
+                                    <div className="flex items-center gap-2 flex-wrap">
+                                        <span className="text-[10px] font-bold uppercase tracking-wider text-amber-400 leading-none">
+                                            {selectedSessionForView.is_ticket ? 'Ticket Session' : 'Booked Session'}
+                                        </span>
+                                        <span className="text-[10px] font-bold text-amber-300 bg-amber-950/60 border border-amber-500/30 px-1.5 py-0.5 rounded">
                                             {selectedSessionForView.start !== null && selectedSessionForView.end !== null
-                                                ? `${formatTime(selectedSessionForView.start)} – ${formatTime(selectedSessionForView.end)}`
+                                                ? formatDuration(selectedSessionForView.end - selectedSessionForView.start)
                                                 : `${selectedSessionForView.hours}h`}
                                         </span>
+                                        {selectedSessionForView.is_ticket && selectedSessionForView.ticket_id ? (
+                                            ticketId && Number(selectedSessionForView.ticket_id) === Number(ticketId) ? (
+                                                <span className="text-[10px] font-bold bg-white/10 text-amber-300 border border-amber-400/30 px-1.5 py-0.5 rounded inline-flex items-center gap-1">
+                                                    {!canEditSession(selectedSessionForView) && <Lock className="w-2.5 h-2.5" />}
+                                                    Ticket #{selectedSessionForView.ticket_id}
+                                                </span>
+                                            ) : (
+                                                <span className="text-[10px] font-bold bg-white/10 text-amber-300 border border-amber-400/30 px-1.5 py-0.5 rounded inline-flex items-center gap-1">
+                                                    <Lock className="w-2.5 h-2.5" />
+                                                    Ticket #{selectedSessionForView.ticket_id}
+                                                </span>
+                                            )
+                                        ) : (
+                                            !canEditSession(selectedSessionForView) && (
+                                                <span className="text-[10px] font-bold bg-white/10 text-slate-300 border border-white/20 px-1.5 py-0.5 rounded inline-flex items-center gap-1">
+                                                    <Lock className="w-2.5 h-2.5" />
+                                                    Locked
+                                                </span>
+                                            )
+                                        )}
                                     </div>
+                                    <span className="font-extrabold text-sm text-white mt-1 block truncate">
+                                        {selectedSessionForView.start !== null && selectedSessionForView.end !== null
+                                            ? `${formatTime(selectedSessionForView.start)} – ${formatTime(selectedSessionForView.end)}`
+                                            : `${selectedSessionForView.hours}h`}
+                                    </span>
+                                </div>
 
-                                    {/* X button for clear */}
-                                    {/* {canEditSession(selectedSessionForView)
+                                {/* X button for clear */}
+                                {/* {canEditSession(selectedSessionForView)
                                         &&
 
                                         <button
@@ -2713,414 +2753,414 @@ export const TimeSheetModal: React.FC<TimeSheetModalProps> = ({
                                     } */}
 
 
-                                    <button
-                                        type="button"
-                                        onClick={() => {
-                                            setSelectedSessionForView(null);
-                                            setActiveConflict(null);
-                                        }}
-                                        className="w-7 h-7 flex items-center justify-center rounded-lg bg-white/10 hover:bg-rose-500/20 text-slate-300 hover:text-rose-400 transition"
-                                        title="Close"
-                                    >
-                                        <X className="w-4 h-4" />
-                                    </button>
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        setSelectedSessionForView(null);
+                                        setActiveConflict(null);
+                                    }}
+                                    className="w-7 h-7 flex items-center justify-center rounded-lg bg-white/10 hover:bg-rose-500/20 text-slate-300 hover:text-rose-400 transition"
+                                    title="Close"
+                                >
+                                    <X className="w-4 h-4" />
+                                </button>
+                            </div>
+
+                            {/* Location Details */}
+                            <div className="flex items-center justify-between gap-2 p-1.5 rounded bg-white/5 border border-white/10 text-xs">
+                                <div className="flex items-center gap-1.5 min-w-0 flex-1 overflow-x-auto scrollbar-none py-0.5">
+                                    <MapPin className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                                    {(() => {
+                                        const locs = (selectedSessionForView.locations && selectedSessionForView.locations.length > 0)
+                                            ? selectedSessionForView.locations
+                                            : (selectedSessionForView.locationIds || []).map((id) => {
+                                                const s = stores.find((st) => st.store_id === id);
+                                                return {
+                                                    id,
+                                                    name: s?.store_name || id,
+                                                    short_code: s?.short_code || id,
+                                                };
+                                            });
+                                        if (locs.length === 0) {
+                                            return (
+                                                <span className="text-[11px] font-medium text-slate-400 truncate">
+                                                    No locations specified
+                                                </span>
+                                            );
+                                        }
+                                        return locs.map((loc) => (
+                                            <span
+                                                key={loc.id}
+                                                title={loc.name}
+                                                className="h-6 inline-flex items-center gap-1 px-2 text-[11px] font-bold bg-amber-400/15 text-amber-300 border border-amber-400/30 rounded-md shrink-0 shadow-xs"
+                                            >
+                                                <span>{loc.short_code || loc.name}</span>
+                                            </span>
+                                        ));
+                                    })()}
+                                </div>
+                            </div>
+
+                            {/* Remarks & Action (Edit) button */}
+                            <div className="flex items-center gap-2">
+                                <div className="flex-1 min-w-0 bg-white/10 border border-white/20 text-white text-xs rounded px-3 py-2">
+                                    <span className="text-[10px] text-slate-400 font-bold block uppercase tracking-wider">
+                                        Remarks
+                                    </span>
+                                    <span className="font-semibold text-xs text-white block truncate mt-0.5">
+                                        {selectedSessionForView.remarks || selectedSessionForView.work_done || selectedSessionForView.ticket_title || 'No remarks recorded'}
+                                    </span>
                                 </div>
 
-                                {/* Location Details */}
+                                {canEditSession(selectedSessionForView) ? (
+                                    <div className="flex items-center gap-1.5 shrink-0">
+                                        <button
+                                            type="button"
+                                            onClick={() => {
+                                                const sess = selectedSessionForView;
+                                                setSelectedSessionForView(null);
+                                                handleStartEdit(sess);
+                                            }}
+                                            className="h-9 px-4 bg-amber-400 hover:bg-amber-300 text-slate-950 font-black text-xs rounded transition shadow-xs flex items-center gap-1.5 active:scale-95 shrink-0"
+                                            title="Edit Session"
+                                        >
+                                            <Edit2 className="w-3.5 h-3.5 text-slate-950 shrink-0" />
+                                            <span>Edit</span>
+                                        </button>
+
+                                    </div>
+                                ) : (
+                                    <div
+                                        onClick={() => {
+                                            if (selectedSessionForView.is_claimed) return;
+                                            const logId = selectedSessionForView.worklog_id || selectedSessionForView.id;
+                                            const dateKey = selectedSessionForView.dateKey || selectedSessionForView.work_date || selectedDateKey;
+                                            if (selectedSessionForView.ticket_id) {
+                                                if (ticketId && Number(selectedSessionForView.ticket_id) === Number(ticketId)) {
+                                                    return;
+                                                }
+                                                onClose();
+                                                navigate(`/tickets/all?ticket_id=${selectedSessionForView.ticket_id}&log=${logId}`);
+                                            } else {
+                                                onClose();
+                                                navigate(`/dashboard?log=${logId}&date=${dateKey}&timesheet=true`);
+                                            }
+                                        }}
+                                        className={`h-9 px-3 bg-white/10 border border-white/20 text-slate-300 font-semibold text-xs rounded flex items-center gap-1.5 shrink-0 ${!selectedSessionForView.is_claimed ? 'hover:bg-white/20 cursor-pointer' : ''}`}
+                                    >
+                                        <Lock className="w-3.5 h-3.5 text-slate-400" />
+                                        <span>
+                                            {selectedSessionForView.is_claimed
+                                                ? 'Claimed (Locked)'
+                                                : selectedSessionForView.is_ticket
+                                                    ? (ticketId && Number(selectedSessionForView.ticket_id) === Number(ticketId)
+                                                        ? `Ticket #${selectedSessionForView.ticket_id} (Locked)`
+                                                        : `Edit From Ticket`)
+                                                    : 'Edit from dashboard'}
+                                        </span>
+                                    </div>
+                                )}
+                            </div>
+                        </>
+                    ) : selection ? (
+                        <>
+                            {/* Current Selection Period, Duration, & X Button */}
+                            <div className="flex items-center justify-between gap-2">
+                                <div className="min-w-0 flex-1">
+                                    <div className="flex items-center gap-2">
+                                        <span className="text-[10px] font-bold uppercase tracking-wider text-amber-400 leading-none">
+                                            {editingSessionId !== null ? 'Editing Session' : 'Current Selection'}
+                                        </span>
+                                        <span className="text-[10px] font-bold text-amber-300 bg-amber-950/60 border border-amber-500/30 px-1.5 py-0.5 rounded">
+                                            {formatDuration(selection.end - selection.start)}
+                                        </span>
+                                    </div>
+                                    <span className="font-extrabold text-sm text-white mt-1 block truncate">
+                                        {formatTime(selection.start)} – {formatTime(selection.end)}
+                                    </span>
+                                </div>
+                                {editingSessionId !== null && (
+                                    <>
+                                        {(() => {
+                                            const sess = sessions.find((s) => s.id === editingSessionId);
+                                            if (sess && canEditSession(sess)) {
+                                                return (
+                                                    <button
+                                                        type="button"
+                                                        onClick={async () => {
+                                                            await handleDeleteSession(sess.worklog_id);
+                                                        }}
+                                                        className="h-9 w-9 flex items-center justify-center rounded border border-white/20 bg-white/10 hover:bg-rose-500/20 text-rose-400 transition shrink-0"
+                                                        title="Delete Session"
+                                                    >
+                                                        <Trash2 className="w-4 h-4" />
+                                                    </button>
+                                                );
+                                            }
+                                            return null;
+                                        })()}
+
+                                    </>
+                                )}
+
+                                {/* X button for clear */}
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        if (editingSessionId !== null) {
+                                            handleCancelEdit();
+                                        } else {
+                                            setSelection(null);
+                                            setActiveConflict(null);
+                                            setMessage({ text: 'Selection cleared.' });
+                                        }
+                                    }}
+                                    className="w-7 h-7 flex items-center justify-center rounded-lg bg-white/10 hover:bg-rose-500/20 text-slate-300 hover:text-rose-400 transition"
+                                    title={editingSessionId !== null ? 'Cancel edit' : 'Clear selection'}
+                                >
+                                    <X className="w-4 h-4" />
+                                </button>
+                            </div>
+
+                            {/* Location Selector Option (Hidden or Locked to Ticket Location) */}
+                            {lockLocation ? (
+                                <div className="flex items-center gap-2 px-2.5 py-1.5 rounded bg-white/5 border border-white/10 text-xs">
+                                    <MapPin className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                                    <div className="flex items-center gap-1.5 min-w-0 flex-1">
+                                        {/* <span className="text-[10px] text-slate-400 font-medium">Location:</span> */}
+                                        <span className="h-6 inline-flex items-center gap-1 px-2 text-[11px] font-bold bg-amber-400/15 text-amber-300 border border-amber-400/30 rounded-md shrink-0 shadow-xs">
+                                            {(() => {
+                                                const s = stores.find((st) => st.store_id === fixedLocationId);
+                                                return s?.short_code || s?.store_name || fixedLocationName || fixedLocationId || 'Ticket Location';
+                                            })()}
+                                        </span>
+                                    </div>
+                                    <span title="Locked to ticket location">
+                                        <Lock className="w-3 h-3 text-slate-400 shrink-0" />
+                                    </span>
+                                </div>
+                            ) : (
                                 <div className="flex items-center justify-between gap-2 p-1.5 rounded bg-white/5 border border-white/10 text-xs">
                                     <div className="flex items-center gap-1.5 min-w-0 flex-1 overflow-x-auto scrollbar-none py-0.5">
                                         <MapPin className="w-3.5 h-3.5 text-amber-400 shrink-0" />
-                                        {(() => {
-                                            const locs = (selectedSessionForView.locations && selectedSessionForView.locations.length > 0)
-                                                ? selectedSessionForView.locations
-                                                : (selectedSessionForView.locationIds || []).map((id) => {
-                                                    const s = stores.find((st) => st.store_id === id);
-                                                    return {
-                                                        id,
-                                                        name: s?.store_name || id,
-                                                        short_code: s?.short_code || id,
-                                                    };
-                                                });
-                                            if (locs.length === 0) {
+                                        {selectedStoreIds.length === 0 ? (
+                                            <span className="text-[11px] font-medium text-slate-400 truncate">
+                                                No location selected
+                                            </span>
+                                        ) : (
+                                            selectedStoreIds.map((id) => {
+                                                const s = stores.find((st) => st.store_id === id);
+                                                if (!s) return null;
+                                                const code = s.short_code || s.store_id;
                                                 return (
-                                                    <span className="text-[11px] font-medium text-slate-400 truncate">
-                                                        No locations specified
-                                                    </span>
-                                                );
-                                            }
-                                            return locs.map((loc) => (
-                                                <span
-                                                    key={loc.id}
-                                                    title={loc.name}
-                                                    className="h-6 inline-flex items-center gap-1 px-2 text-[11px] font-bold bg-amber-400/15 text-amber-300 border border-amber-400/30 rounded-md shrink-0 shadow-xs"
-                                                >
-                                                    <span>{loc.short_code || loc.name}</span>
-                                                </span>
-                                            ));
-                                        })()}
-                                    </div>
-                                </div>
-
-                                {/* Remarks & Action (Edit) button */}
-                                <div className="flex items-center gap-2">
-                                    <div className="flex-1 min-w-0 bg-white/10 border border-white/20 text-white text-xs rounded px-3 py-2">
-                                        <span className="text-[10px] text-slate-400 font-bold block uppercase tracking-wider">
-                                            Remarks
-                                        </span>
-                                        <span className="font-semibold text-xs text-white block truncate mt-0.5">
-                                            {selectedSessionForView.remarks || selectedSessionForView.work_done || selectedSessionForView.ticket_title || 'No remarks recorded'}
-                                        </span>
-                                    </div>
-
-                                    {canEditSession(selectedSessionForView) ? (
-                                        <div className="flex items-center gap-1.5 shrink-0">
-                                            <button
-                                                type="button"
-                                                onClick={() => {
-                                                    const sess = selectedSessionForView;
-                                                    setSelectedSessionForView(null);
-                                                    handleStartEdit(sess);
-                                                }}
-                                                className="h-9 px-4 bg-amber-400 hover:bg-amber-300 text-slate-950 font-black text-xs rounded transition shadow-xs flex items-center gap-1.5 active:scale-95 shrink-0"
-                                                title="Edit Session"
-                                            >
-                                                <Edit2 className="w-3.5 h-3.5 text-slate-950 shrink-0" />
-                                                <span>Edit</span>
-                                            </button>
-
-                                        </div>
-                                    ) : (
-                                        <div
-                                            onClick={() => {
-                                                if (selectedSessionForView.is_claimed) return;
-                                                const logId = selectedSessionForView.worklog_id || selectedSessionForView.id;
-                                                const dateKey = selectedSessionForView.dateKey || selectedSessionForView.work_date || selectedDateKey;
-                                                if (selectedSessionForView.ticket_id) {
-                                                    if (ticketId && Number(selectedSessionForView.ticket_id) === Number(ticketId)) {
-                                                        return;
-                                                    }
-                                                    onClose();
-                                                    navigate(`/tickets/all?ticket_id=${selectedSessionForView.ticket_id}&log=${logId}`);
-                                                } else {
-                                                    onClose();
-                                                    navigate(`/dashboard?log=${logId}&date=${dateKey}&timesheet=true`);
-                                                }
-                                            }}
-                                            className={`h-9 px-3 bg-white/10 border border-white/20 text-slate-300 font-semibold text-xs rounded flex items-center gap-1.5 shrink-0 ${!selectedSessionForView.is_claimed ? 'hover:bg-white/20 cursor-pointer' : ''}`}
-                                        >
-                                            <Lock className="w-3.5 h-3.5 text-slate-400" />
-                                            <span>
-                                                {selectedSessionForView.is_claimed
-                                                    ? 'Claimed (Locked)'
-                                                    : selectedSessionForView.is_ticket
-                                                        ? (ticketId && Number(selectedSessionForView.ticket_id) === Number(ticketId)
-                                                            ? `Ticket #${selectedSessionForView.ticket_id} (Locked)`
-                                                            : `Edit From Ticket`)
-                                                        : 'Edit from dashboard'}
-                                            </span>
-                                        </div>
-                                    )}
-                                </div>
-                            </>
-                        ) : selection ? (
-                            <>
-                                {/* Current Selection Period, Duration, & X Button */}
-                                <div className="flex items-center justify-between gap-2">
-                                    <div className="min-w-0 flex-1">
-                                        <div className="flex items-center gap-2">
-                                            <span className="text-[10px] font-bold uppercase tracking-wider text-amber-400 leading-none">
-                                                {editingSessionId !== null ? 'Editing Session' : 'Current Selection'}
-                                            </span>
-                                            <span className="text-[10px] font-bold text-amber-300 bg-amber-950/60 border border-amber-500/30 px-1.5 py-0.5 rounded">
-                                                {formatDuration(selection.end - selection.start)}
-                                            </span>
-                                        </div>
-                                        <span className="font-extrabold text-sm text-white mt-1 block truncate">
-                                            {formatTime(selection.start)} – {formatTime(selection.end)}
-                                        </span>
-                                    </div>
-                                    {editingSessionId !== null && (
-                                        <>
-                                            {(() => {
-                                                const sess = sessions.find((s) => s.id === editingSessionId);
-                                                if (sess && canEditSession(sess)) {
-                                                    return (
+                                                    <span
+                                                        key={id}
+                                                        title={s.store_name}
+                                                        className="h-6 inline-flex items-center gap-1 px-2 text-[11px] font-bold bg-amber-400/15 text-amber-300 border border-amber-400/30 rounded-md shrink-0 shadow-xs"
+                                                    >
+                                                        <span>{code}</span>
                                                         <button
                                                             type="button"
-                                                            onClick={async () => {
-                                                                await handleDeleteSession(sess.worklog_id);
+                                                            onClick={(e) => {
+                                                                e.stopPropagation();
+                                                                setSelectedStoreIds(selectedStoreIds.filter((sid) => sid !== id));
                                                             }}
-                                                            className="h-9 w-9 flex items-center justify-center rounded border border-white/20 bg-white/10 hover:bg-rose-500/20 text-rose-400 transition shrink-0"
-                                                            title="Delete Session"
+                                                            className="text-slate-400 hover:text-rose-400 font-bold ml-0.5 leading-none text-xs"
+                                                            title={`Remove ${s.store_name}`}
                                                         >
-                                                            <Trash2 className="w-4 h-4" />
+                                                            &times;
                                                         </button>
-                                                    );
-                                                }
-                                                return null;
-                                            })()}
-
-                                        </>
-                                    )}
-
-                                    {/* X button for clear */}
-                                    <button
-                                        type="button"
-                                        onClick={() => {
-                                            if (editingSessionId !== null) {
-                                                handleCancelEdit();
-                                            } else {
-                                                setSelection(null);
-                                                setActiveConflict(null);
-                                                setMessage({ text: 'Selection cleared.' });
-                                            }
-                                        }}
-                                        className="w-7 h-7 flex items-center justify-center rounded-lg bg-white/10 hover:bg-rose-500/20 text-slate-300 hover:text-rose-400 transition"
-                                        title={editingSessionId !== null ? 'Cancel edit' : 'Clear selection'}
-                                    >
-                                        <X className="w-4 h-4" />
-                                    </button>
-                                </div>
-
-                                {/* Location Selector Option (Hidden or Locked to Ticket Location) */}
-                                {lockLocation ? (
-                                    <div className="flex items-center gap-2 px-2.5 py-1.5 rounded bg-white/5 border border-white/10 text-xs">
-                                        <MapPin className="w-3.5 h-3.5 text-amber-400 shrink-0" />
-                                        <div className="flex items-center gap-1.5 min-w-0 flex-1">
-                                            {/* <span className="text-[10px] text-slate-400 font-medium">Location:</span> */}
-                                            <span className="h-6 inline-flex items-center gap-1 px-2 text-[11px] font-bold bg-amber-400/15 text-amber-300 border border-amber-400/30 rounded-md shrink-0 shadow-xs">
-                                                {(() => {
-                                                    const s = stores.find((st) => st.store_id === fixedLocationId);
-                                                    return s?.short_code || s?.store_name || fixedLocationName || fixedLocationId || 'Ticket Location';
-                                                })()}
-                                            </span>
-                                        </div>
-                                        <span title="Locked to ticket location">
-                                            <Lock className="w-3 h-3 text-slate-400 shrink-0" />
-                                        </span>
+                                                    </span>
+                                                );
+                                            })
+                                        )}
                                     </div>
-                                ) : (
-                                    <div className="flex items-center justify-between gap-2 p-1.5 rounded bg-white/5 border border-white/10 text-xs">
-                                        <div className="flex items-center gap-1.5 min-w-0 flex-1 overflow-x-auto scrollbar-none py-0.5">
-                                            <MapPin className="w-3.5 h-3.5 text-amber-400 shrink-0" />
-                                            {selectedStoreIds.length === 0 ? (
-                                                <span className="text-[11px] font-medium text-slate-400 truncate">
-                                                    No location selected
-                                                </span>
-                                            ) : (
-                                                selectedStoreIds.map((id) => {
-                                                    const s = stores.find((st) => st.store_id === id);
-                                                    if (!s) return null;
-                                                    const code = s.short_code || s.store_id;
-                                                    return (
-                                                        <span
-                                                            key={id}
-                                                            title={s.store_name}
-                                                            className="h-6 inline-flex items-center gap-1 px-2 text-[11px] font-bold bg-amber-400/15 text-amber-300 border border-amber-400/30 rounded-md shrink-0 shadow-xs"
-                                                        >
-                                                            <span>{code}</span>
-                                                            <button
-                                                                type="button"
-                                                                onClick={(e) => {
-                                                                    e.stopPropagation();
-                                                                    setSelectedStoreIds(selectedStoreIds.filter((sid) => sid !== id));
-                                                                }}
-                                                                className="text-slate-400 hover:text-rose-400 font-bold ml-0.5 leading-none text-xs"
-                                                                title={`Remove ${s.store_name}`}
-                                                            >
-                                                                &times;
-                                                            </button>
-                                                        </span>
-                                                    );
-                                                })
-                                            )}
-                                        </div>
-
-                                        <button
-                                            type="button"
-                                            onClick={() => setIsStoreDropdownOpen(true)}
-                                            className={`h-7 inline-flex items-center gap-1 px-3 text-xs font-bold rounded-lg transition active:scale-95 shrink-0 ${selectedStoreIds.length === 0
-                                                ? 'bg-amber-400 hover:bg-amber-300 text-slate-950 shadow-xs'
-                                                : 'text-amber-300 bg-white/10 hover:bg-white/15 border border-amber-400/40'
-                                                }`}
-                                            title={selectedStoreIds.length === 0 ? 'Select locations' : 'Edit locations'}
-                                        >
-                                            {selectedStoreIds.length === 0 ? (
-                                                <>
-                                                    <MapPin className="w-3 h-3 text-slate-950 shrink-0" />
-                                                    <span>Select Location</span>
-                                                </>
-                                            ) : (
-                                                <>
-                                                    <Edit2 className="w-3 h-3 text-amber-400 shrink-0" />
-                                                    <span>Edit</span>
-                                                </>
-                                            )}
-                                        </button>
-                                    </div>
-                                )}
-
-                                {/* Remarks input (required) + Add/Update Session button */}
-                                <div className="flex items-center gap-2">
-                                    <input
-                                        ref={remarksInputRef}
-                                        type="text"
-                                        required
-                                        placeholder="Remarks (required)..."
-                                        value={remarks}
-                                        onChange={(e) => setRemarks(e.target.value)}
-                                        onFocus={() => {
-                                            setTimeout(() => {
-                                                remarksInputRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-                                            }, 250);
-                                        }}
-                                        onClick={() => {
-                                            setTimeout(() => {
-                                                remarksInputRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-                                            }, 250);
-                                        }}
-                                        className="flex-1 bg-white/10 border border-white/20 focus:border-amber-400 focus:bg-white/15 text-white placeholder:text-slate-400 text-xs rounded px-3 py-2 outline-none transition"
-                                    />
 
                                     <button
                                         type="button"
-                                        disabled={saving || !remarks.trim() || (selectedStoreIds.length === 0 && !fixedLocationId)}
-                                        onClick={handleSaveSession}
-                                        className={`font-black text-xs px-4 py-2 rounded transition shadow-xs flex items-center gap-1 shrink-0 ${!remarks.trim() || (selectedStoreIds.length === 0 && !fixedLocationId) || saving
-                                            ? 'bg-amber-400/40 text-slate-900/50 cursor-not-allowed'
-                                            : 'bg-amber-400 hover:bg-amber-300 text-slate-950 active:scale-95'
+                                        onClick={() => setIsStoreDropdownOpen(true)}
+                                        className={`h-7 inline-flex items-center gap-1 px-3 text-xs font-bold rounded-lg transition active:scale-95 shrink-0 ${selectedStoreIds.length === 0
+                                            ? 'bg-amber-400 hover:bg-amber-300 text-slate-950 shadow-xs'
+                                            : 'text-amber-300 bg-white/10 hover:bg-white/15 border border-amber-400/40'
                                             }`}
-                                        title={
-                                            selectedStoreIds.length === 0 && !fixedLocationId
-                                                ? 'Location is required to save session'
-                                                : !remarks.trim()
-                                                    ? 'Remarks are required to save session'
-                                                    : undefined
-                                        }
+                                        title={selectedStoreIds.length === 0 ? 'Select locations' : 'Edit locations'}
                                     >
-                                        {saving ? 'Saving...' : editingSessionId !== null ? 'Update' : '+ Add Log'}
+                                        {selectedStoreIds.length === 0 ? (
+                                            <>
+                                                <MapPin className="w-3 h-3 text-slate-950 shrink-0" />
+                                                <span>Select Location</span>
+                                            </>
+                                        ) : (
+                                            <>
+                                                <Edit2 className="w-3 h-3 text-amber-400 shrink-0" />
+                                                <span>Edit</span>
+                                            </>
+                                        )}
                                     </button>
                                 </div>
-                            </>
-                        ) : dayLeave && !dayLeave.is_half_day ? (
-                            <div className="flex items-center gap-2.5 py-1 text-xs text-amber-300">
-                                <CircleOff className="w-5 h-5 text-amber-400 shrink-0" />
-                                <div>
-                                    <span className="font-bold block text-white">
-                                        Full-Day {dayLeave.leave_type_display} (Worklogs Disabled)
-                                    </span>
-                                    <span className="text-[11px] text-slate-400 block mt-0.5">
-                                        You are on scheduled leave on this date. Work hours cannot be recorded.
-                                    </span>
-                                </div>
-                            </div>
-                        ) : null}
-                    </div>
-                )}
+                            )}
 
-                {/* Calendar Date Picker Popup Modal */}
-                {isCalendarOpen && (
-                    <div
-                        onClick={handleCloseCalendarPopup}
-                        className="fixed inset-0 z-[75] bg-black/50 backdrop-blur-xs flex items-center justify-center p-4"
-                    >
-                        <div
-                            onClick={(e) => e.stopPropagation()}
-                            className="bg-white dark:bg-surface-container border border-slate-200 dark:border-outline-variant rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden"
-                        >
-                            <div className="bg-[#17191C] text-white px-4 py-3 flex justify-between items-center">
-                                <div className="flex items-center gap-2 min-w-0">
-                                    <CalendarIcon className="w-4 h-4 text-amber-400 shrink-0" />
-                                    <h3 className="font-bold text-xs text-white truncate">
-                                        {workerName ? `${workerName}'s Timesheet` : 'Select Date'}
-                                    </h3>
-                                </div>
-                                <div className="flex items-center gap-2 shrink-0">
+                            {/* Remarks input (required) + Add/Update Session button */}
+                            <div className="flex items-center gap-2">
+                                <input
+                                    ref={remarksInputRef}
+                                    type="text"
+                                    required
+                                    placeholder="Remarks (required)..."
+                                    value={remarks}
+                                    onChange={(e) => setRemarks(e.target.value)}
+                                    onFocus={() => {
+                                        setTimeout(() => {
+                                            remarksInputRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                                        }, 250);
+                                    }}
+                                    onClick={() => {
+                                        setTimeout(() => {
+                                            remarksInputRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                                        }, 250);
+                                    }}
+                                    className="flex-1 bg-white/10 border border-white/20 focus:border-amber-400 focus:bg-white/15 text-white placeholder:text-slate-400 text-xs rounded px-3 py-2 outline-none transition"
+                                />
 
-                                    <button
-                                        type="button"
-                                        onClick={handleCloseCalendarPopup}
-                                        className="w-6 h-6 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center text-sm cursor-pointer"
-                                    >
-                                        &times;
-                                    </button>
-                                </div>
-                            </div>
-
-                            <div className="px-3 py-2 bg-slate-50 dark:bg-surface-container border-b border-slate-100 dark:border-outline-variant flex justify-between items-center text-xs">
                                 <button
                                     type="button"
-                                    onClick={() => {
-                                        let newMonth = calendarViewMonth - 1;
-                                        let newYear = calendarViewYear;
-                                        if (newMonth < 0) {
-                                            newMonth = 11;
-                                            newYear--;
-                                        }
-                                        setCalendarViewMonth(newMonth);
-                                        setCalendarViewYear(newYear);
-                                    }}
-                                    className="border border-slate-200 bg-white dark:bg-dark-surface rounded-lg p-1 font-bold hover:bg-slate-100 text-slate-700 dark:text-on-surface cursor-pointer"
-                                >
-                                    &lt;
-                                </button>
-                                <span className="font-bold text-slate-800 dark:text-on-surface">
-                                    {firstDayOfMonth.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
-                                </span>
-                                <button
-                                    type="button"
-                                    disabled={(() => {
-                                        const now = new Date();
-                                        return calendarViewYear > now.getFullYear() || (calendarViewYear === now.getFullYear() && calendarViewMonth >= now.getMonth());
-                                    })()}
-                                    onClick={() => {
-                                        const now = new Date();
-                                        const isCurrentOrFuture = calendarViewYear > now.getFullYear() || (calendarViewYear === now.getFullYear() && calendarViewMonth >= now.getMonth());
-                                        if (isCurrentOrFuture) return;
-                                        let newMonth = calendarViewMonth + 1;
-                                        let newYear = calendarViewYear;
-                                        if (newMonth > 11) {
-                                            newMonth = 0;
-                                            newYear++;
-                                        }
-                                        setCalendarViewMonth(newMonth);
-                                        setCalendarViewYear(newYear);
-                                    }}
-                                    className={`border border-slate-200 bg-white rounded-lg p-1 font-bold ${(() => {
-                                        const now = new Date();
-                                        const isCurrentOrFuture = calendarViewYear > now.getFullYear() || (calendarViewYear === now.getFullYear() && calendarViewMonth >= now.getMonth());
-                                        return isCurrentOrFuture ? 'opacity-30 cursor-not-allowed text-slate-300' : 'hover:bg-slate-100 text-slate-700 cursor-pointer';
-                                    })()}`}
-                                >
-                                    &gt;
-                                </button>
-                            </div>
-
-                            <div className="grid grid-cols-7 gap-1 px-3 pt-2 text-center text-[9px] font-bold text-slate-400 uppercase">
-                                <div>Sun</div>
-                                <div>Mon</div>
-                                <div>Tue</div>
-                                <div>Wed</div>
-                                <div>Thu</div>
-                                <div>Fri</div>
-                                <div>Sat</div>
-                            </div>
-
-                            <div className="grid grid-cols-7 gap-1 p-3">
-                                {Array.from({ length: startWeekday }).map((_, i) => (
-                                    <div key={`empty-${i}`} className="h-10" />
-                                ))}
-
-                                {Array.from({ length: daysInMonth }).map((_, i) => {
-                                    const day = i + 1;
-                                    const cellDate = new Date(calendarViewYear, calendarViewMonth, day);
-                                    const cellKey = toDateKey(cellDate);
-                                    const isFuture = cellKey > todayKey;
-
-                                    // Hide day selection of tomorrow and future days
-                                    if (isFuture) {
-                                        return <div key={cellKey} className="h-11" />;
+                                    disabled={saving || !remarks.trim() || (selectedStoreIds.length === 0 && !fixedLocationId)}
+                                    onClick={handleSaveSession}
+                                    className={`font-black text-xs px-4 py-2 rounded transition shadow-xs flex items-center gap-1 shrink-0 ${!remarks.trim() || (selectedStoreIds.length === 0 && !fixedLocationId) || saving
+                                        ? 'bg-amber-400/40 text-slate-900/50 cursor-not-allowed'
+                                        : 'bg-amber-400 hover:bg-amber-300 text-slate-950 active:scale-95'
+                                        }`}
+                                    title={
+                                        selectedStoreIds.length === 0 && !fixedLocationId
+                                            ? 'Location is required to save session'
+                                            : !remarks.trim()
+                                                ? 'Remarks are required to save session'
+                                                : undefined
                                     }
+                                >
+                                    {saving ? 'Saving...' : editingSessionId !== null ? 'Update' : '+ Add Log'}
+                                </button>
+                            </div>
+                        </>
+                    ) : dayLeave && !dayLeave.is_half_day ? (
+                        <div className="flex items-center gap-2.5 py-1 text-xs text-amber-300">
+                            <CircleOff className="w-5 h-5 text-amber-400 shrink-0" />
+                            <div>
+                                <span className="font-bold block text-white">
+                                    Full-Day {dayLeave.leave_type_display} (Worklogs Disabled)
+                                </span>
+                                <span className="text-[11px] text-slate-400 block mt-0.5">
+                                    You are on scheduled leave on this date. Work hours cannot be recorded.
+                                </span>
+                            </div>
+                        </div>
+                    ) : null}
+                </div>
+            )}
+
+            {/* Calendar Date Picker Popup Modal */}
+            {isCalendarOpen && (
+                <div
+                    onClick={handleCloseCalendarPopup}
+                    className="fixed inset-0 z-[75] bg-black/50 backdrop-blur-xs flex items-center justify-center p-4"
+                >
+                    <div
+                        onClick={(e) => e.stopPropagation()}
+                        className="bg-white dark:bg-surface-container border border-slate-200 dark:border-outline-variant rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden"
+                    >
+                        <div className="bg-[#17191C] text-white px-4 py-3 flex justify-between items-center">
+                            <div className="flex items-center gap-2 min-w-0">
+                                <CalendarIcon className="w-4 h-4 text-amber-400 shrink-0" />
+                                <h3 className="font-bold text-xs text-white truncate">
+                                    {workerName ? `${workerName}'s Timesheet` : 'Select Date'}
+                                </h3>
+                            </div>
+                            <div className="flex items-center gap-2 shrink-0">
+
+                                <button
+                                    type="button"
+                                    onClick={handleCloseCalendarPopup}
+                                    className="w-6 h-6 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center text-sm cursor-pointer"
+                                >
+                                    &times;
+                                </button>
+                            </div>
+                        </div>
+
+                        <div className="px-3 py-2 bg-slate-50 dark:bg-surface-container border-b border-slate-100 dark:border-outline-variant flex justify-between items-center text-xs">
+                            <button
+                                type="button"
+                                disabled={isPrevMonthDisabled}
+                                onClick={() => {
+                                    if (isPrevMonthDisabled) return;
+                                    let newMonth = calendarViewMonth - 1;
+                                    let newYear = calendarViewYear;
+                                    if (newMonth < 0) {
+                                        newMonth = 11;
+                                        newYear--;
+                                    }
+                                    setCalendarViewMonth(newMonth);
+                                    setCalendarViewYear(newYear);
+                                }}
+                                className={`border border-slate-200 dark:border-outline-variant bg-white dark:bg-dark-surface rounded-lg p-1 font-bold ${isPrevMonthDisabled
+                                    ? 'opacity-30 cursor-not-allowed text-slate-300 dark:text-slate-600'
+                                    : 'hover:bg-slate-100 dark:hover:bg-surface-container-high text-slate-700 dark:text-on-surface cursor-pointer'
+                                    }`}
+                            >
+                                &lt;
+                            </button>
+                            <span className="font-bold text-slate-800 dark:text-on-surface">
+                                {firstDayOfMonth.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
+                            </span>
+                            <button
+                                type="button"
+                                disabled={isNextMonthDisabled}
+                                onClick={() => {
+                                    if (isNextMonthDisabled) return;
+                                    let newMonth = calendarViewMonth + 1;
+                                    let newYear = calendarViewYear;
+                                    if (newMonth > 11) {
+                                        newMonth = 0;
+                                        newYear++;
+                                    }
+                                    setCalendarViewMonth(newMonth);
+                                    setCalendarViewYear(newYear);
+                                }}
+                                className={`border border-slate-200 dark:border-outline-variant bg-white dark:bg-dark-surface rounded-lg p-1 font-bold ${isNextMonthDisabled
+                                    ? 'opacity-30 cursor-not-allowed text-slate-300 dark:text-slate-600'
+                                    : 'hover:bg-slate-100 dark:hover:bg-surface-container-high text-slate-700 dark:text-on-surface cursor-pointer'
+                                    }`}
+                            >
+                                &gt;
+                            </button>
+                        </div>
+
+                        <div className="grid grid-cols-7 gap-1 px-3 pt-2 text-center text-[9px] font-bold text-slate-400 uppercase">
+                            <div>Sun</div>
+                            <div>Mon</div>
+                            <div>Tue</div>
+                            <div>Wed</div>
+                            <div>Thu</div>
+                            <div>Fri</div>
+                            <div>Sat</div>
+                        </div>
+
+                        <div className="grid grid-cols-7 gap-1 p-3">
+                            {Array.from({ length: startWeekday }).map((_, i) => (
+                                <div key={`empty-${i}`} className="h-10" />
+                            ))}
+
+                            {Array.from({ length: daysInMonth }).map((_, i) => {
+                                const day = i + 1;
+                                const cellDate = new Date(calendarViewYear, calendarViewMonth, day);
+                                const cellKey = toDateKey(cellDate);
+                                const isFuture = cellKey > effectiveMaxKey;
+                                const isBeforeMin = minDateKey ? cellKey < minDateKey : false;
+
+                                // Hide day selection outside the allowed range (minDateKey through today)
+                                if (isFuture || isBeforeMin) {
+                                    return <div key={cellKey} className="h-11" />;
+                                }
 
                                     const isSelected = cellKey === selectedDateKey;
                                     const isToday = cellKey === todayKey;
@@ -3177,80 +3217,90 @@ export const TimeSheetModal: React.FC<TimeSheetModalProps> = ({
                                         </button>
                                     );
                                 })}
+                        </div>
+
+                        {/* Calendar Leave Legend */}
+                        <div className="px-3 py-1.5 bg-amber-50/80 dark:bg-amber-950/40 border-t border-amber-200/50 flex items-center gap-1.5 text-[10px] text-amber-900 dark:text-amber-200 font-medium">
+                            <CircleOff className="w-3 h-3 text-amber-600 shrink-0" />
+                            <span>CircleOff icon indicates scheduled leave</span>
+                        </div>
+
+                        {minDateKey && (
+                            <div className="px-3 py-1.5 bg-slate-50 dark:bg-surface-container-low border-t border-slate-100 dark:border-outline-variant flex items-center justify-between text-[10px] text-slate-600 dark:text-on-surface-variant font-medium">
+                                <span>Ticket created: {parseDateKey(minDateKey).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span>
+                                <span>Selectable: Created – Today</span>
                             </div>
+                        )}
 
-                            {/* Calendar Leave Legend */}
-                            <div className="px-3 py-1.5 bg-amber-50/80 dark:bg-amber-950/40 border-t border-amber-200/50 flex items-center gap-1.5 text-[10px] text-amber-900 dark:text-amber-200 font-medium">
-                                <CircleOff className="w-3 h-3 text-amber-600 shrink-0" />
-                                <span>CircleOff icon indicates scheduled leave</span>
-                            </div>
-
-                            <div className="px-3 py-2 bg-slate-50 dark:bg-surface-container-low border-t border-slate-100 flex justify-between items-center text-xs">
-                                <div className="flex items-center gap-3">
-                                    <button
-                                        type="button"
-                                        onClick={() => {
-                                            setSelectedDateKey(todayKey);
-                                            setCalendarViewYear(new Date().getFullYear());
-                                            setCalendarViewMonth(new Date().getMonth());
-                                            setSelection(null);
-                                            setActiveConflict(null);
-                                            setSelectedSessionForView(null);
-                                            setEditingSessionId(null);
-                                            setWindowStart(DAY_WINDOW_START);
-                                            setIsCalendarOpen(false);
-                                        }}
-                                        className="font-bold text-amber-700 hover:underline text-[11px]"
-                                    >
-                                        Select Today
-                                    </button>
-
-                                </div>
+                        <div className="px-3 py-2 bg-slate-50 dark:bg-surface-container-low border-t border-slate-100 flex justify-between items-center text-xs">
+                            <div className="flex items-center gap-3">
                                 <button
                                     type="button"
-                                    onClick={() => setIsCalendarOpen(false)}
-                                    className="bg-[#17191C] text-white text-[11px] font-semibold px-3 py-1.5 rounded shadow-xs"
+                                    onClick={() => {
+                                        const target = (minDateKey && todayKey < minDateKey) ? minDateKey : todayKey;
+                                        const targetObj = parseDateKey(target);
+                                        setSelectedDateKey(target);
+                                        setHasSelectedDay(true);
+                                        setCalendarViewYear(targetObj.getFullYear());
+                                        setCalendarViewMonth(targetObj.getMonth());
+                                        setSelection(null);
+                                        setActiveConflict(null);
+                                        setSelectedSessionForView(null);
+                                        setEditingSessionId(null);
+                                        setWindowStart(DAY_WINDOW_START);
+                                        setIsCalendarOpen(false);
+                                    }}
+                                    className="font-bold text-amber-700 hover:underline text-[11px]"
                                 >
-                                    Done
+                                    Select Today
                                 </button>
+
                             </div>
+                            <button
+                                type="button"
+                                onClick={() => setIsCalendarOpen(false)}
+                                className="bg-[#17191C] text-white text-[11px] font-semibold px-3 py-1.5 rounded shadow-xs"
+                            >
+                                Done
+                            </button>
                         </div>
                     </div>
-                )}
-                {/* Timesheet Print & View Modal */}
-                {isPrintModalOpen && (
-                    <TimesheetPrintModal
-                        isOpen={isPrintModalOpen}
-                        onClose={() => setIsPrintModalOpen(false)}
-                        workerId={workerId || 0}
-                        workerName={workerName || 'Employee'}
-                        employeeNo={employeeNo}
-                        workerRole={workerRole}
-                        workerRate={workerRate}
-                        subDepartments={subDepartments}
-                        initialFromDate={(() => {
-                            const dt = parseDateKey(selectedDateKey);
-                            const y = dt.getFullYear();
-                            const m = String(dt.getMonth() + 1).padStart(2, '0');
-                            return `${y}-${m}-01`;
-                        })()}
-                        initialToDate={selectedDateKey}
-                    />
-                )}
-
-                <LeaveRequestModal
-                    isOpen={isLeaveModalOpen}
-                    onClose={() => setIsLeaveModalOpen(false)}
-                    initialDate={selectedDateKey}
-                    onLeaveUpdated={() => {
-                        fetchDayTimesheet();
-                        fetchMonthStats(calendarViewYear, calendarViewMonth);
-                        if (onSessionsUpdated) {
-                            onSessionsUpdated();
-                        }
-                    }}
+                </div>
+            )}
+            {/* Timesheet Print & View Modal */}
+            {isPrintModalOpen && (
+                <TimesheetPrintModal
+                    isOpen={isPrintModalOpen}
+                    onClose={() => setIsPrintModalOpen(false)}
+                    workerId={workerId || 0}
+                    workerName={workerName || 'Employee'}
+                    employeeNo={employeeNo}
+                    workerRole={workerRole}
+                    workerRate={workerRate}
+                    subDepartments={subDepartments}
+                    initialFromDate={(() => {
+                        const dt = parseDateKey(selectedDateKey);
+                        const y = dt.getFullYear();
+                        const m = String(dt.getMonth() + 1).padStart(2, '0');
+                        return `${y}-${m}-01`;
+                    })()}
+                    initialToDate={selectedDateKey}
                 />
-            </div>
+            )}
+
+            <LeaveRequestModal
+                isOpen={isLeaveModalOpen}
+                onClose={() => setIsLeaveModalOpen(false)}
+                initialDate={selectedDateKey}
+                onLeaveUpdated={() => {
+                    fetchDayTimesheet();
+                    fetchMonthStats(calendarViewYear, calendarViewMonth);
+                    if (onSessionsUpdated) {
+                        onSessionsUpdated();
+                    }
+                }}
+            />
         </div>
-    );
+    </div>
+);
 };

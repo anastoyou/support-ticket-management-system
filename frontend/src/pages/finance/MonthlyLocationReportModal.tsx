@@ -661,7 +661,7 @@ export const MonthlyLocationReportModal: React.FC<MonthlyLocationReportModalProp
 
   // 7-Tier Signatures Block Definition
   const signaturesList = [
-    { title: 'Prepared By', name: currentUser?.full_name || currentUser?.username || 'Site Accountant', role: 'Site Accountant' },
+    { title: 'Prepared By', name: currentUser?.full_name || currentUser?.username || 'Maintenance Supervisor', role: 'Maintenance Supervisor' },
     { title: 'Verify By MEngg', name: 'Maintenance Engineer', role: 'Maintenance Engineer' },
     { title: 'Verify By Engg', name: 'Project Engineer', role: 'Project Engineer' },
     { title: 'Accountant', name: 'Accounts Dept', role: 'Accounts Dept' },
