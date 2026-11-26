@@ -567,6 +567,18 @@ def serialize_claim_expense_summary(exp):
     }
 
 
+def _get_latest_payment_receipt_url(obj):
+    payments = list(obj.payments.all()) if hasattr(obj, 'payments') else []
+    payments.sort(key=lambda p: (p.paid_at or timezone.now(), p.payment_id), reverse=True)
+    for p in payments:
+        if getattr(p, 'receipt_image', None):
+            try:
+                return p.receipt_image.url
+            except Exception:
+                return str(p.receipt_image)
+    return None
+
+
 class WorkerClaimSerializer(serializers.ModelSerializer):
     worker_detail = serializers.SerializerMethodField()
     approved_by_detail = serializers.SerializerMethodField()
@@ -575,10 +587,14 @@ class WorkerClaimSerializer(serializers.ModelSerializer):
     approval_history = serializers.SerializerMethodField()
     approval_instances = serializers.SerializerMethodField()
     ledger_details = serializers.SerializerMethodField()
+    payment_receipt_image = serializers.SerializerMethodField()
 
     class Meta:
         model = WorkerClaim
         fields = '__all__'
+
+    def get_payment_receipt_image(self, obj):
+        return _get_latest_payment_receipt_url(obj)
 
     def get_worker_detail(self, obj):
         return serialize_user_summary(obj.worker)
@@ -743,10 +759,14 @@ class LedgerSerializer(serializers.ModelSerializer):
         source='ledger_batch', read_only=True)
     store_detail = serializers.SerializerMethodField()
     approval_history = serializers.SerializerMethodField()
+    payment_receipt_image = serializers.SerializerMethodField()
 
     class Meta:
         model = Ledger
         fields = '__all__'
+
+    def get_payment_receipt_image(self, obj):
+        return _get_latest_payment_receipt_url(obj)
 
     def get_created_by_detail(self, obj):
         return serialize_user_summary(obj.created_by)

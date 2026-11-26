@@ -325,12 +325,12 @@ export const BundlesSubpage: React.FC<BundlesSubpageProps> = ({
 
     const directMatch = bundleDirectInstances.length > 0
       ? (isBundleInReview
-          ? bundleDirectInstances.find(a => a.status === 'Pending')
-          : isBundleRework
-            ? [...bundleDirectInstances].reverse().find(a => a.status === 'Rework')
-            : isBundleRejected
-              ? [...bundleDirectInstances].reverse().find(a => a.status === 'Rejected')
-              : undefined) || bundleDirectInstances[bundleDirectInstances.length - 1]
+        ? bundleDirectInstances.find(a => a.status === 'Pending')
+        : isBundleRework
+          ? [...bundleDirectInstances].reverse().find(a => a.status === 'Rework')
+          : isBundleRejected
+            ? [...bundleDirectInstances].reverse().find(a => a.status === 'Rejected')
+            : undefined) || bundleDirectInstances[bundleDirectInstances.length - 1]
       : null;
 
     const matchingFromAll = (isBundleInReview ? allApprovals.find(a =>
@@ -682,8 +682,8 @@ export const BundlesSubpage: React.FC<BundlesSubpageProps> = ({
             const matchingStepItems = group.items.filter(i => i.step_name === step.step_name || i.step_order === step.step_order);
             const stepInst = matchingStepItems.length > 0
               ? (matchingStepItems.find(i => i.status === 'Pending' && (group.status === 'In Review' || group.status === 'Submitted')) ||
-                 (group.status === 'Rework' ? [...matchingStepItems].reverse().find(i => i.status === 'Rework') : undefined) ||
-                 matchingStepItems[matchingStepItems.length - 1])
+                (group.status === 'Rework' ? [...matchingStepItems].reverse().find(i => i.status === 'Rework') : undefined) ||
+                matchingStepItems[matchingStepItems.length - 1])
               : undefined;
 
             const isPending = !isFinished && (activePendingItem ? (stepOrderNum === activePendingOrder) : (stepInst?.status === 'Pending'));
@@ -1081,6 +1081,44 @@ export const BundlesSubpage: React.FC<BundlesSubpageProps> = ({
   const [isLoadingBatches, setIsLoadingBatches] = useState<boolean>(false);
   const [userSubDeptMap, setUserSubDeptMap] = useState<Record<number, number[]>>({});
   const employeeItemsPerPage = 12;
+
+  const getBundleUploadedReceiptUrl = (bundle: WorkerClaimItem): string | null => {
+    const directUrl =
+      (bundle as any)?.payment_receipt_image ||
+      (bundle as any)?.receipt_image ||
+      null;
+    if (directUrl) return directUrl;
+    const ledgerId = bundle.ledger_details?.ledger_id;
+    if (bundle.status === 'Paid' && ledgerId && Array.isArray(ledgers)) {
+      const parentLedger = ledgers.find((l) => l.ledger_id === ledgerId);
+      if ((parentLedger as any)?.payment_receipt_image) {
+        return (parentLedger as any).payment_receipt_image;
+      }
+    }
+    return null;
+  };
+
+  const openBundleReceiptPreview = (bundle: WorkerClaimItem) => {
+    const rawUrl = getBundleUploadedReceiptUrl(bundle);
+    if (setShowPaymentModal) {
+      setShowPaymentModal({
+        ...bundle,
+        payment_receipt_image: rawUrl || (bundle as any)?.payment_receipt_image || null,
+      } as any);
+      return;
+    }
+    if (!rawUrl) return;
+    const resolvedUrl = getMediaUrl(rawUrl);
+    const workerLabel =
+      bundle.worker_detail?.full_name ||
+      bundle.worker_detail?.username ||
+      (bundle as any).worker_name ||
+      'Worker';
+    setPreviewMediaUrl({
+      url: resolvedUrl,
+      title: `Signed Receipt • Bundle #${bundle.claim_id} (${workerLabel})`,
+    });
+  };
 
   // Frontend-based sorting for expanded bundle expenses table
   type BundleExpSortField = 'expense_id' | 'category' | 'remarks' | 'date' | 'store' | 'ticket' | 'amount';
@@ -2056,10 +2094,29 @@ export const BundlesSubpage: React.FC<BundlesSubpageProps> = ({
                                 <div className="inline-flex items-center gap-1.5 flex-wrap justify-end">
                                   {/* Paid Badge if already settled, otherwise Cash Settlement button */}
                                   {b.status === 'Paid' ? (
-                                    <span className="px-2 py-0.5 rounded text-[11px] font-semibold bg-teal-500/10 text-teal-600 dark:text-teal-400 border border-teal-500/20 inline-flex items-center gap-1 shrink-0">
-                                      <CheckCircle2 className="w-3.5 h-3.5 text-teal-600 dark:text-teal-400" />
-                                      <span>Settled</span>
-                                    </span>
+                                    <>
+                                      <span className="px-2 py-0.5 rounded text-[11px] font-semibold bg-teal-500/10 text-teal-600 dark:text-teal-400 border border-teal-500/20 inline-flex items-center gap-1 shrink-0">
+                                        <CheckCircle2 className="w-3.5 h-3.5 text-teal-600 dark:text-teal-400" />
+                                        <span>Settled</span>
+                                      </span>
+                                      <button
+                                        type="button"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          setLastActiveRowId(b.claim_id);
+                                          openBundleReceiptPreview(b);
+                                        }}
+                                        className="px-2 py-1 rounded bg-sky-500/10 hover:bg-sky-500/20 text-sky-700 dark:text-sky-300 border border-sky-500/30 text-[11px] font-semibold inline-flex items-center gap-1 cursor-pointer transition-colors shrink-0"
+                                        title={
+                                          getBundleUploadedReceiptUrl(b)
+                                            ? 'Preview uploaded settlement receipt'
+                                            : 'View settlement details & payment slip'
+                                        }
+                                      >
+                                        <Eye className="w-3 h-3" />
+                                        <span>Preview</span>
+                                      </button>
+                                    </>
                                   ) : (
                                     setShowPaymentModal && (
                                       <Can permission={["finance.add_payment", "finance.change_payment", "finance.single_payment_process"] as any}>
@@ -2488,9 +2545,27 @@ export const BundlesSubpage: React.FC<BundlesSubpageProps> = ({
                                   </span>
                                   <div className="flex items-center gap-2">
                                     {b.status === 'Paid' && (
-                                      <span className="px-2 py-0.5 rounded text-[11px] font-semibold bg-teal-500/10 text-teal-600 dark:text-teal-400 border border-teal-500/20 flex items-center gap-1 shrink-0">
-                                        <CheckCircle2 className="w-3.5 h-3.5 text-teal-600 dark:text-teal-400" /> Settled
-                                      </span>
+                                      <>
+                                        <span className="px-2 py-0.5 rounded text-[11px] font-semibold bg-teal-500/10 text-teal-600 dark:text-teal-400 border border-teal-500/20 flex items-center gap-1 shrink-0">
+                                          <CheckCircle2 className="w-3.5 h-3.5 text-teal-600 dark:text-teal-400" /> Settled
+                                        </span>
+                                        <button
+                                          type="button"
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            openBundleReceiptPreview(b);
+                                          }}
+                                          className="px-2 py-0.5 rounded bg-sky-500/10 hover:bg-sky-500/20 text-sky-700 dark:text-sky-300 border border-sky-500/30 text-[11px] font-semibold inline-flex items-center gap-1 cursor-pointer transition-colors shrink-0"
+                                          title={
+                                            getBundleUploadedReceiptUrl(b)
+                                              ? 'Preview uploaded settlement receipt'
+                                              : 'View settlement details & payment slip'
+                                          }
+                                        >
+                                          <Eye className="w-3 h-3" />
+                                          <span>Preview</span>
+                                        </button>
+                                      </>
                                     )}
                                     <button
                                       onClick={(e) => {
@@ -3103,6 +3178,21 @@ export const BundlesSubpage: React.FC<BundlesSubpageProps> = ({
                 </div>
               </div>
               <div className="flex items-center gap-2">
+                {selectedBundleForView.status === 'Paid' && (
+                  <button
+                    type="button"
+                    onClick={() => openBundleReceiptPreview(selectedBundleForView)}
+                    className="px-3 py-1.5 rounded bg-sky-500/10 hover:bg-sky-500/20 text-sky-700 dark:text-sky-300 border border-sky-500/30 text-xs font-semibold inline-flex items-center gap-1.5 cursor-pointer transition-colors"
+                    title={
+                      getBundleUploadedReceiptUrl(selectedBundleForView)
+                        ? 'Preview uploaded settlement receipt'
+                        : 'View settlement details & payment slip'
+                    }
+                  >
+                    <Eye className="w-3.5 h-3.5" />
+                    <span>Preview</span>
+                  </button>
+                )}
                 {(() => {
                   const isModalLedgerApproved = Boolean(
                     (selectedBundleForView.ledger_details && (selectedBundleForView.ledger_details.status === 'Approved' || selectedBundleForView.ledger_details.status === 'Paid')) ||

@@ -23,7 +23,8 @@ class PublicProxyUrlMiddleware:
 
     def __init__(self, get_response):
         self.get_response = get_response
-        raw_url = (getattr(settings, 'PUBLIC_BASE_URL', '') or '').strip().rstrip('/')
+        raw_url = (getattr(settings, 'PUBLIC_BASE_URL', '')
+                   or '').strip().rstrip('/')
         parsed = urlparse(raw_url) if raw_url else None
         self.scheme = parsed.scheme if parsed and parsed.scheme and parsed.netloc else None
         self.netloc = parsed.netloc if parsed and parsed.scheme and parsed.netloc else None
@@ -32,7 +33,8 @@ class PublicProxyUrlMiddleware:
         if self.scheme and self.netloc and 'HTTP_X_FORWARDED_HOST' not in request.META:
             raw_host = request.META.get('HTTP_HOST', '')
             host_only = raw_host.split(':')[0].lower()
-            has_proxy_marker = any(k in request.META for k in _PROXY_HEADER_KEYS)
+            has_proxy_marker = any(
+                k in request.META for k in _PROXY_HEADER_KEYS)
             if has_proxy_marker or host_only in _LOOPBACK_HOSTS:
                 request.META['HTTP_X_FORWARDED_HOST'] = self.netloc
                 request.META['HTTP_X_FORWARDED_PROTO'] = self.scheme
@@ -42,6 +44,7 @@ class PublicProxyUrlMiddleware:
 
 def get_current_request():
     return getattr(_thread_locals, 'request', None)
+
 
 class ThreadLocalRequestMiddleware:
     def __init__(self, get_response):

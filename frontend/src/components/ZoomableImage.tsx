@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { ZoomIn, ZoomOut, RotateCcw, RotateCw, X } from 'lucide-react';
+import { ZoomIn, ZoomOut, RotateCcw, RotateCw, Printer, X } from 'lucide-react';
+import { getMediaUrl } from '@/utils/media';
 
 export interface ZoomableImageProps {
   src: string;
@@ -276,10 +277,7 @@ export interface ZoomableLightboxProps {
 }
 
 const resolveMediaSrc = (url: string): string => {
-  if (url.startsWith('http') || url.startsWith('blob:') || url.startsWith('data:')) {
-    return url;
-  }
-  return `${import.meta.env.VITE_API_URL || 'http://localhost:8000'}${url}`;
+  return getMediaUrl(url);
 };
 
 /**
@@ -331,6 +329,83 @@ export const ZoomableLightbox: React.FC<ZoomableLightboxProps> = ({
   const isPdf =
     resolvedUrl.toLowerCase().endsWith('.pdf') || resolvedUrl.toLowerCase().includes('/pdf');
 
+  const handlePrintMedia = async () => {
+    if (isPdf) {
+      const win = window.open(resolvedUrl, '_blank', 'noopener,noreferrer');
+      if (win) {
+        win.addEventListener('load', () => {
+          try {
+            win.focus();
+            win.print();
+          } catch {
+            // Fallback to browser PDF viewer print controls
+          }
+        });
+      }
+      return;
+    }
+
+    const iframe = document.createElement('iframe');
+    iframe.style.position = 'fixed';
+    iframe.style.left = '-10000px';
+    iframe.style.top = '0';
+    iframe.style.width = '210mm';
+    iframe.style.height = '297mm';
+    iframe.style.border = 'none';
+    iframe.style.zIndex = '-9999';
+    document.body.appendChild(iframe);
+
+    const win = iframe.contentWindow;
+    const doc = iframe.contentDocument;
+    if (!win || !doc) {
+      if (document.body.contains(iframe)) document.body.removeChild(iframe);
+      return;
+    }
+
+    doc.open();
+    doc.write(
+      '<!DOCTYPE html><html><head><meta charset="utf-8" /><style>@page{margin:8mm;}html,body{margin:0;padding:0;width:100%;height:100%;display:flex;align-items:center;justify-content:center;background:#fff;}img{max-width:100%;max-height:100vh;object-fit:contain;}</style></head><body></body></html>'
+    );
+    doc.close();
+
+    const img = doc.createElement('img');
+    img.alt = media.title || 'Uploaded Document';
+    if (rotation % 360 !== 0) {
+      img.style.transform = `rotate(${rotation}deg)`;
+    }
+    img.src = resolvedUrl;
+    doc.body.appendChild(img);
+
+    await Promise.race([
+      new Promise<void>((resolve) => {
+        if (img.complete) {
+          resolve();
+          return;
+        }
+        img.addEventListener('load', () => resolve(), { once: true });
+        img.addEventListener('error', () => resolve(), { once: true });
+      }),
+      new Promise<void>((resolve) => setTimeout(resolve, 3000)),
+    ]);
+    await new Promise((r) => setTimeout(r, 80));
+
+    const cleanup = () => {
+      if (document.body.contains(iframe)) {
+        document.body.removeChild(iframe);
+      }
+    };
+
+    try {
+      win.addEventListener('afterprint', cleanup, { once: true });
+      win.focus();
+      win.print();
+    } catch {
+      window.open(resolvedUrl, '_blank', 'noopener,noreferrer');
+    } finally {
+      setTimeout(cleanup, 60000);
+    }
+  };
+
   return (
     <div
       ref={overlayRef}
@@ -348,11 +423,20 @@ export const ZoomableLightbox: React.FC<ZoomableLightboxProps> = ({
           {media.title || 'Media Preview'}
         </span>
         <div className="flex items-center gap-2 shrink-0">
+          <button
+            type="button"
+            onClick={handlePrintMedia}
+            className="px-2.5 py-1.5 rounded bg-white/15 hover:bg-white/25 text-white text-xs font-semibold inline-flex items-center gap-1.5 transition-colors cursor-pointer"
+            title="Print Document"
+          >
+            <Printer className="w-4 h-4" />
+            <span className="hidden sm:inline">Print</span>
+          </button>
           {!isPdf && (
             <button
               type="button"
               onClick={() => setRotation((r) => (r + 90) % 360)}
-              className="p-2 rounded-lg text-white/80 hover:text-white hover:bg-white/15 transition-colors cursor-pointer"
+              className="p-2 rounded text-white/80 hover:text-white hover:bg-white/15 transition-colors cursor-pointer"
               title="Rotate 90°"
             >
               <RotateCw className="w-4 h-4" />
@@ -361,7 +445,7 @@ export const ZoomableLightbox: React.FC<ZoomableLightboxProps> = ({
           <button
             type="button"
             onClick={onClose}
-            className="p-2 rounded-lg text-white/80 hover:text-white hover:bg-white/15 transition-colors cursor-pointer"
+            className="p-2 rounded text-white/80 hover:text-white hover:bg-white/15 transition-colors cursor-pointer"
             aria-label="Close Preview"
           >
             <X className="w-5 h-5" />

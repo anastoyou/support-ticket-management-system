@@ -2,9 +2,10 @@ import React, { useState, useRef, useEffect } from 'react';
 import { Eye, FileText, Trash2, Headphones, X, Download, Play, Pause, Image as ImageIcon, Video, RotateCcw, RotateCw, RefreshCw, Save, Check, Loader2, Volume2, VolumeX, ChevronLeft, ChevronRight } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ZoomableImage } from '@/components/ZoomableImage';
+import { MEDIA_BASE, getMediaUrl } from '@/utils/media';
 
 export const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api';
-export const MEDIA_BASE = import.meta.env.VITE_MEDIA_URL || window.location.origin;
+export { MEDIA_BASE, getMediaUrl };
 
 // ─── Interfaces ──────────────────────────────────────────────────────────────
 
@@ -122,16 +123,6 @@ export interface Media {
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
-
-export const getMediaUrl = (url: string) => {
-    if (!url) return '';
-    if (url.startsWith('http')) return url;
-    const base = MEDIA_BASE.replace(/\/$/, '');
-    if (base.startsWith('/') && url.startsWith(base)) {
-        return url;
-    }
-    return `${MEDIA_BASE}${url.startsWith('/') ? '' : '/'}${url}`;
-};
 
 export const isImage = (name: string) => /\.(jpg|jpeg|png|gif|webp|bmp|svg)$/i.test(name);
 export const isAudio = (name: string) => name.toLowerCase().includes('voice_note') || name.toLowerCase().includes('recording') || /\.(mp3|wav|ogg|m4a|aac)$/i.test(name);

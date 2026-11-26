@@ -1196,1349 +1196,1355 @@ export const FinanceView: React.FC = () => {
     hasCurrentUserApproved?: boolean
   ) => renderFinanceStatusBadge(status, isActionableForMe, stepName, hasCurrentUserApproved);
 
-// Helper date checker
-const isWithinDateRange = (targetDateStr: string, fromDateStr: string, toDateStr: string) => {
-  if (!targetDateStr) return true;
-  const target = new Date(targetDateStr).getTime();
-  if (fromDateStr && target < new Date(fromDateStr).getTime()) return false;
-  if (toDateStr && target > new Date(toDateStr + 'T23:59:59').getTime()) return false;
-  return true;
-};
-
-// Filtered lists for main tables
-const filteredBundles = useMemo(() => {
-  const trimmedQuery = searchQuery.trim();
-  const bundleMatch = trimmedQuery ? (
-    trimmedQuery.match(/^(?:bundle|claim|b)?[\s\-_#]*(\d+)$/i) ||
-    trimmedQuery.match(/(?:bundle|claim|b)[\s\-_#]+(\d+)/i) ||
-    trimmedQuery.match(/#(\d+)/) ||
-    trimmedQuery.match(/\b\d+\b/)
-  ) : null;
-  const targetBundleId = bundleMatch ? Number(bundleMatch[1] || bundleMatch[0]) : null;
-
-  if (subpage === 'bundles') {
-    if (!targetBundleId) return bundles;
-    return [...bundles].sort((a, b) => {
-      if (a.claim_id === targetBundleId && b.claim_id !== targetBundleId) return -1;
-      if (b.claim_id === targetBundleId && a.claim_id !== targetBundleId) return 1;
-      return 0;
-    });
-  }
-
-  const filtered = bundles.filter((b) => {
-    if (statusFilter !== 'ALL') {
-      const filterLower = statusFilter.toLowerCase().trim();
-      const bStatusLower = (b.status || '').toLowerCase().trim();
-      const matchesStatus = (filterLower === 'in review' || filterLower === 'submitted')
-        ? (bStatusLower === 'in review' || bStatusLower === 'submitted')
-        : bStatusLower === filterLower;
-      if (!matchesStatus && b.claim_id !== targetBundleId) return false;
-    }
-    if (ledgerFilter === 'IN_LEDGER' && !b.ledger_details && b.claim_id !== targetBundleId) return false;
-    if (ledgerFilter === 'NOT_IN_LEDGER' && b.ledger_details && b.claim_id !== targetBundleId) return false;
-    if (!isWithinDateRange(b.claim_date, filterDateFrom, filterDateTo) && b.claim_id !== targetBundleId) return false;
-    if (trimmedQuery) {
-      if (targetBundleId && b.claim_id === targetBundleId) return true;
-      const query = trimmedQuery.toLowerCase();
-      const workerName = (b.worker_detail?.full_name || b.worker_detail?.username || '').toLowerCase();
-      const claimIdStr = b.claim_id.toString();
-      const ticketStr = b.ticket_details?.work_order_no?.toLowerCase() || '';
-      const remarksStr = (b.remarks || '').toLowerCase();
-      const ledgerName = (b.ledger_details?.group_name || '').toLowerCase();
-      return workerName.includes(query) || claimIdStr.includes(query) || ticketStr.includes(query) || remarksStr.includes(query) || ledgerName.includes(query);
-    }
+  // Helper date checker
+  const isWithinDateRange = (targetDateStr: string, fromDateStr: string, toDateStr: string) => {
+    if (!targetDateStr) return true;
+    const target = new Date(targetDateStr).getTime();
+    if (fromDateStr && target < new Date(fromDateStr).getTime()) return false;
+    if (toDateStr && target > new Date(toDateStr + 'T23:59:59').getTime()) return false;
     return true;
-  });
+  };
 
-  if (targetBundleId) {
-    return [...filtered].sort((a, b) => {
-      if (a.claim_id === targetBundleId && b.claim_id !== targetBundleId) return -1;
-      if (b.claim_id === targetBundleId && a.claim_id !== targetBundleId) return 1;
-      return 0;
+  // Filtered lists for main tables
+  const filteredBundles = useMemo(() => {
+    const trimmedQuery = searchQuery.trim();
+    const bundleMatch = trimmedQuery ? (
+      trimmedQuery.match(/^(?:bundle|claim|b)?[\s\-_#]*(\d+)$/i) ||
+      trimmedQuery.match(/(?:bundle|claim|b)[\s\-_#]+(\d+)/i) ||
+      trimmedQuery.match(/#(\d+)/) ||
+      trimmedQuery.match(/\b\d+\b/)
+    ) : null;
+    const targetBundleId = bundleMatch ? Number(bundleMatch[1] || bundleMatch[0]) : null;
+
+    if (subpage === 'bundles') {
+      if (!targetBundleId) return bundles;
+      return [...bundles].sort((a, b) => {
+        if (a.claim_id === targetBundleId && b.claim_id !== targetBundleId) return -1;
+        if (b.claim_id === targetBundleId && a.claim_id !== targetBundleId) return 1;
+        return 0;
+      });
+    }
+
+    const filtered = bundles.filter((b) => {
+      if (statusFilter !== 'ALL') {
+        const filterLower = statusFilter.toLowerCase().trim();
+        const bStatusLower = (b.status || '').toLowerCase().trim();
+        const matchesStatus = (filterLower === 'in review' || filterLower === 'submitted')
+          ? (bStatusLower === 'in review' || bStatusLower === 'submitted')
+          : bStatusLower === filterLower;
+        if (!matchesStatus && b.claim_id !== targetBundleId) return false;
+      }
+      if (ledgerFilter === 'IN_LEDGER' && !b.ledger_details && b.claim_id !== targetBundleId) return false;
+      if (ledgerFilter === 'NOT_IN_LEDGER' && b.ledger_details && b.claim_id !== targetBundleId) return false;
+      if (!isWithinDateRange(b.claim_date, filterDateFrom, filterDateTo) && b.claim_id !== targetBundleId) return false;
+      if (trimmedQuery) {
+        if (targetBundleId && b.claim_id === targetBundleId) return true;
+        const query = trimmedQuery.toLowerCase();
+        const workerName = (b.worker_detail?.full_name || b.worker_detail?.username || '').toLowerCase();
+        const claimIdStr = b.claim_id.toString();
+        const ticketStr = b.ticket_details?.work_order_no?.toLowerCase() || '';
+        const remarksStr = (b.remarks || '').toLowerCase();
+        const ledgerName = (b.ledger_details?.group_name || '').toLowerCase();
+        return workerName.includes(query) || claimIdStr.includes(query) || ticketStr.includes(query) || remarksStr.includes(query) || ledgerName.includes(query);
+      }
+      return true;
     });
-  }
-  return filtered;
-}, [subpage, bundles, statusFilter, ledgerFilter, filterDateFrom, filterDateTo, searchQuery]);
 
-const filteredLedgers = useMemo(() => {
-  if (subpage === 'ledgers') {
-    return ledgers;
-  }
-  // Group ledgers by group ID to determine each Ledger Group's unified status
-  const groupBatchesMap = new Map<string | number, LedgerItem[]>();
-  for (const l of ledgers) {
-    const gId = l.ledger_group_detail?.ledger_group_id || l.ledger_group || `ungrouped_${l.ledger_id}`;
-    if (!groupBatchesMap.has(gId)) {
-      groupBatchesMap.set(gId, []);
+    if (targetBundleId) {
+      return [...filtered].sort((a, b) => {
+        if (a.claim_id === targetBundleId && b.claim_id !== targetBundleId) return -1;
+        if (b.claim_id === targetBundleId && a.claim_id !== targetBundleId) return 1;
+        return 0;
+      });
     }
-    groupBatchesMap.get(gId)!.push(l);
-  }
+    return filtered;
+  }, [subpage, bundles, statusFilter, ledgerFilter, filterDateFrom, filterDateTo, searchQuery]);
 
-  const matchingGroupIds = new Set<string | number>();
-
-  for (const [gId, groupBatches] of groupBatchesMap.entries()) {
-    const matchedDynGroup = ledgerGroups?.find(g => String(g.ledger_group_id) === String(gId));
-    const isPaid = Boolean(
-      matchedDynGroup?.is_paid ||
-      groupBatches.some(b => b.ledger_group_detail?.is_paid) ||
-      (groupBatches.length > 0 && groupBatches.every(b => b.status === 'Paid'))
-    );
-    const isCompleted = Boolean(
-      matchedDynGroup?.is_completed ||
-      groupBatches.some(b => b.ledger_group_detail?.is_completed)
-    );
-
-    // Determine unified Ledger Group status
-    let groupStatus = 'Draft';
-    if (isPaid) {
-      groupStatus = 'Paid';
-    } else if (groupBatches.some(b => b.status === 'Rework')) {
-      groupStatus = 'Rework';
-    } else if (groupBatches.some(b => b.status === 'In Review' || b.status === 'Submitted')) {
-      groupStatus = 'In Review';
-    } else if (groupBatches.some(b => b.status === 'Rejected')) {
-      groupStatus = 'Rejected';
-    } else if (isCompleted || (groupBatches.length > 0 && groupBatches.every(b => b.status === 'Approved' || b.status === 'Paid'))) {
-      groupStatus = 'Approved';
-    } else {
-      groupStatus = 'Draft';
+  const filteredLedgers = useMemo(() => {
+    if (subpage === 'ledgers') {
+      return ledgers;
     }
-
-    // Check Status Filter against Ledger Group Status
-    if (statusFilter !== 'ALL') {
-      const filterLower = statusFilter.toLowerCase();
-      const statusLower = groupStatus.toLowerCase();
-      const matchesStatus = filterLower === 'in review'
-        ? (statusLower === 'in review' || statusLower === 'submitted')
-        : statusLower === filterLower;
-
-      if (!matchesStatus) {
-        continue;
+    // Group ledgers by group ID to determine each Ledger Group's unified status
+    const groupBatchesMap = new Map<string | number, LedgerItem[]>();
+    for (const l of ledgers) {
+      const gId = l.ledger_group_detail?.ledger_group_id || l.ledger_group || `ungrouped_${l.ledger_id}`;
+      if (!groupBatchesMap.has(gId)) {
+        groupBatchesMap.set(gId, []);
       }
+      groupBatchesMap.get(gId)!.push(l);
     }
 
-    // Check Date Range Filter
-    const groupCreatedAt = matchedDynGroup?.created_at || groupBatches[0]?.created_at;
-    const isGroupDateInRange = groupBatches.some(b => isWithinDateRange(b.created_at, filterDateFrom, filterDateTo)) ||
-      (groupCreatedAt && isWithinDateRange(groupCreatedAt, filterDateFrom, filterDateTo));
+    const matchingGroupIds = new Set<string | number>();
 
-    if (!isGroupDateInRange) {
-      continue;
-    }
-
-    // Check Search Query
-    if (searchQuery.trim()) {
-      const query = searchQuery.toLowerCase();
-      const gName = (matchedDynGroup?.group_name || groupBatches[0]?.ledger_group_detail?.group_name || '').toLowerCase();
-      const gIdStr = String(gId).toLowerCase();
-      const creatorName = (groupBatches[0]?.created_by_detail?.full_name || groupBatches[0]?.created_by_detail?.username || '').toLowerCase();
-
-      const matchesQuery = gName.includes(query) ||
-        gIdStr.includes(query) ||
-        creatorName.includes(query) ||
-        groupBatches.some(b => {
-          const bIdStr = String(b.ledger_id);
-          const bName = (b.ledger_batch_detail?.batch_name || '').toLowerCase();
-          const bRemarks = (b.remarks || '').toLowerCase();
-          const bundlesMatch = (b.bundles || []).some((bundle: any) => {
-            const bundleId = String(bundle.claim_id || bundle.id || '');
-            const worker = (bundle.worker_detail?.full_name || bundle.worker_detail?.username || '').toLowerCase();
-            return bundleId.includes(query) || worker.includes(query);
-          });
-          return bIdStr.includes(query) || bName.includes(query) || bRemarks.includes(query) || bundlesMatch;
-        });
-
-      if (!matchesQuery) {
-        continue;
-      }
-    }
-
-    matchingGroupIds.add(gId);
-  }
-
-  return ledgers.filter(l => {
-    const gId = l.ledger_group_detail?.ledger_group_id || l.ledger_group || `ungrouped_${l.ledger_id}`;
-    return matchingGroupIds.has(gId);
-  });
-}, [ledgers, ledgerGroups, statusFilter, filterDateFrom, filterDateTo, searchQuery]);
-
-const roleFilteredApprovals = useMemo(() => {
-  return approvals.filter((a) => {
-    if (roleFilterOnly && currentUser) {
-      const userRoleName = (
-        (currentUser?.role as any)?.role_name ||
-        (typeof currentUser?.role === 'string' ? currentUser.role : '') ||
-        ''
-      ).toLowerCase().trim();
-
-      const isAdmin = !!(
-        currentUser?.is_superuser ||
-        (currentUser as any)?.is_staff ||
-        userRoleName === 'administrator' ||
-        userRoleName === 'admin'
+    for (const [gId, groupBatches] of groupBatchesMap.entries()) {
+      const matchedDynGroup = ledgerGroups?.find(g => String(g.ledger_group_id) === String(gId));
+      const isPaid = Boolean(
+        matchedDynGroup?.is_paid ||
+        groupBatches.some(b => b.ledger_group_detail?.is_paid) ||
+        (groupBatches.length > 0 && groupBatches.every(b => b.status === 'Paid'))
       );
-      if (isAdmin) return true;
+      const isCompleted = Boolean(
+        matchedDynGroup?.is_completed ||
+        groupBatches.some(b => b.ledger_group_detail?.is_completed)
+      );
 
-      if (a.can_action) return true;
-
-      const currentUsername = currentUser.username;
-      const assignedUsers = a.workflow_steps?.flatMap(s => s.assigned_users_names || []) || [];
-      if (currentUsername && assignedUsers.includes(currentUsername)) return true;
-
-      const userRoleStr = (
-        (currentUser?.role as any)?.role_name ||
-        (typeof currentUser?.role === 'string' ? currentUser.role : '') ||
-        ''
-      ).toLowerCase().trim();
-
-      const stepRoleStr = (a.assigned_role_name || '').toLowerCase().trim();
-      if (userRoleStr && stepRoleStr && stepRoleStr === userRoleStr) {
-        return true;
-      }
-      return false;
-    }
-    return true;
-  });
-}, [approvals, roleFilterOnly, currentUser]);
-
-const displayedApprovals = useMemo(() => {
-  return roleFilteredApprovals.filter((a) => {
-    if (approvalEntityTab !== 'ALL') {
-      const entityType = a.target_summary?.type || (a.claim ? 'Bundle' : (a.ledger ? 'Ledger' : 'Expense'));
-      if (entityType !== approvalEntityTab) return false;
-    }
-    if (approvalStatusTab !== 'ALL') {
-      if (a.status !== approvalStatusTab) return false;
-    }
-    if (statusFilter !== 'ALL' && a.status !== statusFilter) return false;
-    if (!isWithinDateRange(a.created_at, filterDateFrom, filterDateTo)) return false;
-    if (searchQuery.trim()) {
-      const query = searchQuery.toLowerCase();
-      const step = (a.step_name || '').toLowerCase();
-      const role = (a.assigned_role_name || '').toLowerCase();
-      const targetLabel = a.target_summary?.label?.toLowerCase() || '';
-      const storeName = a.target_summary?.store_name?.toLowerCase() || '';
-      const workerName = a.target_summary?.worker?.toLowerCase() || '';
-      return step.includes(query) || role.includes(query) || targetLabel.includes(query) || storeName.includes(query) || workerName.includes(query);
-    }
-    return true;
-  });
-}, [roleFilteredApprovals, approvalEntityTab, approvalStatusTab, statusFilter, filterDateFrom, filterDateTo, searchQuery]);
-
-const filteredPayments = useMemo(() => {
-  return payments.filter((p) => {
-    if (!isWithinDateRange(p.paid_at, filterDateFrom, filterDateTo)) return false;
-    if (searchQuery.trim()) {
-      const query = searchQuery.toLowerCase();
-      const method = (p.payment_method || '').toLowerCase();
-      const ref = (p.transaction_reference || '').toLowerCase();
-      const idStr = p.payment_id.toString();
-      return method.includes(query) || ref.includes(query) || idStr.includes(query);
-    }
-    return true;
-  });
-}, [payments, filterDateFrom, filterDateTo, searchQuery]);
-
-const uniqueExpenseWorkers = useMemo(() => {
-  const map = new Map<number, {
-    id: number;
-    name: string;
-    username: string;
-    employee_no?: string;
-    profile_image?: string | null;
-    department_name?: string;
-    sub_departments?: { sub_department_id: number; sub_department_name: string }[];
-    unclaimed_count: number;
-    unclaimed_total: number;
-  }>();
-  unclaimedExpenses.forEach((exp) => {
-    if (exp.is_claimed || exp.claim) return;
-    if (!isWithinDateRange(exp.expense_date, expenseFilterFrom, expenseFilterTo)) return;
-    const workerId = getUserId(exp.worker) ?? getUserId(exp.worker_detail) ?? getUserId((exp as any).added_by);
-    if (workerId !== null) {
-      const workerObj = typeof exp.worker === 'object' && exp.worker ? exp.worker : (exp.worker_detail || (exp as any).added_by);
-      const displayName = workerObj?.full_name || workerObj?.username || `Worker ${workerId}`;
-      const deptName = (exp.ticket_details as any)?.department_name || (exp.expense_type_detail as any)?.department_name || (exp.expense_type as any)?.department?.department_name || 'General Maintenance';
-      const amt = parseFloat(exp.amount || '0');
-      const profImg = workerObj?.profile_image || (typeof exp.worker === 'object' ? exp.worker?.profile_image : null) || exp.worker_detail?.profile_image || null;
-      const subDepts = (workerObj as any)?.sub_departments || (typeof exp.worker === 'object' ? (exp.worker as any)?.sub_departments : null) || (exp.worker_detail as any)?.sub_departments || [];
-      const isEligible = (exp.expense_type && (exp.expense_type as any).approve_required === false) ||
-        (exp.expense_type_detail && (exp.expense_type_detail as any).approve_required === false) ||
-        exp.approved === true || (exp.approved as any) === 'true' || (exp.approved as any) === 1 ||
-        exp.status_display === 'Approved';
-
-      const existing = map.get(workerId);
-      if (existing) {
-        if (isEligible) {
-          existing.unclaimed_count += 1;
-          existing.unclaimed_total += amt;
-        }
-        if (workerObj?.full_name && (!existing.name || existing.name.startsWith('Worker ') || existing.name === existing.username)) {
-          existing.name = workerObj.full_name;
-        }
-        if (!existing.employee_no && workerObj?.employee_no) {
-          existing.employee_no = workerObj.employee_no;
-        }
-        if (!existing.username && workerObj?.username) {
-          existing.username = workerObj.username;
-        }
-        if (!existing.department_name && deptName) {
-          existing.department_name = deptName;
-        }
-        if (!existing.profile_image && profImg) {
-          existing.profile_image = profImg;
-        }
-        if ((!existing.sub_departments || existing.sub_departments.length === 0) && subDepts.length > 0) {
-          existing.sub_departments = subDepts;
-        }
+      // Determine unified Ledger Group status
+      let groupStatus = 'Draft';
+      if (isPaid) {
+        groupStatus = 'Paid';
+      } else if (groupBatches.some(b => b.status === 'Rework')) {
+        groupStatus = 'Rework';
+      } else if (groupBatches.some(b => b.status === 'In Review' || b.status === 'Submitted')) {
+        groupStatus = 'In Review';
+      } else if (groupBatches.some(b => b.status === 'Rejected')) {
+        groupStatus = 'Rejected';
+      } else if (isCompleted || (groupBatches.length > 0 && groupBatches.every(b => b.status === 'Approved' || b.status === 'Paid'))) {
+        groupStatus = 'Approved';
       } else {
-        map.set(workerId, {
-          id: workerId,
-          name: displayName,
-          username: workerObj?.username || '',
-          employee_no: workerObj?.employee_no || '',
-          profile_image: profImg,
-          department_name: deptName,
-          sub_departments: subDepts,
-          unclaimed_count: isEligible ? 1 : 0,
-          unclaimed_total: isEligible ? amt : 0
-        });
-      }
-    }
-  });
-  return Array.from(map.values());
-}, [unclaimedExpenses, expenseFilterFrom, expenseFilterTo]);
-
-const filteredUnclaimedExpenses = useMemo(() => {
-  const list = unclaimedExpenses.filter((exp) => {
-    if (exp.is_claimed || exp.claim) return false;
-    if (!isWithinDateRange(exp.expense_date, expenseFilterFrom, expenseFilterTo)) return false;
-
-    // Filter by Technician / Employee selection
-    if (expenseSearchWorker.trim()) {
-      const query = expenseSearchWorker.toLowerCase().trim();
-      const workerObj = typeof exp.worker === 'object' && exp.worker ? exp.worker : (exp.worker_detail || (exp as any).added_by);
-      const workerId = getUserId(exp.worker) ?? getUserId(exp.worker_detail) ?? getUserId((exp as any).added_by);
-
-      const fullName = (workerObj?.full_name || '').toLowerCase();
-      const username = (workerObj?.username || '').toLowerCase();
-      const empNo = (workerObj?.employee_no || '').toLowerCase();
-      const workerIdStr = workerId !== null && workerId !== undefined ? String(workerId) : '';
-      const workerLabel = `worker ${workerIdStr}`;
-
-      const matchedWorker = uniqueExpenseWorkers.find(
-        w => w.name.toLowerCase() === query ||
-          (w.username && w.username.toLowerCase() === query) ||
-          (w.employee_no && w.employee_no.toLowerCase() === query) ||
-          String(w.id) === query
-      );
-
-      let isMatch = false;
-      if (matchedWorker && workerId !== null) {
-        isMatch = (workerId === matchedWorker.id) ||
-          (Boolean(matchedWorker.username) && (username === matchedWorker.username?.toLowerCase())) ||
-          (Boolean(matchedWorker.employee_no) && (empNo === matchedWorker.employee_no?.toLowerCase()));
+        groupStatus = 'Draft';
       }
 
-      if (!isMatch) {
-        isMatch = fullName.includes(query) ||
-          username.includes(query) ||
-          empNo.includes(query) ||
-          workerIdStr === query ||
-          workerLabel.includes(query);
+      // Check Status Filter against Ledger Group Status
+      if (statusFilter !== 'ALL') {
+        const filterLower = statusFilter.toLowerCase();
+        const statusLower = groupStatus.toLowerCase();
+        const matchesStatus = filterLower === 'in review'
+          ? (statusLower === 'in review' || statusLower === 'submitted')
+          : statusLower === filterLower;
+
+        if (!matchesStatus) {
+          continue;
+        }
       }
 
-      if (!isMatch) return false;
-    }
+      // Check Date Range Filter
+      const groupCreatedAt = matchedDynGroup?.created_at || groupBatches[0]?.created_at;
+      const isGroupDateInRange = groupBatches.some(b => isWithinDateRange(b.created_at, filterDateFrom, filterDateTo)) ||
+        (groupCreatedAt && isWithinDateRange(groupCreatedAt, filterDateFrom, filterDateTo));
 
-    // Search by Expense Details (Ticket #, Expense Type/Name, Remarks, Store, Expense ID, Amount)
-    if (expenseSearchText.trim()) {
-      const query = expenseSearchText.toLowerCase();
-      const ticketNo = exp.ticket_details?.work_order_no?.toLowerCase() || '';
-      const ticketTitle = exp.ticket_details?.title?.toLowerCase() || '';
-      const expIdStr = exp.expense_id.toString();
-      const remarksStr = (exp.remarks || '').toLowerCase();
-      const expTypeStr = (exp.expense_type_detail?.expense_name || exp.expense_type?.expense_name || '').toLowerCase();
-      const storeStr = (exp.responsible_store?.store_name || '').toLowerCase();
-      const amountStr = exp.amount ? exp.amount.toString() : '';
-
-      const matches = ticketNo.includes(query) ||
-        ticketTitle.includes(query) ||
-        expIdStr.includes(query) ||
-        remarksStr.includes(query) ||
-        expTypeStr.includes(query) ||
-        storeStr.includes(query) ||
-        amountStr.includes(query);
-      if (!matches) return false;
-    }
-
-    return true;
-  });
-
-  // Sort: Approved expenses first (top), unapproved expenses at the bottom
-  return list.sort((a, b) => {
-    const aApproved = a.approved === true || (a.approved as any) === 'true' || (a.approved as any) === 1 || ((a.expense_type as any)?.approve_required === false) || ((a.expense_type_detail as any)?.approve_required === false) || a.status_display === 'Approved';
-    const bApproved = b.approved === true || (b.approved as any) === 'true' || (b.approved as any) === 1 || ((b.expense_type as any)?.approve_required === false) || ((b.expense_type_detail as any)?.approve_required === false) || b.status_display === 'Approved';
-
-    if (aApproved && !bApproved) return -1;
-    if (!aApproved && bApproved) return 1;
-
-    // Secondary sort: by expense date descending, then expense ID descending
-    const dateA = new Date(a.expense_date || 0).getTime();
-    const dateB = new Date(b.expense_date || 0).getTime();
-    if (dateB !== dateA) return dateB - dateA;
-    return b.expense_id - a.expense_id;
-  });
-}, [unclaimedExpenses, expenseSearchWorker, expenseSearchText, expenseFilterFrom, expenseFilterTo, uniqueExpenseWorkers]);
-
-const selectedExpensesTotal = useMemo(() => {
-  return unclaimedExpenses
-    .filter((exp) => selectedExpenseIds.includes(exp.expense_id))
-    .reduce((sum, exp) => sum + parseFloat(exp.amount || '0'), 0);
-}, [unclaimedExpenses, selectedExpenseIds]);
-
-// Actions
-const handleCreateBundle = async () => {
-  if (selectedExpenseIds.length === 0) {
-    setErrorMessage('Please select at least one expense to create a bundle.');
-    return;
-  }
-  if (!bundleRemarks || !bundleRemarks.trim()) {
-    setErrorMessage('Bundle Remarks are required.');
-    return;
-  }
-  setSubmitting(true);
-  setErrorMessage(null);
-
-  const firstSelected = unclaimedExpenses.find(e => selectedExpenseIds.includes(e.expense_id));
-  const firstWorkerObj = firstSelected ? (typeof firstSelected.worker === 'object' ? firstSelected.worker : firstSelected.worker_detail) : null;
-  const targetWorkerId = selectedWorkerId ?? (getUserId(firstSelected?.worker) ?? getUserId(firstSelected?.worker_detail) ?? getUserId((firstSelected as any)?.added_by));
-  const workerName = firstWorkerObj?.full_name || firstWorkerObj?.username || expenseSearchWorker || 'Worker';
-
-  try {
-    const res = await fetch(`${API_URL}/finance/claim/create-bundle/`, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Token ${token}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        worker_id: targetWorkerId,
-        expense_ids: selectedExpenseIds,
-        period_from: bundlePeriodFrom || undefined,
-        period_to: bundlePeriodTo || undefined,
-        remarks: bundleRemarks || undefined
-      })
-    });
-    const data = await res.json();
-    if (!res.ok) {
-      const errorMsg = data.detail || (typeof data === 'object' ? Object.values(data).flat().join(' ') : 'Failed to create claim bundle');
-      throw new Error(errorMsg);
-    }
-
-    // Activate the skeleton row loader immediately with the created bundle's metadata
-    const newBundleInfo = {
-      claim_id: data.claim_id,
-      worker_name: (typeof data.worker_detail === 'object' ? (data.worker_detail?.full_name || data.worker_detail?.username) : '') || workerName || 'Worker',
-      amount: data.total_amount ? Number(data.total_amount) : selectedExpensesTotal
-    };
-    setSyncingBundleInfo(newBundleInfo);
-    setIsSyncingNewBundle(true);
-
-    setSuccessMessage(`Bundle ${data.claim_id} created successfully.`);
-    setShowCreateBundleModal(false);
-    setSelectedExpenseIds([]);
-    setSelectedWorkerId(null);
-    setExpenseSearchWorker('');
-    setBundleRemarks('');
-
-    // Optimistically append/insert to bundles list if not present
-    if (data && data.claim_id) {
-      setBundles(prev => {
-        if (prev.some(b => b.claim_id === data.claim_id)) return prev;
-        return [data, ...prev];
-      });
-    }
-
-    await fetchData(true, true);
-  } catch (err: any) {
-    setErrorMessage(err.message);
-  } finally {
-    setSubmitting(false);
-    // Keep skeleton loader active briefly so it transitions smoothly when fresh data is displayed
-    setTimeout(() => {
-      setIsSyncingNewBundle(false);
-      setSyncingBundleInfo(null);
-    }, 800);
-  }
-};
-
-const handleSubmitBundle = async (claimId: number) => {
-  const bundleToSubmit = (bundles || []).find(c => c.claim_id === claimId);
-  if (bundleToSubmit && (!bundleToSubmit.expenses || bundleToSubmit.expenses.length === 0)) {
-    setErrorMessage(`Cannot submit Bundle ${claimId}: No expenses attached to this bundle.`);
-    return;
-  }
-  setErrorMessage(null);
-  try {
-    const res = await fetch(`${API_URL}/finance/claim/${claimId}/submit/`, {
-      method: 'POST',
-      headers: { 'Authorization': `Token ${token}`, 'Content-Type': 'application/json' }
-    });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.detail || 'Submission failed');
-    setSuccessMessage(`Bundle ${claimId} submitted into multi-step approval workflow.`);
-
-    // Instantly update bundle in memory with backend response so Report and In Review show immediately
-    setBundles(prev => prev.map(b => b.claim_id === claimId ? { ...b, ...data, status: data.status || 'In Review' } : b));
-
-
-    if (data && data.approval_instances && Array.isArray(data.approval_instances)) {
-      setApprovals(prev => [
-        ...data.approval_instances,
-        ...prev.filter(a => a.claim !== claimId && a.claim_id !== claimId)
-      ]);
-    }
-
-    await fetchData(true, true);
-  } catch (err: any) {
-    setErrorMessage(err.message);
-    // Re-sync with backend to ensure the UI updates if there was a status mismatch
-    await fetchData(true, true);
-  }
-};
-
-const handleCreateLedger = async () => {
-  const validUnassignedIds = new Set(
-    bundles
-      .filter(b => b.status === 'Approved' && !b.ledger_id && (!b.ledger_details || b.ledger_details.status === 'Rejected') && (!Array.isArray((b as any).ledgers) || (b as any).ledgers.length === 0))
-      .map(b => b.claim_id)
-  );
-  const targetBundleIds = selectedBundleIds.filter(id => validUnassignedIds.has(id));
-
-  if (targetBundleIds.length === 0) {
-    setErrorMessage('Select at least one approved bundle.');
-    return;
-  }
-  setSubmitting(true);
-  setErrorMessage(null);
-  try {
-    let gId = selectedGroupId ? parseInt(selectedGroupId, 10) : undefined;
-    if (!gId && newGroupName.trim()) {
-      const resG = await fetch(`${API_URL}/finance/ledger-groups/`, {
-        method: 'POST',
-        headers: { 'Authorization': `Token ${token}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ group_name: newGroupName.trim() })
-      });
-      const groupData = await resG.json();
-      if (!resG.ok) {
-        const errMsg = groupData.group_name
-          ? (Array.isArray(groupData.group_name) ? groupData.group_name[0] : groupData.group_name)
-          : (groupData.detail || groupData.error || 'Failed to create Ledger Group');
-        throw new Error(errMsg);
+      if (!isGroupDateInRange) {
+        continue;
       }
-      gId = groupData.ledger_group_id;
-    }
 
-    const res = await fetch(`${API_URL}/finance/ledgers/`, {
-      method: 'POST',
-      headers: { 'Authorization': `Token ${token}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        bundle_ids: targetBundleIds,
-        ledger_group: gId,
-        remarks: ledgerRemarks || undefined
-      })
-    });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.detail || JSON.stringify(data));
-    const createdIds = Array.isArray(data)
-      ? data.map((l: any) => l.ledger_id).filter(Boolean)
-      : data?.ledger_id
-        ? [data.ledger_id]
-        : Array.isArray(data?.ledgers)
-          ? data.ledgers.map((l: any) => l.ledger_id).filter(Boolean)
-          : [];
+      // Check Search Query
+      if (searchQuery.trim()) {
+        const query = searchQuery.toLowerCase();
+        const gName = (matchedDynGroup?.group_name || groupBatches[0]?.ledger_group_detail?.group_name || '').toLowerCase();
+        const gIdStr = String(gId).toLowerCase();
+        const creatorName = (groupBatches[0]?.created_by_detail?.full_name || groupBatches[0]?.created_by_detail?.username || '').toLowerCase();
 
-    const newLedgerItems = Array.isArray(data)
-      ? data
-      : data?.ledger_id
-        ? [data]
-        : Array.isArray(data?.ledgers)
-          ? data.ledgers
-          : [];
-
-    // Calculate approximate total amount from selected bundles
-    const selectedBundlesObj = bundles.filter(b => targetBundleIds.includes(b.claim_id));
-    const totalAmount = selectedBundlesObj.reduce((sum, b) => sum + (parseFloat(b.total_claimed_amount) || 0), 0);
-
-    const targetGroupName = selectedGroupId
-      ? ledgerGroups.find(g => String(g.ledger_group_id) === String(selectedGroupId))?.group_name
-      : newGroupName.trim();
-
-    // Trigger syncing loader state for Ledgers
-    setSyncingLedgerInfo({
-      ledger_id: createdIds[0],
-      group_name: targetGroupName,
-      bundles_count: targetBundleIds.length,
-      total_amount: totalAmount
-    });
-    setIsSyncingNewLedger(true);
-
-    // Optimistically sync newly created/updated ledgers and reset sibling batches in group to Draft
-    if (newLedgerItems.length > 0) {
-      const updatedById = new Map<number, any>();
-      newLedgerItems.forEach((l: any) => {
-        if (l?.ledger_id) updatedById.set(l.ledger_id, l);
-      });
-      setLedgers(prev => {
-        const mapped = prev.map(existing => {
-          if (updatedById.has(existing.ledger_id)) {
-            return updatedById.get(existing.ledger_id);
-          }
-          const existingGroupId = existing.ledger_group_detail?.ledger_group_id ?? existing.ledger_group;
-          if (gId && Number(existingGroupId) === Number(gId) && existing.status !== 'Paid') {
-            return {
-              ...existing,
-              status: 'Draft',
-              approval_history: [],
-              ledger_group_detail: existing.ledger_group_detail
-                ? { ...existing.ledger_group_detail, is_completed: false }
-                : existing.ledger_group_detail
-            };
-          }
-          return existing;
-        });
-        const existingIds = new Set(prev.map(l => l.ledger_id));
-        const toAdd = newLedgerItems.filter((l: any) => !existingIds.has(l.ledger_id));
-        return [...toAdd, ...mapped];
-      });
-    }
-
-    const ledgerMsg = createdIds.length > 1
-      ? `Ledgers (${createdIds.join(', ')}) assembled successfully.`
-      : createdIds.length === 1
-        ? `Ledger ${createdIds[0]} assembled successfully.`
-        : `Ledger batch assembled successfully.`;
-    setSuccessMessage(ledgerMsg);
-    setShowCreateLedgerModal(false);
-    setSelectedBundleIds([]);
-    setNewGroupName('');
-
-    await fetchData(true);
-
-    setTimeout(() => {
-      setIsSyncingNewLedger(false);
-      setSyncingLedgerInfo(null);
-    }, 1200);
-  } catch (err: any) {
-    setErrorMessage(err.message);
-  } finally {
-    setSubmitting(false);
-  }
-};
-
-const handleSubmitLedger = async (ledgerId: number) => {
-  const targetLedger = (ledgers || []).find(l => l.ledger_id === ledgerId);
-  const bundleCount = (targetLedger?.bundles?.length || 0) + (targetLedger?.expenses?.length || 0);
-  if (targetLedger && bundleCount === 0) {
-    setErrorMessage(`Cannot submit Ledger Batch ${ledgerId}: Must have at least one claim bundle attached.`);
-    return;
-  }
-  setSubmitting(true);
-  setErrorMessage(null);
-  try {
-    const res = await fetch(`${API_URL}/finance/ledgers/${ledgerId}/submit/`, {
-      method: 'POST',
-      headers: { 'Authorization': `Token ${token}`, 'Content-Type': 'application/json' }
-    });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.detail || 'Submission failed');
-    setSuccessMessage(`Ledger ${ledgerId} submitted for approval.`);
-    fetchData(true);
-  } catch (err: any) {
-    setErrorMessage(err.message);
-  } finally {
-    setSubmitting(false);
-  }
-};
-
-const handleActionApproval = async (
-  customAction?: 'APPROVED' | 'REJECTED' | 'REWORK',
-  customComments?: string,
-  customApp?: ApprovalInstanceItem,
-  customLedgerGroupId?: number | string | null,
-  customNewGroupName?: string
-) => {
-  const targetApp = customApp || showApprovalModal;
-  if (!targetApp) return;
-  const actionToPerform = customAction || approvalAction;
-  const commentsToSend = customComments !== undefined ? customComments : approvalComments;
-
-  if (actionToPerform === 'REWORK' && !commentsToSend?.trim()) {
-    setErrorMessage('A reason or comment is required when requesting rework.');
-    return;
-  }
-
-  setSubmitting(true);
-  setErrorMessage(null);
-  try {
-    const isDirectExp = (targetApp as any).is_direct_expense;
-    const isBundle = Boolean(targetApp.claim || targetApp.claim_id || targetApp.target_summary?.type === 'Bundle');
-    const bundleId = targetApp.claim || targetApp.claim_id || (targetApp.target_summary?.type === 'Bundle' ? targetApp.target_summary?.id : undefined);
-    const isExp = Boolean(targetApp.expense || targetApp.expense_id || targetApp.target_summary?.type === 'Expense' || isDirectExp);
-    const expId = targetApp.expense || targetApp.expense_id;
-    let res: Response;
-
-    const bodyPayload: any = { action: actionToPerform, comments: commentsToSend };
-    if (customLedgerGroupId) {
-      bodyPayload.ledger_group_id = Number(customLedgerGroupId);
-    }
-    if (customNewGroupName && customNewGroupName.trim()) {
-      bodyPayload.new_group_name = customNewGroupName.trim();
-    }
-
-    if (isDirectExp && expId) {
-      res = await fetch(`${API_URL}/finance/expense/${expId}/action/`, {
-        method: 'POST',
-        headers: { 'Authorization': `Token ${token}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify(bodyPayload)
-      });
-    } else {
-      res = await fetch(`${API_URL}/finance/approvals/${targetApp.instance_id}/action/`, {
-        method: 'POST',
-        headers: { 'Authorization': `Token ${token}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify(bodyPayload)
-      });
-
-      if (!res.ok) {
-        if (isBundle && bundleId) {
-          res = await fetch(`${API_URL}/finance/claim/${bundleId}/action/`, {
-            method: 'POST',
-            headers: { 'Authorization': `Token ${token}`, 'Content-Type': 'application/json' },
-            body: JSON.stringify(bodyPayload)
+        const matchesQuery = gName.includes(query) ||
+          gIdStr.includes(query) ||
+          creatorName.includes(query) ||
+          groupBatches.some(b => {
+            const bIdStr = String(b.ledger_id);
+            const bName = (b.ledger_batch_detail?.batch_name || '').toLowerCase();
+            const bRemarks = (b.remarks || '').toLowerCase();
+            const bundlesMatch = (b.bundles || []).some((bundle: any) => {
+              const bundleId = String(bundle.claim_id || bundle.id || '');
+              const worker = (bundle.worker_detail?.full_name || bundle.worker_detail?.username || '').toLowerCase();
+              return bundleId.includes(query) || worker.includes(query);
+            });
+            return bIdStr.includes(query) || bName.includes(query) || bRemarks.includes(query) || bundlesMatch;
           });
-        } else if (isExp && expId) {
-          res = await fetch(`${API_URL}/finance/expense/${expId}/action/`, {
-            method: 'POST',
-            headers: { 'Authorization': `Token ${token}`, 'Content-Type': 'application/json' },
-            body: JSON.stringify(bodyPayload)
-          });
+
+        if (!matchesQuery) {
+          continue;
         }
       }
+
+      matchingGroupIds.add(gId);
     }
 
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.detail || 'Approval action failed');
-    setSuccessMessage(`Approval step actioned: ${actionToPerform}`);
-    setShowApprovalModal(null);
-    setApprovalComments('');
-
-    // In-Memory Optimistic Frontend Update (No full table loading spinner)
-    const updatedInstance = data.instance || (typeof data === 'object' && data.instance_id ? data : null);
-    const updatedLedgerObj = data.ledger || (updatedInstance && updatedInstance.ledger_details) || null;
-
-    // 1. Update Approvals state
-    setApprovals(prev => prev.map(a => {
-      if (a.instance_id === targetApp.instance_id) {
-        if (updatedInstance && typeof updatedInstance === 'object') {
-          return { ...a, ...updatedInstance, status: updatedInstance.status || (actionToPerform === 'APPROVED' ? 'Approved' : actionToPerform === 'REWORK' ? 'Rework' : 'Rejected') };
-        }
-        return {
-          ...a,
-          status: actionToPerform === 'APPROVED' ? 'Approved' : actionToPerform === 'REWORK' ? 'Rework' : 'Rejected'
-        };
-      }
-      return a;
-    }));
-
-    // 2. Update Ledgers state directly in memory
-    const targetLedgerId = targetApp.ledger || targetApp.ledger_id || (targetApp.target_summary?.type === 'Ledger' ? targetApp.target_summary?.id : undefined) || (updatedLedgerObj && updatedLedgerObj.ledger_id);
-    if (targetLedgerId) {
-      setLedgers(prev => prev.map(l => {
-        if (l.ledger_id === targetLedgerId) {
-          if (updatedLedgerObj && typeof updatedLedgerObj === 'object') {
-            return { ...l, ...updatedLedgerObj };
-          }
-          const nextStatus = actionToPerform === 'REWORK'
-            ? 'Rework'
-            : actionToPerform === 'REJECTED'
-              ? 'Rejected'
-              : data.all_completed || data.status === 'Approved'
-                ? 'Approved'
-                : l.status;
-          return {
-            ...l,
-            status: nextStatus
-          };
-        }
-        return l;
-      }));
-    }
-
-    // 3. Update Bundles state directly if applicable
-    const targetClaimId = bundleId || (updatedInstance && updatedInstance.claim_id);
-    if (targetClaimId) {
-      setBundles(prev => prev.map(b => {
-        if (b.claim_id === targetClaimId) {
-          if (data.bundle && typeof data.bundle === 'object') {
-            return { ...b, ...data.bundle };
-          }
-          const nextStatus = actionToPerform === 'REWORK'
-            ? 'Rework'
-            : actionToPerform === 'REJECTED'
-              ? 'Rejected'
-              : (data.all_completed || data.status === 'Approved')
-                ? 'Approved'
-                : b.status;
-          const updatedApprovalInstances = Array.isArray(b.approval_instances)
-            ? b.approval_instances.map(inst => inst.instance_id === targetApp.instance_id ? { ...inst, status: actionToPerform === 'APPROVED' ? 'Approved' : actionToPerform === 'REWORK' ? 'Rework' : 'Rejected' } : inst)
-            : b.approval_instances;
-          return { ...b, status: nextStatus, approval_instances: updatedApprovalInstances };
-        }
-        return b;
-      }));
-
-    }
-
-    // 4. Update Expenses state directly if applicable
-    if (expId) {
-      setExpenses(prev => prev.map(e => {
-        if (e.expense_id === expId) {
-          if (data.expense && typeof data.expense === 'object') {
-            return { ...e, ...data.expense };
-          }
-          const nextApproved = actionToPerform === 'APPROVED' && data.all_completed;
-          const nextStatus = actionToPerform === 'REWORK'
-            ? 'Rework'
-            : actionToPerform === 'REJECTED'
-              ? 'Rejected'
-              : data.all_completed
-                ? 'Approved'
-                : (e.status_display || (e.approved ? 'Approved' : 'Pending Approval'));
-          return { ...e, approved: !!nextApproved, status_display: nextStatus };
-        }
-        return e;
-      }));
-    }
-
-    // 5. Silent background sync without table spinner (bypass cache to fetch fresh data)
-    fetchData(true, true);
-  } catch (err: any) {
-    setErrorMessage(err.message);
-  } finally {
-    setSubmitting(false);
-  }
-};
-
-const handleProcessPayment = async () => {
-  if (!showPaymentModal) return;
-  setSubmitting(true);
-  setErrorMessage(null);
-
-  const isClaim = 'claim_id' in showPaymentModal;
-  const claimId = isClaim ? (showPaymentModal as WorkerClaimItem).claim_id : undefined;
-  const ledgerId = !isClaim ? (showPaymentModal as LedgerItem).ledger_id : undefined;
-
-  try {
-    const fullAmount = 'total_claimed_amount' in showPaymentModal
-      ? showPaymentModal.total_claimed_amount
-      : 'total_amount' in showPaymentModal
-        ? showPaymentModal.total_amount
-        : showPaymentModal.amount_paid;
-
-    const res = await fetch(`${API_URL}/finance/payments/process-payment/`, {
-      method: 'POST',
-      headers: { 'Authorization': `Token ${token}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        bundle_id: claimId,
-        ledger_id: ledgerId,
-        payment_method: 'Cash',
-        amount_paid: fullAmount,
-        remarks: paymentRemarks || undefined,
-        recipient_name: paymentRecipient || undefined
-      })
+    return ledgers.filter(l => {
+      const gId = l.ledger_group_detail?.ledger_group_id || l.ledger_group || `ungrouped_${l.ledger_id}`;
+      return matchingGroupIds.has(gId);
     });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.detail || JSON.stringify(data));
-    setSuccessMessage(`Cash Settlement recorded successfully.`);
-    setShowPaymentModal(null);
-    setPaymentRemarks('');
-    setPaymentRecipient('');
-    fetchData(true);
-  } catch (err: any) {
-    setErrorMessage(err.message);
-  } finally {
-    setSubmitting(false);
-  }
-};
+  }, [ledgers, ledgerGroups, statusFilter, filterDateFrom, filterDateTo, searchQuery]);
 
-const handleCreateExpense = async (payload: any) => {
-  setSubmitting(true);
-  setErrorMessage(null);
-  try {
-    // 1. Separate JSON fields from File attachments
-    const { files, media_rotations, ...expenseBody } = payload;
-
-    const res = await fetch(`${API_URL}/finance/expense/`, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Token ${token}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify(expenseBody)
-    });
-    const data = await res.json();
-    if (!res.ok) {
-      let msg = 'Failed to create expense entry';
-      if (data && typeof data === 'object') {
-        if (data.detail) {
-          msg = data.detail;
-        } else {
-          const errEntries = Object.entries(data).map(([field, errs]) => {
-            const formattedField = field.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
-            const errStr = Array.isArray(errs) ? errs.join(', ') : String(errs);
-            return `${formattedField}: ${errStr}`;
-          });
-          if (errEntries.length > 0) msg = errEntries.join(' • ');
-        }
-      }
-      throw new Error(msg);
-    }
-
-    // 2. Upload attached receipt files to /common/media/ linked to the new expense
-    if (files && Array.isArray(files) && files.length > 0) {
-      const createdExpenseId = data.expense_id;
-      const uploadPromises = files.map(async (file: File) => {
-        const mediaFormData = new FormData();
-        if (expenseBody.ticket) mediaFormData.append('ticket', String(expenseBody.ticket));
-        mediaFormData.append('file_url', file);
-        mediaFormData.append('file_name', file.name);
-        const workerId = expenseBody.worker || currentUser?.user_id || (currentUser as any)?.id;
-        if (workerId) {
-          mediaFormData.append('uploaded_by', String(workerId));
-        }
-        mediaFormData.append('expense', String(createdExpenseId));
-
-        const rotObj = (media_rotations || []).find((r: any) => r.file_name === file.name);
-        if (rotObj && rotObj.rotation) {
-          mediaFormData.append('rotation', String(rotObj.rotation));
-        }
-
-        const mRes = await fetch(`${API_URL}/common/media/`, {
-          method: 'POST',
-          headers: { 'Authorization': `Token ${token}` },
-          body: mediaFormData
-        });
-        if (!mRes.ok) {
-          console.error('Failed to upload receipt file for expense:', file.name);
-        }
-      });
-
-      await Promise.all(uploadPromises);
-    }
-
-    // Activate the skeleton row loader immediately with the created expense's metadata
-    const newExpenseInfo = {
-      expense_id: data.expense_id,
-      category: (typeof data.expense_type_detail === 'object' ? data.expense_type_detail?.expense_name : '') || '',
-      worker_name: (typeof data.worker_detail === 'object' ? (data.worker_detail?.full_name || data.worker_detail?.username) : '') || '',
-      ticket_no: (typeof data.ticket_details === 'object' ? data.ticket_details?.work_order_no : '') || (data.ticket ? String(data.ticket) : ''),
-      sub_department: (typeof data.ticket_details === 'object' ? data.ticket_details?.sub_department_name : '') || '',
-      amount: data.amount ? Number(data.amount) : payload.amount,
-      expense_date: data.expense_date || payload.expense_date,
-      remarks: data.remarks || payload.remarks,
-      has_receipts: Boolean(files && files.length > 0),
-      receipts_count: (files || []).length
-    };
-    setSyncingExpenseInfo(newExpenseInfo);
-    setIsSyncingNewExpense(true);
-
-    // Optimistically append/insert to expenses list if not present
-    if (data && data.expense_id) {
-      setExpenses(prev => {
-        if (prev.some(e => e.expense_id === data.expense_id)) return prev;
-        return [data, ...prev];
-      });
-    }
-
-    setSuccessMessage(`Expense ${data.expense_id} created successfully.`);
-    fetchData(true, true);
-  } catch (err: any) {
-    setErrorMessage(err.message);
-    throw err;
-  } finally {
-    setSubmitting(false);
-    setTimeout(() => {
-      setIsSyncingNewExpense(false);
-      setSyncingExpenseInfo(null);
-    }, 800);
-  }
-};
-
-const filteredExpenses = useMemo(() => {
-  if (subpage === 'expenses') {
-    return expenses;
-  }
-  return expenses.filter(e => {
-    if (!filterDateType) {
-      if (filterDateFrom && e.expense_date && e.expense_date < filterDateFrom) return false;
-      if (filterDateTo && e.expense_date && e.expense_date > filterDateTo) return false;
-    }
-
-    if (statusFilter !== 'ALL') {
-      const isPaid = Boolean(e.is_paid || e.status_display === 'Paid' || (e.claim && ((e.claim as any).status === 'Paid' || (e as any).claim_status === 'Paid')));
-      const st = isPaid ? 'Paid' : (e.status_display || (e.approved ? 'Approved' : 'Pending Approval'));
-      const filterLower = statusFilter.toLowerCase().trim();
-      const stLower = st.toLowerCase().trim();
-      const matchesStatus = (filterLower === 'pending approval' || filterLower === 'in review' || filterLower === 'pending')
-        ? (stLower === 'pending approval' || stLower === 'in review' || stLower === 'pending')
-        : stLower === filterLower;
-      if (!matchesStatus) return false;
-    }
-
-    if (bundleFilter === 'IN_BUNDLE' && !e.is_claimed && !e.claim) return false;
-    if (bundleFilter === 'NOT_IN_BUNDLE' && (e.is_claimed || e.claim)) return false;
-
-    if (ledgerBatchFilter && ledgerBatchFilter !== 'ALL') {
-      const batch = ledgerBatches.find(b => String(b.batch_id) === String(ledgerBatchFilter));
-      if (batch) {
-        const ids = new Set<number>();
-        const names = new Set<string>();
-        const addSd = (sd: any) => {
-          if (!sd) return;
-          if (typeof sd === 'object') {
-            const id = sd.sub_department_id || sd.id;
-            if (id != null && !isNaN(Number(id))) ids.add(Number(id));
-            if (sd.sub_department_name) names.add(String(sd.sub_department_name).toLowerCase().trim());
-          } else if (!isNaN(Number(sd))) {
-            ids.add(Number(sd));
-          }
-        };
-        if (Array.isArray(batch.sub_departments)) batch.sub_departments.forEach(addSd);
-        if (Array.isArray(batch.sub_departments_detail)) batch.sub_departments_detail.forEach(addSd);
-
-        const rawTicket: any = e.ticket_details || e.ticket;
-        const subDeptId = Number(
-          e.sub_department_id ||
-          e.ticket_details?.sub_department_id ||
-          (typeof rawTicket === 'object' ? rawTicket?.sub_department_id || rawTicket?.nature?.sub_department?.sub_department_id || rawTicket?.nature?.sub_department_id : null)
-        );
-        const subDeptName = String(
-          e.ticket_details?.sub_department_name ||
-          e.sub_department_name ||
-          (typeof rawTicket === 'object' ? rawTicket?.sub_department_name || rawTicket?.nature?.sub_department?.sub_department_name : '') ||
+  const roleFilteredApprovals = useMemo(() => {
+    return approvals.filter((a) => {
+      if (roleFilterOnly && currentUser) {
+        const userRoleName = (
+          (currentUser?.role as any)?.role_name ||
+          (typeof currentUser?.role === 'string' ? currentUser.role : '') ||
           ''
         ).toLowerCase().trim();
 
-        const matchId = !isNaN(subDeptId) && subDeptId > 0 && ids.has(subDeptId);
-        const matchName = subDeptName && names.has(subDeptName);
-        if (!matchId && !matchName) return false;
-      }
-    }
-
-    if (searchQuery.trim()) {
-      const q = searchQuery.toLowerCase();
-      const catName = (e.expense_type_detail?.expense_name || (e.expense_type as any)?.expense_name || '').toLowerCase();
-      const workerObj = e.worker_detail || (typeof e.worker === 'object' ? e.worker : null);
-      const workerName = (workerObj?.full_name || workerObj?.username || '').toLowerCase();
-      const remarks = (e.remarks || '').toLowerCase();
-      const amountStr = String(e.amount || '');
-      const expIdStr = String(e.expense_id || '');
-
-      const rawTicket: any = e.ticket_details || e.ticket;
-      const ticketWo = typeof rawTicket === 'object' && rawTicket ? (rawTicket.work_order_no || '').toLowerCase() : '';
-      const ticketTitle = typeof rawTicket === 'object' && rawTicket ? (rawTicket.title || '').toLowerCase() : '';
-      const ticketIdStr = typeof rawTicket === 'object' && rawTicket ? String(rawTicket.ticket_id || rawTicket.id || '') : (rawTicket ? String(rawTicket) : '');
-      const storeName = (e.responsible_store?.store_name || (typeof rawTicket === 'object' ? rawTicket?.store?.store_name || rawTicket?.store_name : '') || '').toLowerCase();
-      const subDeptName = (
-        e.ticket_details?.sub_department_name ||
-        e.sub_department_name ||
-        (typeof rawTicket === 'object' ? rawTicket?.sub_department_name : '') ||
-        (typeof e.ticket === 'object' ? (e.ticket as any)?.nature?.sub_department?.sub_department_name : '') ||
-        ''
-      ).toLowerCase();
-
-      return catName.includes(q) ||
-        workerName.includes(q) ||
-        remarks.includes(q) ||
-        amountStr.includes(q) ||
-        expIdStr.includes(q) ||
-        ticketWo.includes(q) ||
-        ticketTitle.includes(q) ||
-        ticketIdStr.includes(q) ||
-        storeName.includes(q) ||
-        subDeptName.includes(q);
-    }
-
-    return true;
-  });
-}, [expenses, filterDateFrom, filterDateTo, filterDateType, statusFilter, bundleFilter, ledgerBatchFilter, ledgerBatches, searchQuery]);
-
-// Subpage Navigation Tabs filtered by user permissions
-const navTabs = useMemo(() => [
-  { key: 'expenses', label: 'Expenses', icon: Receipt, permission: 'finance.can_view_expenses' },
-  { key: 'bundles', label: 'Bundles', icon: Layers, permission: 'finance.can_view_bundles' },
-  { key: 'ledgers', label: 'Ledgers', icon: Building2, permission: 'finance.can_view_ledger' },
-  { key: 'payments', label: 'Disbursements & Audit', icon: CreditCard, permission: 'finance.can_view_audit' }
-].filter(tab => !tab.permission || hasPermission(tab.permission)), [hasPermission]);
-
-// If the user navigates directly to a subpage they lack permission for, redirect to first permitted tab
-useEffect(() => {
-  if (navTabs.length > 0 && !navTabs.some(tab => tab.key === subpage)) {
-    navigate(`/finance/${navTabs[0].key}`, { replace: true });
-  }
-}, [subpage, navTabs, navigate]);
-
-const approvalsProps = {
-  approvals,
-  roleFilteredApprovals,
-  displayedApprovals,
-  loading,
-  submitting,
-  roleFilterOnly,
-  setRoleFilterOnly,
-  currentUser,
-  approvalEntityTab,
-  setApprovalEntityTab,
-  approvalStatusTab,
-  setApprovalStatusTab,
-  expandedApprovalIds,
-  toggleExpandApproval,
-  renderStatusBadge,
-  showApprovalModal,
-  setShowApprovalModal,
-  approvalAction,
-  setApprovalAction,
-  approvalComments,
-  setApprovalComments,
-  handleActionApproval,
-  setSelectedTicketForModal,
-  setPreviewMediaUrl
-};
-
-return (
-  <div className=" min-h-screen flex flex-col gap-2 bg-surface dark:bg-dark-surface text-on-surface dark:text-dark-on-surface">
-
-    {/* Global Floating Popup Toast (visible above all modals & full viewport) */}
-    {(errorMessage || successMessage) && (
-      <div className="fixed top-5 right-5 z-[9999] max-w-md w-full animate-in slide-in-from-top-3 fade-in duration-200 pointer-events-auto">
-        {errorMessage && (
-          <div className="p-3.5 rounded-xl bg-red-600 text-white text-xs flex items-start justify-between shadow-2xl border border-red-700 gap-3">
-            <div className="flex items-start gap-2.5 min-w-0">
-              <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-white" />
-              <div className="min-w-0">
-                <strong className="block font-bold text-white mb-0.5">Error</strong>
-                <span className="text-white/95 break-words leading-relaxed">{errorMessage}</span>
-              </div>
-            </div>
-            <button
-              onClick={() => setErrorMessage(null)}
-              className="p-1 hover:bg-white/20 rounded-lg transition-colors text-white shrink-0 cursor-pointer"
-              title="Dismiss"
-            >
-              <X className="w-4 h-4" />
-            </button>
-          </div>
-        )}
-
-        {successMessage && (
-          <div className="p-3.5 rounded-xl bg-emerald-600 text-white text-xs flex items-start justify-between shadow-2xl border border-emerald-700 gap-3">
-            <div className="flex items-start gap-2.5 min-w-0">
-              <CheckCircle2 className="w-4 h-4 shrink-0 mt-0.5 text-white" />
-              <div className="min-w-0">
-                <strong className="block font-bold text-white mb-0.5">Success</strong>
-                <span className="text-white/95 break-words leading-relaxed">{successMessage}</span>
-              </div>
-            </div>
-            <button
-              onClick={() => setSuccessMessage(null)}
-              className="p-1 hover:bg-white/20 rounded-lg transition-colors text-white shrink-0 cursor-pointer"
-              title="Dismiss"
-            >
-              <X className="w-4 h-4" />
-            </button>
-          </div>
-        )}
-      </div>
-    )}
-
-    {/* Inline Notifications */}
-    {errorMessage && (
-      <div className="p-3.5 rounded bg-error-container text-on-error-container text-xs flex items-center justify-between border border-error/20">
-        <div className="flex items-center gap-2">
-          <AlertCircle className="w-4 h-4 shrink-0 text-error" />
-          <span>{errorMessage}</span>
-        </div>
-        <button onClick={() => setErrorMessage(null)} className="p-1 hover:opacity-75"><X className="w-3.5 h-3.5" /></button>
-      </div>
-    )}
-
-    {successMessage && (
-      <div className="p-3.5 rounded bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 text-xs flex items-center justify-between border border-emerald-500/20">
-        <div className="flex items-center gap-2">
-          <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-500" />
-          <span>{successMessage}</span>
-        </div>
-        <button onClick={() => setSuccessMessage(null)} className="p-1 hover:opacity-75"><X className="w-3.5 h-3.5" /></button>
-      </div>
-    )}
-
-    {/* Navigation Subpage Tabs */}
-    <div className="flex items-center gap-1  border-outline-variant overflow-x-auto pb-0.5">
-      {navTabs.map((tab) => {
-        const Icon = tab.icon;
-        const isActive = subpage === tab.key;
-        return (
-          <button
-            key={tab.key}
-            onClick={() => navigate(`/finance/${tab.key}`)}
-            className={`flex items-center gap-2 px-4 py-2 text-xs font-medium border-b-2 transition-colors whitespace-nowrap cursor-pointer ${isActive
-              ? 'border-primary text-primary font-semibold'
-              : 'border-transparent text-on-surface-variant hover:text-on-surface hover:bg-surface-container-low'
-              }`}
-          >
-            <Icon className="w-4 h-4" />
-            <span>{tab.label}</span>
-          </button>
+        const isAdmin = !!(
+          currentUser?.is_superuser ||
+          (currentUser as any)?.is_staff ||
+          userRoleName === 'administrator' ||
+          userRoleName === 'admin'
         );
-      })}
-    </div>
+        if (isAdmin) return true;
 
-    {/* SEARCH AND DATEWISE FILTER TOOLBAR */}
-    <div className="p-3.5 rounded border border-outline-variant bg-surface-container flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3 text-xs">        {/* Left Side: Search Input */}
-      <div className="relative w-full sm:w-72 md:w-80 shrink-0">
-        <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant" />
-        <input
-          type="text"
-          placeholder={
-            subpage === 'expenses'
-              ? "Search expenses by worker, ID, ticket, amount..."
-              : subpage === 'bundles'
-                ? "Search bundles by worker, bundle #, amount..."
-                : subpage === 'ledgers'
-                  ? "Search ledgers by name, batch, amount..."
-                  : "Search by worker name, ID, ticket, amount..."
+        if (a.can_action) return true;
+
+        const currentUsername = currentUser.username;
+        const assignedUsers = a.workflow_steps?.flatMap(s => s.assigned_users_names || []) || [];
+        if (currentUsername && assignedUsers.includes(currentUsername)) return true;
+
+        const userRoleStr = (
+          (currentUser?.role as any)?.role_name ||
+          (typeof currentUser?.role === 'string' ? currentUser.role : '') ||
+          ''
+        ).toLowerCase().trim();
+
+        const stepRoleStr = (a.assigned_role_name || '').toLowerCase().trim();
+        if (userRoleStr && stepRoleStr && stepRoleStr === userRoleStr) {
+          return true;
+        }
+        return false;
+      }
+      return true;
+    });
+  }, [approvals, roleFilterOnly, currentUser]);
+
+  const displayedApprovals = useMemo(() => {
+    return roleFilteredApprovals.filter((a) => {
+      if (approvalEntityTab !== 'ALL') {
+        const entityType = a.target_summary?.type || (a.claim ? 'Bundle' : (a.ledger ? 'Ledger' : 'Expense'));
+        if (entityType !== approvalEntityTab) return false;
+      }
+      if (approvalStatusTab !== 'ALL') {
+        if (a.status !== approvalStatusTab) return false;
+      }
+      if (statusFilter !== 'ALL' && a.status !== statusFilter) return false;
+      if (!isWithinDateRange(a.created_at, filterDateFrom, filterDateTo)) return false;
+      if (searchQuery.trim()) {
+        const query = searchQuery.toLowerCase();
+        const step = (a.step_name || '').toLowerCase();
+        const role = (a.assigned_role_name || '').toLowerCase();
+        const targetLabel = a.target_summary?.label?.toLowerCase() || '';
+        const storeName = a.target_summary?.store_name?.toLowerCase() || '';
+        const workerName = a.target_summary?.worker?.toLowerCase() || '';
+        return step.includes(query) || role.includes(query) || targetLabel.includes(query) || storeName.includes(query) || workerName.includes(query);
+      }
+      return true;
+    });
+  }, [roleFilteredApprovals, approvalEntityTab, approvalStatusTab, statusFilter, filterDateFrom, filterDateTo, searchQuery]);
+
+  const filteredPayments = useMemo(() => {
+    return payments.filter((p) => {
+      if (!isWithinDateRange(p.paid_at, filterDateFrom, filterDateTo)) return false;
+      if (searchQuery.trim()) {
+        const query = searchQuery.toLowerCase();
+        const method = (p.payment_method || '').toLowerCase();
+        const ref = (p.transaction_reference || '').toLowerCase();
+        const idStr = p.payment_id.toString();
+        return method.includes(query) || ref.includes(query) || idStr.includes(query);
+      }
+      return true;
+    });
+  }, [payments, filterDateFrom, filterDateTo, searchQuery]);
+
+  const uniqueExpenseWorkers = useMemo(() => {
+    const map = new Map<number, {
+      id: number;
+      name: string;
+      username: string;
+      employee_no?: string;
+      profile_image?: string | null;
+      department_name?: string;
+      sub_departments?: { sub_department_id: number; sub_department_name: string }[];
+      unclaimed_count: number;
+      unclaimed_total: number;
+    }>();
+    unclaimedExpenses.forEach((exp) => {
+      if (exp.is_claimed || exp.claim) return;
+      if (!isWithinDateRange(exp.expense_date, expenseFilterFrom, expenseFilterTo)) return;
+      const workerId = getUserId(exp.worker) ?? getUserId(exp.worker_detail) ?? getUserId((exp as any).added_by);
+      if (workerId !== null) {
+        const workerObj = typeof exp.worker === 'object' && exp.worker ? exp.worker : (exp.worker_detail || (exp as any).added_by);
+        const displayName = workerObj?.full_name || workerObj?.username || `Worker ${workerId}`;
+        const deptName = (exp.ticket_details as any)?.department_name || (exp.expense_type_detail as any)?.department_name || (exp.expense_type as any)?.department?.department_name || 'General Maintenance';
+        const amt = parseFloat(exp.amount || '0');
+        const profImg = workerObj?.profile_image || (typeof exp.worker === 'object' ? exp.worker?.profile_image : null) || exp.worker_detail?.profile_image || null;
+        const subDepts = (workerObj as any)?.sub_departments || (typeof exp.worker === 'object' ? (exp.worker as any)?.sub_departments : null) || (exp.worker_detail as any)?.sub_departments || [];
+        const isEligible = (exp.expense_type && (exp.expense_type as any).approve_required === false) ||
+          (exp.expense_type_detail && (exp.expense_type_detail as any).approve_required === false) ||
+          exp.approved === true || (exp.approved as any) === 'true' || (exp.approved as any) === 1 ||
+          exp.status_display === 'Approved';
+
+        const existing = map.get(workerId);
+        if (existing) {
+          if (isEligible) {
+            existing.unclaimed_count += 1;
+            existing.unclaimed_total += amt;
           }
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
-          className="w-full h-9 bg-surface-container-low border border-outline-variant hover:border-outline text-on-surface text-xs rounded pl-9 pr-8 focus:outline-none focus:border-primary transition-colors shadow-2xs placeholder:text-on-surface-variant/60"
-        />
-        {searchQuery && (
-          <button
-            type="button"
-            onClick={() => setSearchQuery('')}
-            className="absolute right-2.5 top-1/2 -translate-y-1/2 text-on-surface-variant hover:text-on-surface p-0.5 rounded cursor-pointer transition-colors"
-            title="Clear search"
-          >
-            <X className="w-3.5 h-3.5" />
-          </button>
-        )}
+          if (workerObj?.full_name && (!existing.name || existing.name.startsWith('Worker ') || existing.name === existing.username)) {
+            existing.name = workerObj.full_name;
+          }
+          if (!existing.employee_no && workerObj?.employee_no) {
+            existing.employee_no = workerObj.employee_no;
+          }
+          if (!existing.username && workerObj?.username) {
+            existing.username = workerObj.username;
+          }
+          if (!existing.department_name && deptName) {
+            existing.department_name = deptName;
+          }
+          if (!existing.profile_image && profImg) {
+            existing.profile_image = profImg;
+          }
+          if ((!existing.sub_departments || existing.sub_departments.length === 0) && subDepts.length > 0) {
+            existing.sub_departments = subDepts;
+          }
+        } else {
+          map.set(workerId, {
+            id: workerId,
+            name: displayName,
+            username: workerObj?.username || '',
+            employee_no: workerObj?.employee_no || '',
+            profile_image: profImg,
+            department_name: deptName,
+            sub_departments: subDepts,
+            unclaimed_count: isEligible ? 1 : 0,
+            unclaimed_total: isEligible ? amt : 0
+          });
+        }
+      }
+    });
+    return Array.from(map.values());
+  }, [unclaimedExpenses, expenseFilterFrom, expenseFilterTo]);
+
+  const filteredUnclaimedExpenses = useMemo(() => {
+    const list = unclaimedExpenses.filter((exp) => {
+      if (exp.is_claimed || exp.claim) return false;
+      if (!isWithinDateRange(exp.expense_date, expenseFilterFrom, expenseFilterTo)) return false;
+
+      // Filter by Technician / Employee selection
+      if (expenseSearchWorker.trim()) {
+        const query = expenseSearchWorker.toLowerCase().trim();
+        const workerObj = typeof exp.worker === 'object' && exp.worker ? exp.worker : (exp.worker_detail || (exp as any).added_by);
+        const workerId = getUserId(exp.worker) ?? getUserId(exp.worker_detail) ?? getUserId((exp as any).added_by);
+
+        const fullName = (workerObj?.full_name || '').toLowerCase();
+        const username = (workerObj?.username || '').toLowerCase();
+        const empNo = (workerObj?.employee_no || '').toLowerCase();
+        const workerIdStr = workerId !== null && workerId !== undefined ? String(workerId) : '';
+        const workerLabel = `worker ${workerIdStr}`;
+
+        const matchedWorker = uniqueExpenseWorkers.find(
+          w => w.name.toLowerCase() === query ||
+            (w.username && w.username.toLowerCase() === query) ||
+            (w.employee_no && w.employee_no.toLowerCase() === query) ||
+            String(w.id) === query
+        );
+
+        let isMatch = false;
+        if (matchedWorker && workerId !== null) {
+          isMatch = (workerId === matchedWorker.id) ||
+            (Boolean(matchedWorker.username) && (username === matchedWorker.username?.toLowerCase())) ||
+            (Boolean(matchedWorker.employee_no) && (empNo === matchedWorker.employee_no?.toLowerCase()));
+        }
+
+        if (!isMatch) {
+          isMatch = fullName.includes(query) ||
+            username.includes(query) ||
+            empNo.includes(query) ||
+            workerIdStr === query ||
+            workerLabel.includes(query);
+        }
+
+        if (!isMatch) return false;
+      }
+
+      // Search by Expense Details (Ticket #, Expense Type/Name, Remarks, Store, Expense ID, Amount)
+      if (expenseSearchText.trim()) {
+        const query = expenseSearchText.toLowerCase();
+        const ticketNo = exp.ticket_details?.work_order_no?.toLowerCase() || '';
+        const ticketTitle = exp.ticket_details?.title?.toLowerCase() || '';
+        const expIdStr = exp.expense_id.toString();
+        const remarksStr = (exp.remarks || '').toLowerCase();
+        const expTypeStr = (exp.expense_type_detail?.expense_name || exp.expense_type?.expense_name || '').toLowerCase();
+        const storeStr = (exp.responsible_store?.store_name || '').toLowerCase();
+        const amountStr = exp.amount ? exp.amount.toString() : '';
+
+        const matches = ticketNo.includes(query) ||
+          ticketTitle.includes(query) ||
+          expIdStr.includes(query) ||
+          remarksStr.includes(query) ||
+          expTypeStr.includes(query) ||
+          storeStr.includes(query) ||
+          amountStr.includes(query);
+        if (!matches) return false;
+      }
+
+      return true;
+    });
+
+    // Sort: Approved expenses first (top), unapproved expenses at the bottom
+    return list.sort((a, b) => {
+      const aApproved = a.approved === true || (a.approved as any) === 'true' || (a.approved as any) === 1 || ((a.expense_type as any)?.approve_required === false) || ((a.expense_type_detail as any)?.approve_required === false) || a.status_display === 'Approved';
+      const bApproved = b.approved === true || (b.approved as any) === 'true' || (b.approved as any) === 1 || ((b.expense_type as any)?.approve_required === false) || ((b.expense_type_detail as any)?.approve_required === false) || b.status_display === 'Approved';
+
+      if (aApproved && !bApproved) return -1;
+      if (!aApproved && bApproved) return 1;
+
+      // Secondary sort: by expense date descending, then expense ID descending
+      const dateA = new Date(a.expense_date || 0).getTime();
+      const dateB = new Date(b.expense_date || 0).getTime();
+      if (dateB !== dateA) return dateB - dateA;
+      return b.expense_id - a.expense_id;
+    });
+  }, [unclaimedExpenses, expenseSearchWorker, expenseSearchText, expenseFilterFrom, expenseFilterTo, uniqueExpenseWorkers]);
+
+  const selectedExpensesTotal = useMemo(() => {
+    return unclaimedExpenses
+      .filter((exp) => selectedExpenseIds.includes(exp.expense_id))
+      .reduce((sum, exp) => sum + parseFloat(exp.amount || '0'), 0);
+  }, [unclaimedExpenses, selectedExpenseIds]);
+
+  // Actions
+  const handleCreateBundle = async () => {
+    if (selectedExpenseIds.length === 0) {
+      setErrorMessage('Please select at least one expense to create a bundle.');
+      return;
+    }
+    if (!bundleRemarks || !bundleRemarks.trim()) {
+      setErrorMessage('Bundle Remarks are required.');
+      return;
+    }
+    setSubmitting(true);
+    setErrorMessage(null);
+
+    const firstSelected = unclaimedExpenses.find(e => selectedExpenseIds.includes(e.expense_id));
+    const firstWorkerObj = firstSelected ? (typeof firstSelected.worker === 'object' ? firstSelected.worker : firstSelected.worker_detail) : null;
+    const targetWorkerId = selectedWorkerId ?? (getUserId(firstSelected?.worker) ?? getUserId(firstSelected?.worker_detail) ?? getUserId((firstSelected as any)?.added_by));
+    const workerName = firstWorkerObj?.full_name || firstWorkerObj?.username || expenseSearchWorker || 'Worker';
+
+    try {
+      const res = await fetch(`${API_URL}/finance/claim/create-bundle/`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Token ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          worker_id: targetWorkerId,
+          expense_ids: selectedExpenseIds,
+          period_from: bundlePeriodFrom || undefined,
+          period_to: bundlePeriodTo || undefined,
+          remarks: bundleRemarks || undefined
+        })
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        const errorMsg = data.detail || (typeof data === 'object' ? Object.values(data).flat().join(' ') : 'Failed to create claim bundle');
+        throw new Error(errorMsg);
+      }
+
+      // Activate the skeleton row loader immediately with the created bundle's metadata
+      const newBundleInfo = {
+        claim_id: data.claim_id,
+        worker_name: (typeof data.worker_detail === 'object' ? (data.worker_detail?.full_name || data.worker_detail?.username) : '') || workerName || 'Worker',
+        amount: data.total_amount ? Number(data.total_amount) : selectedExpensesTotal
+      };
+      setSyncingBundleInfo(newBundleInfo);
+      setIsSyncingNewBundle(true);
+
+      setSuccessMessage(`Bundle ${data.claim_id} created successfully.`);
+      setShowCreateBundleModal(false);
+      setSelectedExpenseIds([]);
+      setSelectedWorkerId(null);
+      setExpenseSearchWorker('');
+      setBundleRemarks('');
+
+      // Optimistically append/insert to bundles list if not present
+      if (data && data.claim_id) {
+        setBundles(prev => {
+          if (prev.some(b => b.claim_id === data.claim_id)) return prev;
+          return [data, ...prev];
+        });
+      }
+
+      await fetchData(true, true);
+    } catch (err: any) {
+      setErrorMessage(err.message);
+    } finally {
+      setSubmitting(false);
+      // Keep skeleton loader active briefly so it transitions smoothly when fresh data is displayed
+      setTimeout(() => {
+        setIsSyncingNewBundle(false);
+        setSyncingBundleInfo(null);
+      }, 800);
+    }
+  };
+
+  const handleSubmitBundle = async (claimId: number) => {
+    const bundleToSubmit = (bundles || []).find(c => c.claim_id === claimId);
+    if (bundleToSubmit && (!bundleToSubmit.expenses || bundleToSubmit.expenses.length === 0)) {
+      setErrorMessage(`Cannot submit Bundle ${claimId}: No expenses attached to this bundle.`);
+      return;
+    }
+    setErrorMessage(null);
+    try {
+      const res = await fetch(`${API_URL}/finance/claim/${claimId}/submit/`, {
+        method: 'POST',
+        headers: { 'Authorization': `Token ${token}`, 'Content-Type': 'application/json' }
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || 'Submission failed');
+      setSuccessMessage(`Bundle ${claimId} submitted into multi-step approval workflow.`);
+
+      // Instantly update bundle in memory with backend response so Report and In Review show immediately
+      setBundles(prev => prev.map(b => b.claim_id === claimId ? { ...b, ...data, status: data.status || 'In Review' } : b));
+
+
+      if (data && data.approval_instances && Array.isArray(data.approval_instances)) {
+        setApprovals(prev => [
+          ...data.approval_instances,
+          ...prev.filter(a => a.claim !== claimId && a.claim_id !== claimId)
+        ]);
+      }
+
+      await fetchData(true, true);
+    } catch (err: any) {
+      setErrorMessage(err.message);
+      // Re-sync with backend to ensure the UI updates if there was a status mismatch
+      await fetchData(true, true);
+    }
+  };
+
+  const handleCreateLedger = async () => {
+    const validUnassignedIds = new Set(
+      bundles
+        .filter(b => b.status === 'Approved' && !b.ledger_id && (!b.ledger_details || b.ledger_details.status === 'Rejected') && (!Array.isArray((b as any).ledgers) || (b as any).ledgers.length === 0))
+        .map(b => b.claim_id)
+    );
+    const targetBundleIds = selectedBundleIds.filter(id => validUnassignedIds.has(id));
+
+    if (targetBundleIds.length === 0) {
+      setErrorMessage('Select at least one approved bundle.');
+      return;
+    }
+    setSubmitting(true);
+    setErrorMessage(null);
+    try {
+      let gId = selectedGroupId ? parseInt(selectedGroupId, 10) : undefined;
+      if (!gId && newGroupName.trim()) {
+        const resG = await fetch(`${API_URL}/finance/ledger-groups/`, {
+          method: 'POST',
+          headers: { 'Authorization': `Token ${token}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ group_name: newGroupName.trim() })
+        });
+        const groupData = await resG.json();
+        if (!resG.ok) {
+          const errMsg = groupData.group_name
+            ? (Array.isArray(groupData.group_name) ? groupData.group_name[0] : groupData.group_name)
+            : (groupData.detail || groupData.error || 'Failed to create Ledger Group');
+          throw new Error(errMsg);
+        }
+        gId = groupData.ledger_group_id;
+      }
+
+      const res = await fetch(`${API_URL}/finance/ledgers/`, {
+        method: 'POST',
+        headers: { 'Authorization': `Token ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          bundle_ids: targetBundleIds,
+          ledger_group: gId,
+          remarks: ledgerRemarks || undefined
+        })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || JSON.stringify(data));
+      const createdIds = Array.isArray(data)
+        ? data.map((l: any) => l.ledger_id).filter(Boolean)
+        : data?.ledger_id
+          ? [data.ledger_id]
+          : Array.isArray(data?.ledgers)
+            ? data.ledgers.map((l: any) => l.ledger_id).filter(Boolean)
+            : [];
+
+      const newLedgerItems = Array.isArray(data)
+        ? data
+        : data?.ledger_id
+          ? [data]
+          : Array.isArray(data?.ledgers)
+            ? data.ledgers
+            : [];
+
+      // Calculate approximate total amount from selected bundles
+      const selectedBundlesObj = bundles.filter(b => targetBundleIds.includes(b.claim_id));
+      const totalAmount = selectedBundlesObj.reduce((sum, b) => sum + (parseFloat(b.total_claimed_amount) || 0), 0);
+
+      const targetGroupName = selectedGroupId
+        ? ledgerGroups.find(g => String(g.ledger_group_id) === String(selectedGroupId))?.group_name
+        : newGroupName.trim();
+
+      // Trigger syncing loader state for Ledgers
+      setSyncingLedgerInfo({
+        ledger_id: createdIds[0],
+        group_name: targetGroupName,
+        bundles_count: targetBundleIds.length,
+        total_amount: totalAmount
+      });
+      setIsSyncingNewLedger(true);
+
+      // Optimistically sync newly created/updated ledgers and reset sibling batches in group to Draft
+      if (newLedgerItems.length > 0) {
+        const updatedById = new Map<number, any>();
+        newLedgerItems.forEach((l: any) => {
+          if (l?.ledger_id) updatedById.set(l.ledger_id, l);
+        });
+        setLedgers(prev => {
+          const mapped = prev.map(existing => {
+            if (updatedById.has(existing.ledger_id)) {
+              return updatedById.get(existing.ledger_id);
+            }
+            const existingGroupId = existing.ledger_group_detail?.ledger_group_id ?? existing.ledger_group;
+            if (gId && Number(existingGroupId) === Number(gId) && existing.status !== 'Paid') {
+              return {
+                ...existing,
+                status: 'Draft',
+                approval_history: [],
+                ledger_group_detail: existing.ledger_group_detail
+                  ? { ...existing.ledger_group_detail, is_completed: false }
+                  : existing.ledger_group_detail
+              };
+            }
+            return existing;
+          });
+          const existingIds = new Set(prev.map(l => l.ledger_id));
+          const toAdd = newLedgerItems.filter((l: any) => !existingIds.has(l.ledger_id));
+          return [...toAdd, ...mapped];
+        });
+      }
+
+      const ledgerMsg = createdIds.length > 1
+        ? `Ledgers (${createdIds.join(', ')}) assembled successfully.`
+        : createdIds.length === 1
+          ? `Ledger ${createdIds[0]} assembled successfully.`
+          : `Ledger batch assembled successfully.`;
+      setSuccessMessage(ledgerMsg);
+      setShowCreateLedgerModal(false);
+      setSelectedBundleIds([]);
+      setNewGroupName('');
+
+      await fetchData(true);
+
+      setTimeout(() => {
+        setIsSyncingNewLedger(false);
+        setSyncingLedgerInfo(null);
+      }, 1200);
+    } catch (err: any) {
+      setErrorMessage(err.message);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleSubmitLedger = async (ledgerId: number) => {
+    const targetLedger = (ledgers || []).find(l => l.ledger_id === ledgerId);
+    const bundleCount = (targetLedger?.bundles?.length || 0) + (targetLedger?.expenses?.length || 0);
+    if (targetLedger && bundleCount === 0) {
+      setErrorMessage(`Cannot submit Ledger Batch ${ledgerId}: Must have at least one claim bundle attached.`);
+      return;
+    }
+    setSubmitting(true);
+    setErrorMessage(null);
+    try {
+      const res = await fetch(`${API_URL}/finance/ledgers/${ledgerId}/submit/`, {
+        method: 'POST',
+        headers: { 'Authorization': `Token ${token}`, 'Content-Type': 'application/json' }
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || 'Submission failed');
+      setSuccessMessage(`Ledger ${ledgerId} submitted for approval.`);
+      fetchData(true);
+    } catch (err: any) {
+      setErrorMessage(err.message);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleActionApproval = async (
+    customAction?: 'APPROVED' | 'REJECTED' | 'REWORK',
+    customComments?: string,
+    customApp?: ApprovalInstanceItem,
+    customLedgerGroupId?: number | string | null,
+    customNewGroupName?: string
+  ) => {
+    const targetApp = customApp || showApprovalModal;
+    if (!targetApp) return;
+    const actionToPerform = customAction || approvalAction;
+    const commentsToSend = customComments !== undefined ? customComments : approvalComments;
+
+    if (actionToPerform === 'REWORK' && !commentsToSend?.trim()) {
+      setErrorMessage('A reason or comment is required when requesting rework.');
+      return;
+    }
+
+    setSubmitting(true);
+    setErrorMessage(null);
+    try {
+      const isDirectExp = (targetApp as any).is_direct_expense;
+      const isBundle = Boolean(targetApp.claim || targetApp.claim_id || targetApp.target_summary?.type === 'Bundle');
+      const bundleId = targetApp.claim || targetApp.claim_id || (targetApp.target_summary?.type === 'Bundle' ? targetApp.target_summary?.id : undefined);
+      const isExp = Boolean(targetApp.expense || targetApp.expense_id || targetApp.target_summary?.type === 'Expense' || isDirectExp);
+      const expId = targetApp.expense || targetApp.expense_id;
+      let res: Response;
+
+      const bodyPayload: any = { action: actionToPerform, comments: commentsToSend };
+      if (customLedgerGroupId) {
+        bodyPayload.ledger_group_id = Number(customLedgerGroupId);
+      }
+      if (customNewGroupName && customNewGroupName.trim()) {
+        bodyPayload.new_group_name = customNewGroupName.trim();
+      }
+
+      if (isDirectExp && expId) {
+        res = await fetch(`${API_URL}/finance/expense/${expId}/action/`, {
+          method: 'POST',
+          headers: { 'Authorization': `Token ${token}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify(bodyPayload)
+        });
+      } else {
+        res = await fetch(`${API_URL}/finance/approvals/${targetApp.instance_id}/action/`, {
+          method: 'POST',
+          headers: { 'Authorization': `Token ${token}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify(bodyPayload)
+        });
+
+        if (!res.ok) {
+          if (isBundle && bundleId) {
+            res = await fetch(`${API_URL}/finance/claim/${bundleId}/action/`, {
+              method: 'POST',
+              headers: { 'Authorization': `Token ${token}`, 'Content-Type': 'application/json' },
+              body: JSON.stringify(bodyPayload)
+            });
+          } else if (isExp && expId) {
+            res = await fetch(`${API_URL}/finance/expense/${expId}/action/`, {
+              method: 'POST',
+              headers: { 'Authorization': `Token ${token}`, 'Content-Type': 'application/json' },
+              body: JSON.stringify(bodyPayload)
+            });
+          }
+        }
+      }
+
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || 'Approval action failed');
+      setSuccessMessage(`Approval step actioned: ${actionToPerform}`);
+      setShowApprovalModal(null);
+      setApprovalComments('');
+
+      // In-Memory Optimistic Frontend Update (No full table loading spinner)
+      const updatedInstance = data.instance || (typeof data === 'object' && data.instance_id ? data : null);
+      const updatedLedgerObj = data.ledger || (updatedInstance && updatedInstance.ledger_details) || null;
+
+      // 1. Update Approvals state
+      setApprovals(prev => prev.map(a => {
+        if (a.instance_id === targetApp.instance_id) {
+          if (updatedInstance && typeof updatedInstance === 'object') {
+            return { ...a, ...updatedInstance, status: updatedInstance.status || (actionToPerform === 'APPROVED' ? 'Approved' : actionToPerform === 'REWORK' ? 'Rework' : 'Rejected') };
+          }
+          return {
+            ...a,
+            status: actionToPerform === 'APPROVED' ? 'Approved' : actionToPerform === 'REWORK' ? 'Rework' : 'Rejected'
+          };
+        }
+        return a;
+      }));
+
+      // 2. Update Ledgers state directly in memory
+      const targetLedgerId = targetApp.ledger || targetApp.ledger_id || (targetApp.target_summary?.type === 'Ledger' ? targetApp.target_summary?.id : undefined) || (updatedLedgerObj && updatedLedgerObj.ledger_id);
+      if (targetLedgerId) {
+        setLedgers(prev => prev.map(l => {
+          if (l.ledger_id === targetLedgerId) {
+            if (updatedLedgerObj && typeof updatedLedgerObj === 'object') {
+              return { ...l, ...updatedLedgerObj };
+            }
+            const nextStatus = actionToPerform === 'REWORK'
+              ? 'Rework'
+              : actionToPerform === 'REJECTED'
+                ? 'Rejected'
+                : data.all_completed || data.status === 'Approved'
+                  ? 'Approved'
+                  : l.status;
+            return {
+              ...l,
+              status: nextStatus
+            };
+          }
+          return l;
+        }));
+      }
+
+      // 3. Update Bundles state directly if applicable
+      const targetClaimId = bundleId || (updatedInstance && updatedInstance.claim_id);
+      if (targetClaimId) {
+        setBundles(prev => prev.map(b => {
+          if (b.claim_id === targetClaimId) {
+            if (data.bundle && typeof data.bundle === 'object') {
+              return { ...b, ...data.bundle };
+            }
+            const nextStatus = actionToPerform === 'REWORK'
+              ? 'Rework'
+              : actionToPerform === 'REJECTED'
+                ? 'Rejected'
+                : (data.all_completed || data.status === 'Approved')
+                  ? 'Approved'
+                  : b.status;
+            const updatedApprovalInstances = Array.isArray(b.approval_instances)
+              ? b.approval_instances.map(inst => inst.instance_id === targetApp.instance_id ? { ...inst, status: actionToPerform === 'APPROVED' ? 'Approved' : actionToPerform === 'REWORK' ? 'Rework' : 'Rejected' } : inst)
+              : b.approval_instances;
+            return { ...b, status: nextStatus, approval_instances: updatedApprovalInstances };
+          }
+          return b;
+        }));
+
+      }
+
+      // 4. Update Expenses state directly if applicable
+      if (expId) {
+        setExpenses(prev => prev.map(e => {
+          if (e.expense_id === expId) {
+            if (data.expense && typeof data.expense === 'object') {
+              return { ...e, ...data.expense };
+            }
+            const nextApproved = actionToPerform === 'APPROVED' && data.all_completed;
+            const nextStatus = actionToPerform === 'REWORK'
+              ? 'Rework'
+              : actionToPerform === 'REJECTED'
+                ? 'Rejected'
+                : data.all_completed
+                  ? 'Approved'
+                  : (e.status_display || (e.approved ? 'Approved' : 'Pending Approval'));
+            return { ...e, approved: !!nextApproved, status_display: nextStatus };
+          }
+          return e;
+        }));
+      }
+
+      // 5. Silent background sync without table spinner (bypass cache to fetch fresh data)
+      fetchData(true, true);
+    } catch (err: any) {
+      setErrorMessage(err.message);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleProcessPayment = async (receiptFile?: File | null) => {
+    if (!showPaymentModal) return;
+    if (!receiptFile) {
+      setErrorMessage('Please upload the signed payment receipt image before confirming cash settlement.');
+      return;
+    }
+    setSubmitting(true);
+    setErrorMessage(null);
+
+    const isClaim = 'claim_id' in showPaymentModal;
+    const claimId = isClaim ? (showPaymentModal as WorkerClaimItem).claim_id : undefined;
+    const ledgerId = !isClaim ? (showPaymentModal as LedgerItem).ledger_id : undefined;
+
+    try {
+      const fullAmount = 'total_claimed_amount' in showPaymentModal
+        ? showPaymentModal.total_claimed_amount
+        : 'total_amount' in showPaymentModal
+          ? showPaymentModal.total_amount
+          : showPaymentModal.amount_paid;
+
+      const formData = new FormData();
+      if (claimId !== undefined) formData.append('bundle_id', String(claimId));
+      if (ledgerId !== undefined) formData.append('ledger_id', String(ledgerId));
+      formData.append('payment_method', 'Cash');
+      formData.append('amount_paid', String(fullAmount));
+      if (paymentRemarks.trim()) formData.append('remarks', paymentRemarks.trim());
+      if (paymentRecipient.trim()) formData.append('recipient_name', paymentRecipient.trim());
+      formData.append('receipt_image', receiptFile);
+
+      const res = await fetch(`${API_URL}/finance/payments/process-payment/`, {
+        method: 'POST',
+        headers: { 'Authorization': `Token ${token}` },
+        body: formData
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || JSON.stringify(data));
+      setSuccessMessage(`Cash Settlement recorded successfully.`);
+      setShowPaymentModal(null);
+      setPaymentRemarks('');
+      setPaymentRecipient('');
+      await fetchData(true, true);
+    } catch (err: any) {
+      setErrorMessage(err.message);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleCreateExpense = async (payload: any) => {
+    setSubmitting(true);
+    setErrorMessage(null);
+    try {
+      // 1. Separate JSON fields from File attachments
+      const { files, media_rotations, ...expenseBody } = payload;
+
+      const res = await fetch(`${API_URL}/finance/expense/`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Token ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(expenseBody)
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        let msg = 'Failed to create expense entry';
+        if (data && typeof data === 'object') {
+          if (data.detail) {
+            msg = data.detail;
+          } else {
+            const errEntries = Object.entries(data).map(([field, errs]) => {
+              const formattedField = field.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+              const errStr = Array.isArray(errs) ? errs.join(', ') : String(errs);
+              return `${formattedField}: ${errStr}`;
+            });
+            if (errEntries.length > 0) msg = errEntries.join(' • ');
+          }
+        }
+        throw new Error(msg);
+      }
+
+      // 2. Upload attached receipt files to /common/media/ linked to the new expense
+      if (files && Array.isArray(files) && files.length > 0) {
+        const createdExpenseId = data.expense_id;
+        const uploadPromises = files.map(async (file: File) => {
+          const mediaFormData = new FormData();
+          if (expenseBody.ticket) mediaFormData.append('ticket', String(expenseBody.ticket));
+          mediaFormData.append('file_url', file);
+          mediaFormData.append('file_name', file.name);
+          const workerId = expenseBody.worker || currentUser?.user_id || (currentUser as any)?.id;
+          if (workerId) {
+            mediaFormData.append('uploaded_by', String(workerId));
+          }
+          mediaFormData.append('expense', String(createdExpenseId));
+
+          const rotObj = (media_rotations || []).find((r: any) => r.file_name === file.name);
+          if (rotObj && rotObj.rotation) {
+            mediaFormData.append('rotation', String(rotObj.rotation));
+          }
+
+          const mRes = await fetch(`${API_URL}/common/media/`, {
+            method: 'POST',
+            headers: { 'Authorization': `Token ${token}` },
+            body: mediaFormData
+          });
+          if (!mRes.ok) {
+            console.error('Failed to upload receipt file for expense:', file.name);
+          }
+        });
+
+        await Promise.all(uploadPromises);
+      }
+
+      // Activate the skeleton row loader immediately with the created expense's metadata
+      const newExpenseInfo = {
+        expense_id: data.expense_id,
+        category: (typeof data.expense_type_detail === 'object' ? data.expense_type_detail?.expense_name : '') || '',
+        worker_name: (typeof data.worker_detail === 'object' ? (data.worker_detail?.full_name || data.worker_detail?.username) : '') || '',
+        ticket_no: (typeof data.ticket_details === 'object' ? data.ticket_details?.work_order_no : '') || (data.ticket ? String(data.ticket) : ''),
+        sub_department: (typeof data.ticket_details === 'object' ? data.ticket_details?.sub_department_name : '') || '',
+        amount: data.amount ? Number(data.amount) : payload.amount,
+        expense_date: data.expense_date || payload.expense_date,
+        remarks: data.remarks || payload.remarks,
+        has_receipts: Boolean(files && files.length > 0),
+        receipts_count: (files || []).length
+      };
+      setSyncingExpenseInfo(newExpenseInfo);
+      setIsSyncingNewExpense(true);
+
+      // Optimistically append/insert to expenses list if not present
+      if (data && data.expense_id) {
+        setExpenses(prev => {
+          if (prev.some(e => e.expense_id === data.expense_id)) return prev;
+          return [data, ...prev];
+        });
+      }
+
+      setSuccessMessage(`Expense ${data.expense_id} created successfully.`);
+      fetchData(true, true);
+    } catch (err: any) {
+      setErrorMessage(err.message);
+      throw err;
+    } finally {
+      setSubmitting(false);
+      setTimeout(() => {
+        setIsSyncingNewExpense(false);
+        setSyncingExpenseInfo(null);
+      }, 800);
+    }
+  };
+
+  const filteredExpenses = useMemo(() => {
+    if (subpage === 'expenses') {
+      return expenses;
+    }
+    return expenses.filter(e => {
+      if (!filterDateType) {
+        if (filterDateFrom && e.expense_date && e.expense_date < filterDateFrom) return false;
+        if (filterDateTo && e.expense_date && e.expense_date > filterDateTo) return false;
+      }
+
+      if (statusFilter !== 'ALL') {
+        const isPaid = Boolean(e.is_paid || e.status_display === 'Paid' || (e.claim && ((e.claim as any).status === 'Paid' || (e as any).claim_status === 'Paid')));
+        const st = isPaid ? 'Paid' : (e.status_display || (e.approved ? 'Approved' : 'Pending Approval'));
+        const filterLower = statusFilter.toLowerCase().trim();
+        const stLower = st.toLowerCase().trim();
+        const matchesStatus = (filterLower === 'pending approval' || filterLower === 'in review' || filterLower === 'pending')
+          ? (stLower === 'pending approval' || stLower === 'in review' || stLower === 'pending')
+          : stLower === filterLower;
+        if (!matchesStatus) return false;
+      }
+
+      if (bundleFilter === 'IN_BUNDLE' && !e.is_claimed && !e.claim) return false;
+      if (bundleFilter === 'NOT_IN_BUNDLE' && (e.is_claimed || e.claim)) return false;
+
+      if (ledgerBatchFilter && ledgerBatchFilter !== 'ALL') {
+        const batch = ledgerBatches.find(b => String(b.batch_id) === String(ledgerBatchFilter));
+        if (batch) {
+          const ids = new Set<number>();
+          const names = new Set<string>();
+          const addSd = (sd: any) => {
+            if (!sd) return;
+            if (typeof sd === 'object') {
+              const id = sd.sub_department_id || sd.id;
+              if (id != null && !isNaN(Number(id))) ids.add(Number(id));
+              if (sd.sub_department_name) names.add(String(sd.sub_department_name).toLowerCase().trim());
+            } else if (!isNaN(Number(sd))) {
+              ids.add(Number(sd));
+            }
+          };
+          if (Array.isArray(batch.sub_departments)) batch.sub_departments.forEach(addSd);
+          if (Array.isArray(batch.sub_departments_detail)) batch.sub_departments_detail.forEach(addSd);
+
+          const rawTicket: any = e.ticket_details || e.ticket;
+          const subDeptId = Number(
+            e.sub_department_id ||
+            e.ticket_details?.sub_department_id ||
+            (typeof rawTicket === 'object' ? rawTicket?.sub_department_id || rawTicket?.nature?.sub_department?.sub_department_id || rawTicket?.nature?.sub_department_id : null)
+          );
+          const subDeptName = String(
+            e.ticket_details?.sub_department_name ||
+            e.sub_department_name ||
+            (typeof rawTicket === 'object' ? rawTicket?.sub_department_name || rawTicket?.nature?.sub_department?.sub_department_name : '') ||
+            ''
+          ).toLowerCase().trim();
+
+          const matchId = !isNaN(subDeptId) && subDeptId > 0 && ids.has(subDeptId);
+          const matchName = subDeptName && names.has(subDeptName);
+          if (!matchId && !matchName) return false;
+        }
+      }
+
+      if (searchQuery.trim()) {
+        const q = searchQuery.toLowerCase();
+        const catName = (e.expense_type_detail?.expense_name || (e.expense_type as any)?.expense_name || '').toLowerCase();
+        const workerObj = e.worker_detail || (typeof e.worker === 'object' ? e.worker : null);
+        const workerName = (workerObj?.full_name || workerObj?.username || '').toLowerCase();
+        const remarks = (e.remarks || '').toLowerCase();
+        const amountStr = String(e.amount || '');
+        const expIdStr = String(e.expense_id || '');
+
+        const rawTicket: any = e.ticket_details || e.ticket;
+        const ticketWo = typeof rawTicket === 'object' && rawTicket ? (rawTicket.work_order_no || '').toLowerCase() : '';
+        const ticketTitle = typeof rawTicket === 'object' && rawTicket ? (rawTicket.title || '').toLowerCase() : '';
+        const ticketIdStr = typeof rawTicket === 'object' && rawTicket ? String(rawTicket.ticket_id || rawTicket.id || '') : (rawTicket ? String(rawTicket) : '');
+        const storeName = (e.responsible_store?.store_name || (typeof rawTicket === 'object' ? rawTicket?.store?.store_name || rawTicket?.store_name : '') || '').toLowerCase();
+        const subDeptName = (
+          e.ticket_details?.sub_department_name ||
+          e.sub_department_name ||
+          (typeof rawTicket === 'object' ? rawTicket?.sub_department_name : '') ||
+          (typeof e.ticket === 'object' ? (e.ticket as any)?.nature?.sub_department?.sub_department_name : '') ||
+          ''
+        ).toLowerCase();
+
+        return catName.includes(q) ||
+          workerName.includes(q) ||
+          remarks.includes(q) ||
+          amountStr.includes(q) ||
+          expIdStr.includes(q) ||
+          ticketWo.includes(q) ||
+          ticketTitle.includes(q) ||
+          ticketIdStr.includes(q) ||
+          storeName.includes(q) ||
+          subDeptName.includes(q);
+      }
+
+      return true;
+    });
+  }, [expenses, filterDateFrom, filterDateTo, filterDateType, statusFilter, bundleFilter, ledgerBatchFilter, ledgerBatches, searchQuery]);
+
+  // Subpage Navigation Tabs filtered by user permissions
+  const navTabs = useMemo(() => [
+    { key: 'expenses', label: 'Expenses', icon: Receipt, permission: 'finance.can_view_expenses' },
+    { key: 'bundles', label: 'Bundles', icon: Layers, permission: 'finance.can_view_bundles' },
+    { key: 'ledgers', label: 'Ledgers', icon: Building2, permission: 'finance.can_view_ledger' },
+    { key: 'payments', label: 'Disbursements & Audit', icon: CreditCard, permission: 'finance.can_view_audit' }
+  ].filter(tab => !tab.permission || hasPermission(tab.permission)), [hasPermission]);
+
+  // If the user navigates directly to a subpage they lack permission for, redirect to first permitted tab
+  useEffect(() => {
+    if (navTabs.length > 0 && !navTabs.some(tab => tab.key === subpage)) {
+      navigate(`/finance/${navTabs[0].key}`, { replace: true });
+    }
+  }, [subpage, navTabs, navigate]);
+
+  const approvalsProps = {
+    approvals,
+    roleFilteredApprovals,
+    displayedApprovals,
+    loading,
+    submitting,
+    roleFilterOnly,
+    setRoleFilterOnly,
+    currentUser,
+    approvalEntityTab,
+    setApprovalEntityTab,
+    approvalStatusTab,
+    setApprovalStatusTab,
+    expandedApprovalIds,
+    toggleExpandApproval,
+    renderStatusBadge,
+    showApprovalModal,
+    setShowApprovalModal,
+    approvalAction,
+    setApprovalAction,
+    approvalComments,
+    setApprovalComments,
+    handleActionApproval,
+    setSelectedTicketForModal,
+    setPreviewMediaUrl
+  };
+
+  return (
+    <div className=" min-h-screen flex flex-col gap-2 bg-surface dark:bg-dark-surface text-on-surface dark:text-dark-on-surface">
+
+      {/* Global Floating Popup Toast (visible above all modals & full viewport) */}
+      {(errorMessage || successMessage) && (
+        <div className="fixed top-3 inset-x-3 sm:inset-x-auto sm:top-5 sm:right-5 z-[9999] sm:max-w-md sm:w-full animate-in slide-in-from-top-3 fade-in duration-200 pointer-events-auto">
+          {errorMessage && (
+            <div className="p-3.5 rounded bg-red-600 text-white text-xs flex items-start justify-between shadow-2xl border border-red-700 gap-3">
+              <div className="flex items-start gap-2.5 min-w-0">
+                <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-white" />
+                <div className="min-w-0">
+                  <strong className="block font-bold text-white mb-0.5">Error</strong>
+                  <span className="text-white/95 break-words leading-relaxed">{errorMessage}</span>
+                </div>
+              </div>
+              <button
+                onClick={() => setErrorMessage(null)}
+                className="p-1 hover:bg-white/20 rounded transition-colors text-white shrink-0 cursor-pointer"
+                title="Dismiss"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          )}
+
+          {successMessage && (
+            <div className="p-3.5 rounded bg-emerald-600 text-white text-xs flex items-start justify-between shadow-2xl border border-emerald-700 gap-3">
+              <div className="flex items-start gap-2.5 min-w-0">
+                <CheckCircle2 className="w-4 h-4 shrink-0 mt-0.5 text-white" />
+                <div className="min-w-0">
+                  <strong className="block font-bold text-white mb-0.5">Success</strong>
+                  <span className="text-white/95 break-words leading-relaxed">{successMessage}</span>
+                </div>
+              </div>
+              <button
+                onClick={() => setSuccessMessage(null)}
+                className="p-1 hover:bg-white/20 rounded transition-colors text-white shrink-0 cursor-pointer"
+                title="Dismiss"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Inline Notifications */}
+      {errorMessage && (
+        <div className="p-3.5 rounded bg-error-container text-on-error-container text-xs flex items-center justify-between border border-error/20">
+          <div className="flex items-center gap-2">
+            <AlertCircle className="w-4 h-4 shrink-0 text-error" />
+            <span>{errorMessage}</span>
+          </div>
+          <button onClick={() => setErrorMessage(null)} className="p-1 hover:opacity-75"><X className="w-3.5 h-3.5" /></button>
+        </div>
+      )}
+
+      {successMessage && (
+        <div className="p-3.5 rounded bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 text-xs flex items-center justify-between border border-emerald-500/20">
+          <div className="flex items-center gap-2">
+            <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-500" />
+            <span>{successMessage}</span>
+          </div>
+          <button onClick={() => setSuccessMessage(null)} className="p-1 hover:opacity-75"><X className="w-3.5 h-3.5" /></button>
+        </div>
+      )}
+
+      {/* Navigation Subpage Tabs */}
+      <div className="flex items-center gap-1  border-outline-variant overflow-x-auto pb-0.5">
+        {navTabs.map((tab) => {
+          const Icon = tab.icon;
+          const isActive = subpage === tab.key;
+          return (
+            <button
+              key={tab.key}
+              onClick={() => navigate(`/finance/${tab.key}`)}
+              className={`flex items-center gap-2 px-4 py-2 text-xs font-medium border-b-2 transition-colors whitespace-nowrap cursor-pointer ${isActive
+                ? 'border-primary text-primary font-semibold'
+                : 'border-transparent text-on-surface-variant hover:text-on-surface hover:bg-surface-container-low'
+                }`}
+            >
+              <Icon className="w-4 h-4" />
+              <span>{tab.label}</span>
+            </button>
+          );
+        })}
       </div>
 
-      {/* Right Side: Filters (Date Range, Status, Bundle/Ledger Filter) */}
-      <div className="flex items-center gap-2.5 flex-wrap justify-start md:justify-end">
-        {/* Popover Date Range Picker */}
-        <DateRangePickerCard
-          fromDate={filterDateFrom}
-          toDate={filterDateTo}
-          dateType={subpage === 'expenses' ? filterDateType : ''}
-          allowEmptyDateType={subpage === 'expenses'}
-          emptyDateTypeLabel="Select Option"
-          hideDateType={subpage !== 'expenses'}
-          onDateRangeChange={(from, to, type) => {
-            setFilterDateRange(from, to, subpage === 'expenses' ? (type || '') : '');
-          }}
-          onReset={() => {
-            const currentMonth = getCurrentMonthRange();
-            setFilterDateRange(currentMonth.from, currentMonth.to, '');
-          }}
-        />
+      {/* SEARCH AND DATEWISE FILTER TOOLBAR */}
+      <div className="p-3.5 rounded border border-outline-variant bg-surface-container flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3 text-xs">        {/* Left Side: Search Input */}
+        <div className="relative w-full sm:w-72 md:w-80 shrink-0">
+          <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant" />
+          <input
+            type="text"
+            placeholder={
+              subpage === 'expenses'
+                ? "Search expenses by worker, ID, ticket, amount..."
+                : subpage === 'bundles'
+                  ? "Search bundles by worker, bundle #, amount..."
+                  : subpage === 'ledgers'
+                    ? "Search ledgers by name, batch, amount..."
+                    : "Search by worker name, ID, ticket, amount..."
+            }
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="w-full h-9 bg-surface-container-low border border-outline-variant hover:border-outline text-on-surface text-xs rounded pl-9 pr-8 focus:outline-none focus:border-primary transition-colors shadow-2xs placeholder:text-on-surface-variant/60"
+          />
+          {searchQuery && (
+            <button
+              type="button"
+              onClick={() => setSearchQuery('')}
+              className="absolute right-2.5 top-1/2 -translate-y-1/2 text-on-surface-variant hover:text-on-surface p-0.5 rounded cursor-pointer transition-colors"
+              title="Clear search"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          )}
+        </div>
 
-        {/* Status Dropdown Filter */}
-        {subpage !== 'payments' && (
-          <div className="w-48 shrink-0">
-            <SearchableSelect
-              value={statusFilter}
-              onChange={(val) => setStatusFilter(val)}
-              className="w-full h-9 bg-surface-container-low border border-outline-variant hover:border-outline text-on-surface text-xs rounded px-3 py-2 focus:outline-none focus:border-primary transition-colors shadow-2xs"
-              options={statusOptions}
-              placeholder="All Statuses"
-            />
-          </div>
-        )}
+        {/* Right Side: Filters (Date Range, Status, Bundle/Ledger Filter) */}
+        <div className="flex items-center gap-2.5 flex-wrap justify-start md:justify-end">
+          {/* Popover Date Range Picker */}
+          <DateRangePickerCard
+            fromDate={filterDateFrom}
+            toDate={filterDateTo}
+            dateType={subpage === 'expenses' ? filterDateType : ''}
+            allowEmptyDateType={subpage === 'expenses'}
+            emptyDateTypeLabel="Select Option"
+            hideDateType={subpage !== 'expenses'}
+            onDateRangeChange={(from, to, type) => {
+              setFilterDateRange(from, to, subpage === 'expenses' ? (type || '') : '');
+            }}
+            onReset={() => {
+              const currentMonth = getCurrentMonthRange();
+              setFilterDateRange(currentMonth.from, currentMonth.to, '');
+            }}
+          />
 
-        {/* Worker / Technician Filter (Applicable for Expenses subpage) */}
-        {subpage === 'expenses' && (
-          <div className="w-52 shrink-0">
-            <SearchableSelect
-              value={expenseWorkerFilter}
-              onChange={(val) => {
-                setExpenseWorkerFilter(val);
-                setExpensePage(1);
-              }}
-              className="w-full h-9 bg-surface-container-low border border-outline-variant hover:border-outline text-on-surface text-xs rounded px-3 py-2 focus:outline-none focus:border-primary transition-colors shadow-2xs"
-              options={expenseWorkerOptions}
-              placeholder="All Workers"
-            />
-          </div>
-        )}
+          {/* Status Dropdown Filter */}
+          {subpage !== 'payments' && (
+            <div className="w-full sm:w-48 shrink-0">
+              <SearchableSelect
+                value={statusFilter}
+                onChange={(val) => setStatusFilter(val)}
+                className="w-full h-9 bg-surface-container-low border border-outline-variant hover:border-outline text-on-surface text-xs rounded px-3 py-2 focus:outline-none focus:border-primary transition-colors shadow-2xs"
+                options={statusOptions}
+                placeholder="All Statuses"
+              />
+            </div>
+          )}
 
-        {/* Bundle Attachment Filter (Applicable for Expenses subpage) */}
-        {subpage === 'expenses' && (
-          <div className="w-52 shrink-0">
-            <SearchableSelect
-              value={bundleFilter}
-              onChange={(val) => setBundleFilter(val as any)}
-              className="w-full h-9 bg-surface-container-low border border-outline-variant hover:border-outline text-on-surface text-xs rounded px-3 py-2 focus:outline-none focus:border-primary transition-colors shadow-2xs"
-              options={[
-                { value: 'ALL', label: 'All Expenses' },
-                { value: 'IN_BUNDLE', label: 'Attached to Bundle' },
-                { value: 'NOT_IN_BUNDLE', label: 'Not in Bundle (Unclaimed)' },
-              ]}
-              placeholder="Bundle Filter"
-            />
-          </div>
-        )}
+          {/* Worker / Technician Filter (Applicable for Expenses subpage) */}
+          {subpage === 'expenses' && (
+            <div className="w-full sm:w-52 shrink-0">
+              <SearchableSelect
+                value={expenseWorkerFilter}
+                onChange={(val) => {
+                  setExpenseWorkerFilter(val);
+                  setExpensePage(1);
+                }}
+                className="w-full h-9 bg-surface-container-low border border-outline-variant hover:border-outline text-on-surface text-xs rounded px-3 py-2 focus:outline-none focus:border-primary transition-colors shadow-2xs"
+                options={expenseWorkerOptions}
+                placeholder="All Workers"
+              />
+            </div>
+          )}
 
-        {/* Ledger Batch Filter (Applicable for Expenses subpage) */}
-        {subpage === 'expenses' && (
-          <div className="w-52 shrink-0">
-            <SearchableSelect
-              value={ledgerBatchFilter}
-              onChange={(val) => setLedgerBatchFilter(val)}
-              className="w-full h-9 bg-surface-container-low border border-outline-variant hover:border-outline text-on-surface text-xs rounded px-3 py-2 focus:outline-none focus:border-primary transition-colors shadow-2xs"
-              options={[
-                { value: 'ALL', label: 'All Ledger Batches' },
-                ...ledgerBatches.map((b: any) => ({
-                  value: String(b.batch_id),
-                  label: b.batch_name
-                }))
-              ]}
-              placeholder="All Ledger Batches"
-            />
-          </div>
-        )}
+          {/* Bundle Attachment Filter (Applicable for Expenses subpage) */}
+          {subpage === 'expenses' && (
+            <div className="w-full sm:w-52 shrink-0">
+              <SearchableSelect
+                value={bundleFilter}
+                onChange={(val) => setBundleFilter(val as any)}
+                className="w-full h-9 bg-surface-container-low border border-outline-variant hover:border-outline text-on-surface text-xs rounded px-3 py-2 focus:outline-none focus:border-primary transition-colors shadow-2xs"
+                options={[
+                  { value: 'ALL', label: 'All Expenses' },
+                  { value: 'IN_BUNDLE', label: 'Attached to Bundle' },
+                  { value: 'NOT_IN_BUNDLE', label: 'Not in Bundle (Unclaimed)' },
+                ]}
+                placeholder="Bundle Filter"
+              />
+            </div>
+          )}
 
-        {/* Ledger Attachment Filter (Applicable for Bundles subpage) */}
-        {subpage === 'bundles' && (
-          <div className="w-40 shrink-0">
-            <SearchableSelect
-              value={ledgerFilter}
-              onChange={(val) => setLedgerFilter(val as any)}
-              className="w-full h-9 bg-surface-container-low border border-outline-variant hover:border-outline text-on-surface text-xs rounded px-3 py-2 focus:outline-none focus:border-primary transition-colors shadow-2xs"
-              options={[
-                { value: 'ALL', label: 'All Bundles' },
-                { value: 'IN_LEDGER', label: 'Attached to Ledger' },
-                { value: 'NOT_IN_LEDGER', label: 'Not in Ledger' },
-              ]}
-              placeholder="Ledger Filter"
-            />
-          </div>
-        )}
-      </div>
+          {/* Ledger Batch Filter (Applicable for Expenses subpage) */}
+          {subpage === 'expenses' && (
+            <div className="w-full sm:w-52 shrink-0">
+              <SearchableSelect
+                value={ledgerBatchFilter}
+                onChange={(val) => setLedgerBatchFilter(val)}
+                className="w-full h-9 bg-surface-container-low border border-outline-variant hover:border-outline text-on-surface text-xs rounded px-3 py-2 focus:outline-none focus:border-primary transition-colors shadow-2xs"
+                options={[
+                  { value: 'ALL', label: 'All Ledger Batches' },
+                  ...ledgerBatches.map((b: any) => ({
+                    value: String(b.batch_id),
+                    label: b.batch_name
+                  }))
+                ]}
+                placeholder="All Ledger Batches"
+              />
+            </div>
+          )}
 
-      {/* Clear Filters Button */}
-      {/* {(searchQuery || statusFilter !== 'ALL' || ledgerFilter !== 'ALL' || bundleFilter !== 'ALL' || filterDateFrom !== getCurrentMonthRange().from || filterDateTo !== getCurrentMonthRange().to) && (
+          {/* Ledger Attachment Filter (Applicable for Bundles subpage) */}
+          {subpage === 'bundles' && (
+            <div className="w-full sm:w-40 shrink-0">
+              <SearchableSelect
+                value={ledgerFilter}
+                onChange={(val) => setLedgerFilter(val as any)}
+                className="w-full h-9 bg-surface-container-low border border-outline-variant hover:border-outline text-on-surface text-xs rounded px-3 py-2 focus:outline-none focus:border-primary transition-colors shadow-2xs"
+                options={[
+                  { value: 'ALL', label: 'All Bundles' },
+                  { value: 'IN_LEDGER', label: 'Attached to Ledger' },
+                  { value: 'NOT_IN_LEDGER', label: 'Not in Ledger' },
+                ]}
+                placeholder="Ledger Filter"
+              />
+            </div>
+          )}
+        </div>
+
+        {/* Clear Filters Button */}
+        {/* {(searchQuery || statusFilter !== 'ALL' || ledgerFilter !== 'ALL' || bundleFilter !== 'ALL' || filterDateFrom !== getCurrentMonthRange().from || filterDateTo !== getCurrentMonthRange().to) && (
           <button
             onClick={() => {
               const currentMonth = getCurrentMonthRange();
@@ -2555,282 +2561,284 @@ return (
             <span>Reset Filters</span>
           </button>
         )} */}
-    </div>
+      </div>
 
-    {/* SUBPAGES */}
-    {subpage === 'expenses' && hasPermission('finance.can_view_expenses') && (
-      <ExpensesSubpage
-        expenses={expenses}
-        filteredExpenses={filteredExpenses}
-        ledgerBatches={ledgerBatches}
-        loading={loading}
-        submitting={submitting}
-        renderStatusBadge={renderStatusBadge}
-        showCreateExpenseModal={showCreateExpenseModal}
-        setShowCreateExpenseModal={setShowCreateExpenseModal}
-        handleCreateExpense={handleCreateExpense}
-        setSelectedTicketForModal={setSelectedTicketForModal}
-        setPreviewMediaUrl={setPreviewMediaUrl}
-        token={token || ''}
-        currentUser={currentUser}
-        API_URL={API_URL}
-        approvalsProps={approvalsProps}
-        onRefresh={() => fetchData(true, true)}
-        currentPage={expensePage}
-        totalItems={expenseTotalCount}
-        itemsPerPage={expensePageSize}
-        onPageChange={(page) => setExpensePage(page)}
-        onItemsPerPageChange={(size) => {
-          setExpensePageSize(size);
-          setExpensePage(1);
-        }}
-        serverTotalAmount={expenseTotalAmount}
-        serverApprovedCount={expenseApprovedCount}
-        serverPendingCount={expensePendingCount}
-        serverUnclaimedCount={expenseUnclaimedCount}
-        isSyncingNewExpense={isSyncingNewExpense}
-        syncingExpenseInfo={syncingExpenseInfo}
-        sortField={expenseSortField}
-        sortDirection={expenseSortDirection}
-        onSortChange={(field, direction) => {
-          setExpenseSortField(field);
-          setExpenseSortDirection(direction);
-        }}
-      />
-    )}
+      {/* SUBPAGES */}
+      {subpage === 'expenses' && hasPermission('finance.can_view_expenses') && (
+        <ExpensesSubpage
+          expenses={expenses}
+          filteredExpenses={filteredExpenses}
+          ledgerBatches={ledgerBatches}
+          loading={loading}
+          submitting={submitting}
+          renderStatusBadge={renderStatusBadge}
+          showCreateExpenseModal={showCreateExpenseModal}
+          setShowCreateExpenseModal={setShowCreateExpenseModal}
+          handleCreateExpense={handleCreateExpense}
+          setSelectedTicketForModal={setSelectedTicketForModal}
+          setPreviewMediaUrl={setPreviewMediaUrl}
+          token={token || ''}
+          currentUser={currentUser}
+          API_URL={API_URL}
+          approvalsProps={approvalsProps}
+          onRefresh={() => fetchData(true, true)}
+          currentPage={expensePage}
+          totalItems={expenseTotalCount}
+          itemsPerPage={expensePageSize}
+          onPageChange={(page) => setExpensePage(page)}
+          onItemsPerPageChange={(size) => {
+            setExpensePageSize(size);
+            setExpensePage(1);
+          }}
+          serverTotalAmount={expenseTotalAmount}
+          serverApprovedCount={expenseApprovedCount}
+          serverPendingCount={expensePendingCount}
+          serverUnclaimedCount={expenseUnclaimedCount}
+          isSyncingNewExpense={isSyncingNewExpense}
+          syncingExpenseInfo={syncingExpenseInfo}
+          sortField={expenseSortField}
+          sortDirection={expenseSortDirection}
+          onSortChange={(field, direction) => {
+            setExpenseSortField(field);
+            setExpenseSortDirection(direction);
+          }}
+        />
+      )}
 
-    {subpage === 'bundles' && hasPermission('finance.can_view_bundles') && (
-      <BundlesSubpage
-        filteredBundles={filteredBundles}
-        bundles={bundles}
-        ledgers={ledgers}
-        unclaimedExpenses={unclaimedExpenses}
-        loading={loading}
-        submitting={submitting}
-        renderStatusBadge={renderStatusBadge}
-        showCreateBundleModal={showCreateBundleModal}
-        setShowCreateBundleModal={setShowCreateBundleModal}
-        expenseSearchWorker={expenseSearchWorker}
-        setExpenseSearchWorker={setExpenseSearchWorker}
-        expenseSearchText={expenseSearchText}
-        setExpenseSearchText={setExpenseSearchText}
-        expenseFilterFrom={expenseFilterFrom}
-        setExpenseFilterFrom={setExpenseFilterFrom}
-        expenseFilterTo={expenseFilterTo}
-        setExpenseFilterTo={setExpenseFilterTo}
-        filterDateFrom={filterDateFrom}
-        filterDateTo={filterDateTo}
-        uniqueExpenseWorkers={uniqueExpenseWorkers}
-        filteredUnclaimedExpenses={filteredUnclaimedExpenses}
-        selectedExpenseIds={selectedExpenseIds}
-        setSelectedExpenseIds={setSelectedExpenseIds}
-        selectedExpensesTotal={selectedExpensesTotal}
-        bundlePeriodFrom={bundlePeriodFrom}
-        setBundlePeriodFrom={setBundlePeriodFrom}
-        bundlePeriodTo={bundlePeriodTo}
-        setBundlePeriodTo={setBundlePeriodTo}
-        bundleRemarks={bundleRemarks}
-        setBundleRemarks={setBundleRemarks}
-        handleCreateBundle={handleCreateBundle}
-        handleSubmitBundle={handleSubmitBundle}
-        selectedBundleForView={selectedBundleForView}
-        setSelectedBundleForView={setSelectedBundleForView}
-        openEditBundleModal={openEditBundleModal}
-        handleRemoveExpenseFromBundle={handleRemoveExpenseFromBundle}
-        handleDeleteBundle={handleDeleteBundle}
-        previewMediaUrl={previewMediaUrl}
-        setPreviewMediaUrl={setPreviewMediaUrl}
-        setShowPaymentModal={setShowPaymentModal}
-        approvalsProps={approvalsProps}
-        token={token || ''}
-        currentUser={currentUser}
-        API_URL={API_URL}
-        errorMessage={errorMessage}
-        setErrorMessage={setErrorMessage}
-        setSelectedTicketForModal={setSelectedTicketForModal}
-        onRefresh={() => fetchData(true, true)}
-        isSyncingNewBundle={isSyncingNewBundle}
-        syncingBundleInfo={syncingBundleInfo}
-        updatingBundleId={updatingBundleId}
-        deletingBundleId={deletingBundleId}
-        selectedWorkerId={selectedWorkerId}
-        setSelectedWorkerId={setSelectedWorkerId}
-        currentPage={bundlePage}
-        totalItems={bundleTotalCount}
-        itemsPerPage={bundlePageSize}
-        onPageChange={(page) => setBundlePage(page)}
-        onItemsPerPageChange={(size) => {
-          setBundlePageSize(size);
-          setBundlePage(1);
-        }}
-        serverBundleStats={bundleStats}
-      />
-    )}
+      {subpage === 'bundles' && hasPermission('finance.can_view_bundles') && (
+        <BundlesSubpage
+          filteredBundles={filteredBundles}
+          bundles={bundles}
+          ledgers={ledgers}
+          unclaimedExpenses={unclaimedExpenses}
+          loading={loading}
+          submitting={submitting}
+          renderStatusBadge={renderStatusBadge}
+          showCreateBundleModal={showCreateBundleModal}
+          setShowCreateBundleModal={setShowCreateBundleModal}
+          expenseSearchWorker={expenseSearchWorker}
+          setExpenseSearchWorker={setExpenseSearchWorker}
+          expenseSearchText={expenseSearchText}
+          setExpenseSearchText={setExpenseSearchText}
+          expenseFilterFrom={expenseFilterFrom}
+          setExpenseFilterFrom={setExpenseFilterFrom}
+          expenseFilterTo={expenseFilterTo}
+          setExpenseFilterTo={setExpenseFilterTo}
+          filterDateFrom={filterDateFrom}
+          filterDateTo={filterDateTo}
+          uniqueExpenseWorkers={uniqueExpenseWorkers}
+          filteredUnclaimedExpenses={filteredUnclaimedExpenses}
+          selectedExpenseIds={selectedExpenseIds}
+          setSelectedExpenseIds={setSelectedExpenseIds}
+          selectedExpensesTotal={selectedExpensesTotal}
+          bundlePeriodFrom={bundlePeriodFrom}
+          setBundlePeriodFrom={setBundlePeriodFrom}
+          bundlePeriodTo={bundlePeriodTo}
+          setBundlePeriodTo={setBundlePeriodTo}
+          bundleRemarks={bundleRemarks}
+          setBundleRemarks={setBundleRemarks}
+          handleCreateBundle={handleCreateBundle}
+          handleSubmitBundle={handleSubmitBundle}
+          selectedBundleForView={selectedBundleForView}
+          setSelectedBundleForView={setSelectedBundleForView}
+          openEditBundleModal={openEditBundleModal}
+          handleRemoveExpenseFromBundle={handleRemoveExpenseFromBundle}
+          handleDeleteBundle={handleDeleteBundle}
+          previewMediaUrl={previewMediaUrl}
+          setPreviewMediaUrl={setPreviewMediaUrl}
+          setShowPaymentModal={setShowPaymentModal}
+          approvalsProps={approvalsProps}
+          token={token || ''}
+          currentUser={currentUser}
+          API_URL={API_URL}
+          errorMessage={errorMessage}
+          setErrorMessage={setErrorMessage}
+          setSelectedTicketForModal={setSelectedTicketForModal}
+          onRefresh={() => fetchData(true, true)}
+          isSyncingNewBundle={isSyncingNewBundle}
+          syncingBundleInfo={syncingBundleInfo}
+          updatingBundleId={updatingBundleId}
+          deletingBundleId={deletingBundleId}
+          selectedWorkerId={selectedWorkerId}
+          setSelectedWorkerId={setSelectedWorkerId}
+          currentPage={bundlePage}
+          totalItems={bundleTotalCount}
+          itemsPerPage={bundlePageSize}
+          onPageChange={(page) => setBundlePage(page)}
+          onItemsPerPageChange={(size) => {
+            setBundlePageSize(size);
+            setBundlePage(1);
+          }}
+          serverBundleStats={bundleStats}
+        />
+      )}
 
-    {subpage === 'ledgers' && hasPermission('finance.can_view_ledger') && (
-      <LedgersSubpage
-        filteredLedgers={filteredLedgers}
-        ledgers={ledgers}
-        bundles={bundles}
-        ledgerGroups={ledgerGroups}
-        ledgerBatches={ledgerBatches}
-        currentUser={currentUser}
-        loading={loading}
-        submitting={submitting}
-        renderStatusBadge={renderStatusBadge}
-        currentPage={ledgerPage}
-        totalItems={ledgerTotalCount}
-        itemsPerPage={ledgerPageSize}
-        onPageChange={(page) => setLedgerPage(page)}
-        onItemsPerPageChange={(size) => {
-          setLedgerPageSize(size);
-          setLedgerPage(1);
-        }}
-        showCreateLedgerModal={showCreateLedgerModal}
-        setShowCreateLedgerModal={setShowCreateLedgerModal}
-        selectedBundleIds={selectedBundleIds}
-        setSelectedBundleIds={setSelectedBundleIds}
-        selectedGroupId={selectedGroupId}
-        setSelectedGroupId={setSelectedGroupId}
-        newGroupName={newGroupName}
-        setNewGroupName={setNewGroupName}
-        handleCreateLedger={handleCreateLedger}
-        handleSubmitLedger={handleSubmitLedger}
-        handleDeleteLedger={handleDeleteLedger}
-        expandedLedgerIds={expandedLedgerIds}
-        toggleExpandLedger={toggleExpandLedger}
-        openEditBundleModal={openEditBundleModal}
-        showAddExpenseModal={showAddExpenseModal}
-        setShowAddExpenseModal={setShowAddExpenseModal}
-        openAddExpenseModal={openAddExpenseModal}
-        loadingAvailableExpenses={loadingAvailableExpenses}
-        availableApprovedExpenses={availableApprovedExpenses}
-        selectedAddExpenseId={selectedAddExpenseId}
-        setSelectedAddExpenseId={setSelectedAddExpenseId}
-        handleAddExpenseToLedger={handleAddExpenseToLedger}
-        handleRemoveExpenseFromLedger={handleRemoveExpenseFromLedger}
-        handleAddBundleToLedger={handleAddBundleToLedger}
-        handleAddBundleToGroup={handleAddBundleToGroup}
-        handleRemoveBundleFromLedger={handleRemoveBundleFromLedger}
-        handleRemoveBundleFromGroup={handleRemoveBundleFromGroup}
-        handleDeleteLedgerGroup={handleDeleteLedgerGroup}
-        token={token || ''}
-        API_URL={API_URL}
-        setShowPaymentModal={setShowPaymentModal}
-        approvalsProps={approvalsProps}
-        setSelectedTicketForModal={setSelectedTicketForModal}
-        onRefresh={() => fetchData(true, true)}
-        isSyncingNewLedger={isSyncingNewLedger}
-        syncingLedgerInfo={syncingLedgerInfo}
-        errorMessage={errorMessage}
-        setErrorMessage={setErrorMessage}
-        onLedgerUpdated={(updatedLedger) => {
-          setLedgers(prev => prev.map(l => l.ledger_id === updatedLedger.ledger_id ? updatedLedger : l));
-          if (updatedLedger.ledger_group_detail) {
-            setLedgerGroups(prev => prev.map(g => g.ledger_group_id === updatedLedger.ledger_group_detail?.ledger_group_id ? { ...g, ...updatedLedger.ledger_group_detail } : g));
-          }
-        }}
-        onLedgersUpdated={(updatedList) => {
-          const updateMap = new Map(updatedList.map(l => [l.ledger_id, l]));
-          setLedgers(prev => prev.map(l => updateMap.get(l.ledger_id) || l));
-          updatedList.forEach(l => {
-            if (l.ledger_group_detail) {
-              setLedgerGroups(prev => prev.map(g => g.ledger_group_id === l.ledger_group_detail?.ledger_group_id ? { ...g, ...l.ledger_group_detail } : g));
+      {subpage === 'ledgers' && hasPermission('finance.can_view_ledger') && (
+        <LedgersSubpage
+          filteredLedgers={filteredLedgers}
+          ledgers={ledgers}
+          bundles={bundles}
+          ledgerGroups={ledgerGroups}
+          ledgerBatches={ledgerBatches}
+          currentUser={currentUser}
+          loading={loading}
+          submitting={submitting}
+          renderStatusBadge={renderStatusBadge}
+          currentPage={ledgerPage}
+          totalItems={ledgerTotalCount}
+          itemsPerPage={ledgerPageSize}
+          onPageChange={(page) => setLedgerPage(page)}
+          onItemsPerPageChange={(size) => {
+            setLedgerPageSize(size);
+            setLedgerPage(1);
+          }}
+          showCreateLedgerModal={showCreateLedgerModal}
+          setShowCreateLedgerModal={setShowCreateLedgerModal}
+          selectedBundleIds={selectedBundleIds}
+          setSelectedBundleIds={setSelectedBundleIds}
+          selectedGroupId={selectedGroupId}
+          setSelectedGroupId={setSelectedGroupId}
+          newGroupName={newGroupName}
+          setNewGroupName={setNewGroupName}
+          handleCreateLedger={handleCreateLedger}
+          handleSubmitLedger={handleSubmitLedger}
+          handleDeleteLedger={handleDeleteLedger}
+          expandedLedgerIds={expandedLedgerIds}
+          toggleExpandLedger={toggleExpandLedger}
+          openEditBundleModal={openEditBundleModal}
+          showAddExpenseModal={showAddExpenseModal}
+          setShowAddExpenseModal={setShowAddExpenseModal}
+          openAddExpenseModal={openAddExpenseModal}
+          loadingAvailableExpenses={loadingAvailableExpenses}
+          availableApprovedExpenses={availableApprovedExpenses}
+          selectedAddExpenseId={selectedAddExpenseId}
+          setSelectedAddExpenseId={setSelectedAddExpenseId}
+          handleAddExpenseToLedger={handleAddExpenseToLedger}
+          handleRemoveExpenseFromLedger={handleRemoveExpenseFromLedger}
+          handleAddBundleToLedger={handleAddBundleToLedger}
+          handleAddBundleToGroup={handleAddBundleToGroup}
+          handleRemoveBundleFromLedger={handleRemoveBundleFromLedger}
+          handleRemoveBundleFromGroup={handleRemoveBundleFromGroup}
+          handleDeleteLedgerGroup={handleDeleteLedgerGroup}
+          token={token || ''}
+          API_URL={API_URL}
+          setShowPaymentModal={setShowPaymentModal}
+          setPreviewMediaUrl={setPreviewMediaUrl}
+          approvalsProps={approvalsProps}
+          setSelectedTicketForModal={setSelectedTicketForModal}
+          onRefresh={() => fetchData(true, true)}
+          isSyncingNewLedger={isSyncingNewLedger}
+          syncingLedgerInfo={syncingLedgerInfo}
+          errorMessage={errorMessage}
+          setErrorMessage={setErrorMessage}
+          onLedgerUpdated={(updatedLedger) => {
+            setLedgers(prev => prev.map(l => l.ledger_id === updatedLedger.ledger_id ? updatedLedger : l));
+            if (updatedLedger.ledger_group_detail) {
+              setLedgerGroups(prev => prev.map(g => g.ledger_group_id === updatedLedger.ledger_group_detail?.ledger_group_id ? { ...g, ...updatedLedger.ledger_group_detail } : g));
             }
-          });
-          // Instantly sync Approvals state in memory so status badges update with zero delay
-          setApprovals(prev => prev.map(a => {
-            const matchedLedger = updatedList.find(l => {
-              const aLedgerId = a.ledger ?? a.ledger_id ?? (a.target_summary?.type === 'Ledger' ? a.target_summary?.id : undefined);
-              return aLedgerId === l.ledger_id;
-            });
-            if (matchedLedger) {
-              if (matchedLedger.status === 'Approved' || matchedLedger.status === 'Paid') {
-                return { ...a, status: 'Approved' };
-              } else if (matchedLedger.status === 'Rework') {
-                return { ...a, status: 'Rework' };
-              } else if (matchedLedger.status === 'Rejected') {
-                return { ...a, status: 'Rejected' };
+          }}
+          onLedgersUpdated={(updatedList) => {
+            const updateMap = new Map(updatedList.map(l => [l.ledger_id, l]));
+            setLedgers(prev => prev.map(l => updateMap.get(l.ledger_id) || l));
+            updatedList.forEach(l => {
+              if (l.ledger_group_detail) {
+                setLedgerGroups(prev => prev.map(g => g.ledger_group_id === l.ledger_group_detail?.ledger_group_id ? { ...g, ...l.ledger_group_detail } : g));
               }
-            }
-            return a;
-          }));
-        }}
-      />
-    )}
+            });
+            // Instantly sync Approvals state in memory so status badges update with zero delay
+            setApprovals(prev => prev.map(a => {
+              const matchedLedger = updatedList.find(l => {
+                const aLedgerId = a.ledger ?? a.ledger_id ?? (a.target_summary?.type === 'Ledger' ? a.target_summary?.id : undefined);
+                return aLedgerId === l.ledger_id;
+              });
+              if (matchedLedger) {
+                if (matchedLedger.status === 'Approved' || matchedLedger.status === 'Paid') {
+                  return { ...a, status: 'Approved' };
+                } else if (matchedLedger.status === 'Rework') {
+                  return { ...a, status: 'Rework' };
+                } else if (matchedLedger.status === 'Rejected') {
+                  return { ...a, status: 'Rejected' };
+                }
+              }
+              return a;
+            }));
+          }}
+        />
+      )}
 
-    {subpage === 'payments' && hasPermission('finance.can_view_audit') && (
-      <PaymentsSubpage
-        filteredPayments={filteredPayments}
-        payments={payments}
-        auditEvents={auditEvents}
+      {subpage === 'payments' && hasPermission('finance.can_view_audit') && (
+        <PaymentsSubpage
+          filteredPayments={filteredPayments}
+          payments={payments}
+          auditEvents={auditEvents}
+          showPaymentModal={showPaymentModal}
+          setShowPaymentModal={setShowPaymentModal}
+          paymentMethod={paymentMethod}
+          setPaymentMethod={setPaymentMethod}
+          paymentAmount={paymentAmount}
+          setPaymentAmount={setPaymentAmount}
+          paymentRef={paymentRef}
+          setPaymentRef={setPaymentRef}
+          paymentRemarks={paymentRemarks}
+          setPaymentRemarks={setPaymentRemarks}
+          handleProcessPayment={handleProcessPayment}
+          submitting={submitting}
+          setPreviewMediaUrl={setPreviewMediaUrl}
+        />
+      )}
+
+      {/* POPUP MODAL: EDIT BUNDLE & MANAGE TIED EXPENSES */}
+      <EditBundleModal
+        selectedBundleForEdit={selectedBundleForEdit}
+        setSelectedBundleForEdit={setSelectedBundleForEdit}
+        editBundleForm={editBundleForm}
+        setEditBundleForm={setEditBundleForm}
+        unclaimedExpenses={unclaimedExpenses}
+        submitting={submitting}
+        handleSaveUpdateBundle={handleSaveUpdateBundle}
+        errorMessage={errorMessage}
+        setErrorMessage={setErrorMessage}
+      />
+
+      {/* POPUP MODAL: CASH SETTLEMENT & DISBURSEMENT PAYMENT */}
+      <PaymentModal
         showPaymentModal={showPaymentModal}
         setShowPaymentModal={setShowPaymentModal}
-        paymentMethod={paymentMethod}
-        setPaymentMethod={setPaymentMethod}
-        paymentAmount={paymentAmount}
-        setPaymentAmount={setPaymentAmount}
-        paymentRef={paymentRef}
-        setPaymentRef={setPaymentRef}
         paymentRemarks={paymentRemarks}
         setPaymentRemarks={setPaymentRemarks}
+        paymentRecipient={paymentRecipient}
+        setPaymentRecipient={setPaymentRecipient}
         handleProcessPayment={handleProcessPayment}
         submitting={submitting}
+        errorMessage={errorMessage}
       />
-    )}
 
-    {/* POPUP MODAL: EDIT BUNDLE & MANAGE TIED EXPENSES */}
-    <EditBundleModal
-      selectedBundleForEdit={selectedBundleForEdit}
-      setSelectedBundleForEdit={setSelectedBundleForEdit}
-      editBundleForm={editBundleForm}
-      setEditBundleForm={setEditBundleForm}
-      unclaimedExpenses={unclaimedExpenses}
-      submitting={submitting}
-      handleSaveUpdateBundle={handleSaveUpdateBundle}
-      errorMessage={errorMessage}
-      setErrorMessage={setErrorMessage}
-    />
+      {/* POPUP MODAL: TICKET DETAIL MODAL */}
+      {selectedTicketForModal && (
+        <TicketDetailModal
+          selectedTicket={selectedTicketForModal}
+          token={token}
+          user={currentUser}
+          statuses={[]}
+          workers={[]}
+          subDepartments={[]}
+          expenseTypes={[]}
+          readOnly={false}
+          onClose={() => {
+            setSelectedTicketForModal(null);
+            fetchData(true, true);
+          }}
+          onRefreshList={() => fetchData(true, true)}
+        />
+      )}
 
-    {/* POPUP MODAL: CASH SETTLEMENT & DISBURSEMENT PAYMENT */}
-    <PaymentModal
-      showPaymentModal={showPaymentModal}
-      setShowPaymentModal={setShowPaymentModal}
-      paymentRemarks={paymentRemarks}
-      setPaymentRemarks={setPaymentRemarks}
-      paymentRecipient={paymentRecipient}
-      setPaymentRecipient={setPaymentRecipient}
-      handleProcessPayment={handleProcessPayment}
-      submitting={submitting}
-      errorMessage={errorMessage}
-    />
-
-    {/* POPUP MODAL: TICKET DETAIL MODAL */}
-    {selectedTicketForModal && (
-      <TicketDetailModal
-        selectedTicket={selectedTicketForModal}
-        token={token}
-        user={currentUser}
-        statuses={[]}
-        workers={[]}
-        subDepartments={[]}
-        expenseTypes={[]}
-        readOnly={false}
-        onClose={() => {
-          setSelectedTicketForModal(null);
-          fetchData(true, true);
-        }}
-        onRefreshList={() => fetchData(true, true)}
+      {/* POPUP MODAL: RECEIPT LIGHTBOX */}
+      <ZoomableLightbox
+        media={previewMediaUrl}
+        onClose={() => setPreviewMediaUrl(null)}
       />
-    )}
-
-    {/* POPUP MODAL: RECEIPT LIGHTBOX */}
-    <ZoomableLightbox
-      media={previewMediaUrl}
-      onClose={() => setPreviewMediaUrl(null)}
-    />
-  </div>
-);
+    </div>
+  );
 };
 
 export default FinanceView;

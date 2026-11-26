@@ -473,6 +473,20 @@ class AuditEvent(models.Model):
             "AuditEvent records are immutable and cannot be deleted.")
 
 
+def payment_receipt_upload_path(instance, filename):
+    import os
+    import uuid
+
+    _, ext = os.path.splitext(filename or '')
+    ext = ext.lower() or '.jpg'
+    prefix = (
+        f"bundle_{instance.claim_id}"
+        if instance.claim_id
+        else (f"ledger_{instance.ledger_id}" if instance.ledger_id else "payment")
+    )
+    return f"payment_receipts/{prefix}_{uuid.uuid4().hex[:10]}{ext}"
+
+
 class Payment(models.Model):
     PAYMENT_METHOD_CHOICES = [
         ('Cash', 'Cash'),
@@ -498,6 +512,8 @@ class Payment(models.Model):
         settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name='processed_payments')
     paid_at = models.DateTimeField(auto_now_add=True)
     recipient_name = models.CharField(max_length=150, blank=True, null=True)
+    receipt_image = models.FileField(
+        upload_to=payment_receipt_upload_path, blank=True, null=True)
     remarks = models.TextField(blank=True, null=True)
 
     class Meta:

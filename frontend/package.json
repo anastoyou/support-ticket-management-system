@@ -12,6 +12,9 @@
   },
   "dependencies": {
     "@ai4bharat/indic-transliterate": "^1.3.8",
+    "@ffmpeg/core": "^0.12.10",
+    "@ffmpeg/ffmpeg": "^0.12.15",
+    "@ffmpeg/util": "^0.12.2",
     "@reduxjs/toolkit": "^2.12.0",
     "@tailwindcss/vite": "^4.3.2",
     "@types/leaflet": "^1.9.22",

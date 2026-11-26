@@ -1545,7 +1545,7 @@ class LedgerService:
 
 class PaymentService:
     @classmethod
-    def process_payment(cls, actor, payment_method='Cash', amount_paid=None, bundle_id=None, ledger_id=None, expense_id=None, transaction_reference=None, remarks=None, recipient_name=None, ip_address=None):
+    def process_payment(cls, actor, payment_method='Cash', amount_paid=None, bundle_id=None, ledger_id=None, expense_id=None, transaction_reference=None, remarks=None, recipient_name=None, receipt_image=None, ip_address=None):
         """
         Processes a cash settlement payment for an approved Bundle or Ledger or individual Expense.
         Supports bundle-wise cash settlement: when all bundles in a ledger are paid,
@@ -1610,6 +1610,7 @@ class PaymentService:
                 payment_method='Cash',
                 transaction_reference=None,
                 recipient_name=recipient_name,
+                receipt_image=receipt_image,
                 paid_by=actor,
                 remarks=remarks
             )
@@ -1717,8 +1718,14 @@ class PaymentService:
 
             create_audit_event(
                 entity_name, entity_id, 'PAYMENT_PROCESSED', actor=actor,
-                payload={'payment_id': payment.payment_id, 'amount_paid': str(
-                    amount_paid), 'payment_method': payment_method, 'reference': transaction_reference, 'recipient_name': recipient_name},
+                payload={
+                    'payment_id': payment.payment_id,
+                    'amount_paid': str(amount_paid),
+                    'payment_method': payment_method,
+                    'reference': transaction_reference,
+                    'recipient_name': recipient_name,
+                    'has_receipt': bool(payment.receipt_image),
+                },
                 ip_address=ip_address
             )
 

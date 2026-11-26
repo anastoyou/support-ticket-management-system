@@ -8,13 +8,17 @@ interface LiveCameraModalProps {
     onClose: () => void;
     onCapture: (file: File) => void;
     initialMode?: 'photo' | 'video';
+    photoOnly?: boolean;
+    onNativeFallback?: () => void;
 }
 
 export const LiveCameraModal: React.FC<LiveCameraModalProps> = ({
     isOpen,
     onClose,
     onCapture,
-    initialMode = 'photo'
+    initialMode = 'photo',
+    photoOnly = false,
+    onNativeFallback,
 }) => {
     const [mode, setMode] = useState<'photo' | 'video'>(initialMode);
     const [facingMode, setFacingMode] = useState<'environment' | 'user'>('environment');
@@ -83,21 +87,30 @@ export const LiveCameraModal: React.FC<LiveCameraModalProps> = ({
         stopStream();
 
         try {
+            if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+                throw new Error('Live camera preview is unavailable on this browser connection.');
+            }
+
+            const needAudio = !photoOnly;
             const constraints: MediaStreamConstraints = {
                 video: {
                     facingMode: { ideal: facingMode },
                     width: { ideal: 1280 },
                     height: { ideal: 720 }
                 },
-                audio: true
+                audio: needAudio
             };
 
             let stream: MediaStream;
             try {
                 stream = await navigator.mediaDevices.getUserMedia(constraints);
             } catch (err) {
-                // Fallback without strict width/height
-                stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+                // Fallback without strict resolution/facing constraints
+                try {
+                    stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: facingMode } }, audio: needAudio });
+                } catch {
+                    stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: needAudio });
+                }
             }
 
             streamRef.current = stream;
@@ -237,12 +250,12 @@ export const LiveCameraModal: React.FC<LiveCameraModalProps> = ({
 
     return (
         <AnimatePresence>
-            <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-xs">
+            <div className="fixed inset-0 z-60 flex items-center justify-center p-2 sm:p-4 bg-black/85 backdrop-blur-xs">
                 <motion.div
                     initial={{ opacity: 0, scale: 0.95 }}
                     animate={{ opacity: 1, scale: 1 }}
                     exit={{ opacity: 0, scale: 0.95 }}
-                    className="relative w-full max-w-lg bg-gray-900 border border-gray-800 rounded-2xl overflow-hidden shadow-2xl flex flex-col max-h-[90vh]"
+                    className="relative w-full max-w-lg bg-gray-900 border border-gray-800 rounded overflow-hidden shadow-2xl flex flex-col max-h-[94dvh]"
                 >
                     {/* Header Bar */}
                     <div className="flex items-center justify-between px-4 py-3 bg-gray-900/90 border-b border-gray-800 z-10">
@@ -257,15 +270,16 @@ export const LiveCameraModal: React.FC<LiveCameraModalProps> = ({
                             </span>
                         </div>
                         <button
+                            type="button"
                             onClick={onClose}
-                            className="p-1 rounded-full text-gray-400 hover:text-white hover:bg-gray-800 transition-colors cursor-pointer"
+                            className="p-1.5 rounded-full text-gray-400 hover:text-white hover:bg-gray-800 transition-colors cursor-pointer"
                         >
                             <X className="w-5 h-5" />
                         </button>
                     </div>
 
                     {/* Viewfinder Container */}
-                    <div className="relative bg-black flex-1 min-h-[320px] max-h-[480px] flex items-center justify-center overflow-hidden">
+                    <div className="relative bg-black flex-1 min-h-[48dvh] sm:min-h-[320px] max-h-[62dvh] sm:max-h-[480px] flex items-center justify-center overflow-hidden">
                         {isStreamLoading && !capturedPreview && (
                             <div className="flex flex-col items-center gap-2 text-gray-400">
                                 <Loader2 className="w-8 h-8 animate-spin text-primary" />
@@ -274,9 +288,24 @@ export const LiveCameraModal: React.FC<LiveCameraModalProps> = ({
                         )}
 
                         {streamError && !capturedPreview && (
-                            <div className="p-4 text-center max-w-xs text-red-400 text-xs">
-                                <p className="font-semibold mb-1">Camera Error</p>
-                                <p>{streamError}</p>
+                            <div className="p-4 text-center max-w-xs text-red-400 text-xs space-y-3">
+                                <div>
+                                    <p className="font-semibold mb-1">Camera Error</p>
+                                    <p>{streamError}</p>
+                                </div>
+                                {onNativeFallback && (
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            onClose();
+                                            onNativeFallback();
+                                        }}
+                                        className="px-3.5 py-2 rounded bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold inline-flex items-center gap-1.5 cursor-pointer transition-colors"
+                                    >
+                                        <Camera className="w-4 h-4" />
+                                        <span>Open Device Camera</span>
+                                    </button>
+                                )}
                             </div>
                         )}
 
@@ -332,8 +361,8 @@ export const LiveCameraModal: React.FC<LiveCameraModalProps> = ({
 
                     {/* Controls Footer */}
                     <div className="p-4 bg-gray-900 border-t border-gray-800 flex flex-col gap-3">
-                        {/* Mode Switcher Tabs (Only when not captured and not recording) */}
-                        {!capturedPreview && !isRecording && (
+                        {/* Mode Switcher Tabs (Only when not captured, not recording, and video is allowed) */}
+                        {!photoOnly && !capturedPreview && !isRecording && (
                             <div className="flex justify-center gap-2">
                                 <button
                                     type="button"
@@ -395,7 +424,7 @@ export const LiveCameraModal: React.FC<LiveCameraModalProps> = ({
                                         <button
                                             type="button"
                                             onClick={() => setPhotoRotation(prev => (prev - 90 + 360) % 360)}
-                                            className="px-3 py-1.5 bg-gray-800 hover:bg-gray-700 text-gray-200 text-xs font-semibold rounded-lg transition-colors cursor-pointer flex items-center gap-1.5"
+                                            className="px-3 py-1.5 bg-gray-800 hover:bg-gray-700 text-gray-200 text-xs font-semibold rounded transition-colors cursor-pointer flex items-center gap-1.5"
                                             title="Rotate 90° Left"
                                         >
                                             <RotateCcw className="w-3.5 h-3.5" /> Rotate Left
@@ -404,7 +433,7 @@ export const LiveCameraModal: React.FC<LiveCameraModalProps> = ({
                                         <button
                                             type="button"
                                             onClick={() => setPhotoRotation(prev => (prev + 90) % 360)}
-                                            className="px-3 py-1.5 bg-gray-800 hover:bg-gray-700 text-gray-200 text-xs font-semibold rounded-lg transition-colors cursor-pointer flex items-center gap-1.5"
+                                            className="px-3 py-1.5 bg-gray-800 hover:bg-gray-700 text-gray-200 text-xs font-semibold rounded transition-colors cursor-pointer flex items-center gap-1.5"
                                             title="Rotate 90° Right"
                                         >
                                             <RotateCw className="w-3.5 h-3.5" /> Rotate Right
@@ -415,14 +444,14 @@ export const LiveCameraModal: React.FC<LiveCameraModalProps> = ({
                                     <button
                                         type="button"
                                         onClick={retakeMedia}
-                                        className="flex-1 py-2.5 bg-gray-800 hover:bg-gray-700 text-gray-200 text-xs font-semibold rounded-xl transition-colors cursor-pointer flex items-center justify-center gap-1.5"
+                                        className="flex-1 py-2.5 bg-gray-800 hover:bg-gray-700 text-gray-200 text-xs font-semibold rounded transition-colors cursor-pointer flex items-center justify-center gap-1.5"
                                     >
                                         <RefreshCw className="w-4 h-4" /> Retake
                                     </button>
                                     <button
                                         type="button"
                                         onClick={confirmCapturedMedia}
-                                        className="flex-1 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold rounded-xl transition-colors cursor-pointer flex items-center justify-center gap-1.5 shadow-md"
+                                        className="flex-1 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold rounded transition-colors cursor-pointer flex items-center justify-center gap-1.5 shadow-md"
                                     >
                                         <Check className="w-4 h-4" /> Use Media
                                     </button>

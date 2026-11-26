@@ -738,3 +738,71 @@ class LedgerGroupBundleRemovalTestCase(TestCase):
         self.assertFalse(updated.default_fill)
         self.assertEqual(updated.default_fill_template, "{Location} Taxi fair")
 
+    def test_bundle_cash_settlement_saves_uploaded_receipt_image(self):
+        import shutil
+        import tempfile
+        from django.core.files.uploadedfile import SimpleUploadedFile
+        from django.test import override_settings
+        from rest_framework.test import APIClient
+
+        temp_media = tempfile.mkdtemp()
+        try:
+            with override_settings(MEDIA_ROOT=temp_media):
+                bundle = self._make_approved_bundle(self.ticket1, "45.750")
+                group = LedgerGroup.objects.create(
+                    group_name="Receipt Test Group", created_by=self.admin_user
+                )
+                ledgers = LedgerService.create_ledger(
+                    bundle_ids=[bundle.claim_id],
+                    created_by=self.admin_user,
+                    ledger_group_id=group.ledger_group_id,
+                )
+                ledger = ledgers[0]
+                ledger.status = "Approved"
+                ledger.save(update_fields=["status"])
+                group.is_completed = True
+                group.save(update_fields=["is_completed"])
+
+                client = APIClient()
+                client.force_authenticate(user=self.admin_user)
+
+                receipt_file = SimpleUploadedFile(
+                    "signed_voucher.png",
+                    b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR",
+                    content_type="image/png",
+                )
+                resp = client.post(
+                    "/api/finance/payments/process-payment/",
+                    data={
+                        "bundle_id": bundle.claim_id,
+                        "payment_method": "Cash",
+                        "amount_paid": "45.750",
+                        "recipient_name": "tech_john",
+                        "remarks": "Signed voucher attached",
+                        "receipt_image": receipt_file,
+                    },
+                    format="multipart",
+                )
+                self.assertEqual(resp.status_code, 201, resp.data)
+                self.assertTrue(resp.data.get("receipt_image"))
+                self.assertIn("payment_receipts/", resp.data["receipt_image"])
+
+                payment = Payment.objects.get(pk=resp.data["payment_id"])
+                self.assertTrue(bool(payment.receipt_image))
+                bundle.refresh_from_db()
+                ledger.refresh_from_db()
+                group.refresh_from_db()
+                self.assertEqual(bundle.status, "Paid")
+                self.assertEqual(ledger.status, "Paid")
+                self.assertTrue(group.is_paid)
+
+                ledger_resp = client.get(f"/api/finance/ledgers/{ledger.ledger_id}/")
+                self.assertEqual(ledger_resp.status_code, 200, ledger_resp.data)
+                bundles_data = ledger_resp.data.get("bundles") or []
+                self.assertEqual(len(bundles_data), 1)
+                self.assertTrue(bundles_data[0].get("payment_receipt_image"))
+                self.assertIn("payment_receipts/", bundles_data[0]["payment_receipt_image"])
+        finally:
+            shutil.rmtree(temp_media, ignore_errors=True)
+
+

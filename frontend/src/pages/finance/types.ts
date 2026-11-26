@@ -197,6 +197,8 @@ export interface WorkerClaimItem {
   expenses?: ExpenseItem[];
   approval_history?: ApprovalInstanceItem[];
   approval_instances?: ApprovalInstanceItem[];
+  ledger_batches?: Array<{ batchId?: number; batchName: string; count: number; amount: number }>;
+  payment_receipt_image?: string | null;
   ledger_details?: {
     ledger_id: number;
     ledger_group_id?: number;
@@ -251,6 +253,7 @@ export interface LedgerItem {
   created_at: string;
   bundles: WorkerClaimItem[];
   expenses?: ExpenseItem[];
+  payment_receipt_image?: string | null;
   remarks?: string;
 }
 
@@ -274,6 +277,8 @@ export interface PaymentItem {
   ledger?: number;
   paid_by_username?: string;
   paid_at: string;
+  recipient_name?: string;
+  receipt_image?: string | null;
   remarks?: string;
 }
 

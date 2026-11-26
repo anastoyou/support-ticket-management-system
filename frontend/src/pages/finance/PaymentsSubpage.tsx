@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { ShieldCheck, X } from 'lucide-react';
+import { ShieldCheck, X, Eye } from 'lucide-react';
 import type { PaymentItem, AuditEventItem, WorkerClaimItem, LedgerItem } from './types';
 import { Pagination } from './Pagination';
 import { SearchableSelect, type SelectOption } from '../../components/SearchableSelect';
+import { getMediaUrl } from '../ticket/TicketsTypesAndComponents';
 
 interface PaymentsSubpageProps {
   filteredPayments: PaymentItem[];
@@ -20,6 +21,7 @@ interface PaymentsSubpageProps {
   setPaymentRemarks: (val: string) => void;
   handleProcessPayment: () => void;
   submitting: boolean;
+  setPreviewMediaUrl?: (media: { url: string; title: string } | null) => void;
 }
 
 export const PaymentsSubpage: React.FC<PaymentsSubpageProps> = ({
@@ -38,6 +40,7 @@ export const PaymentsSubpage: React.FC<PaymentsSubpageProps> = ({
   setPaymentRemarks,
   handleProcessPayment,
   submitting,
+  setPreviewMediaUrl,
 }) => {
   // Pagination State for Payments Table
   const [paymentsPage, setPaymentsPage] = useState(1);
@@ -78,7 +81,55 @@ export const PaymentsSubpage: React.FC<PaymentsSubpageProps> = ({
           <div className="p-8 text-center text-xs text-on-surface-variant">No disbursement payments match filters.</div>
         ) : (
           <>
-            <div className="overflow-x-auto flex-1">
+            {/* Mobile Card Layout */}
+            <div className="md:hidden divide-y divide-outline-variant">
+              {paginatedPayments.map((p) => {
+                const receiptUrl = p.receipt_image ? getMediaUrl(p.receipt_image) : null;
+                return (
+                  <div key={`m_pay_${p.payment_id}`} className="p-3.5 space-y-2 text-xs">
+                    <div className="flex items-start justify-between gap-2">
+                      <div>
+                        <span className="font-bold text-primary">
+                          {p.claim ? `Bundle #${p.claim}` : p.ledger ? `Ledger #${p.ledger}` : 'Expense'}
+                        </span>
+                        <span className="text-[11px] text-on-surface-variant block mt-0.5">
+                          Payment #{p.payment_id} • {p.payment_method}
+                        </span>
+                      </div>
+                      <span className="font-extrabold text-emerald-600 dark:text-emerald-400 text-sm shrink-0">
+                        KD {parseFloat(p.amount_paid).toFixed(3)}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between text-[11px] text-on-surface-variant gap-2">
+                      <span className="truncate">By {p.paid_by_username || 'System'}</span>
+                      <span className="shrink-0">{new Date(p.paid_at).toLocaleDateString()}</span>
+                    </div>
+                    {receiptUrl && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (setPreviewMediaUrl) {
+                            setPreviewMediaUrl({
+                              url: receiptUrl,
+                              title: `Payment Receipt #${p.payment_id}${p.claim ? ` (Bundle #${p.claim})` : ''}`,
+                            });
+                          } else {
+                            window.open(receiptUrl, '_blank', 'noopener,noreferrer');
+                          }
+                        }}
+                        className="w-full py-2 rounded bg-teal-500/10 hover:bg-teal-500/20 text-teal-700 dark:text-teal-300 border border-teal-500/30 text-xs font-semibold inline-flex items-center justify-center gap-1.5 cursor-pointer transition-colors"
+                      >
+                        <Eye className="w-3.5 h-3.5" />
+                        <span>View Receipt</span>
+                      </button>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Desktop Table */}
+            <div className="hidden md:block overflow-x-auto flex-1">
               <table className="w-full text-xs text-left text-on-surface">
                 <thead className="bg-surface-container-low text-on-surface-variant uppercase text-[10px] tracking-wider border-b border-outline-variant">
                   <tr>
@@ -88,11 +139,14 @@ export const PaymentsSubpage: React.FC<PaymentsSubpageProps> = ({
                     <th className="px-4 py-3">Target</th>
                     <th className="px-4 py-3 text-right">Amount (KD)</th>
                     <th className="px-4 py-3">Disbursed By</th>
+                    <th className="px-4 py-3">Receipt</th>
                     <th className="px-4 py-3">Date</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-outline-variant">
-                  {paginatedPayments.map((p) => (
+                  {paginatedPayments.map((p) => {
+                    const receiptUrl = p.receipt_image ? getMediaUrl(p.receipt_image) : null;
+                    return (
                     <tr key={p.payment_id} className="hover:bg-surface-container-high transition-colors">
                       <td className="px-4 py-3  font-medium">{p.payment_id}</td>
                       <td className="px-4 py-3 font-medium">{p.payment_method}</td>
@@ -104,9 +158,33 @@ export const PaymentsSubpage: React.FC<PaymentsSubpageProps> = ({
                         {parseFloat(p.amount_paid).toFixed(3)}
                       </td>
                       <td className="px-4 py-3 text-on-surface-variant">{p.paid_by_username || 'System'}</td>
+                      <td className="px-4 py-3">
+                        {receiptUrl ? (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (setPreviewMediaUrl) {
+                                setPreviewMediaUrl({
+                                  url: receiptUrl,
+                                  title: `Payment Receipt #${p.payment_id}${p.claim ? ` (Bundle #${p.claim})` : ''}`,
+                                });
+                              } else {
+                                window.open(receiptUrl, '_blank', 'noopener,noreferrer');
+                              }
+                            }}
+                            className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-teal-500/10 hover:bg-teal-500/20 text-teal-700 dark:text-teal-300 border border-teal-500/30 text-[11px] font-semibold cursor-pointer transition-colors"
+                          >
+                            <Eye className="w-3 h-3" />
+                            <span>View Receipt</span>
+                          </button>
+                        ) : (
+                          <span className="text-[11px] text-on-surface-variant/60">-</span>
+                        )}
+                      </td>
                       <td className="px-4 py-3 text-on-surface-variant">{new Date(p.paid_at).toLocaleString()}</td>
                     </tr>
-                  ))}
+                    );
+                  })}
                 </tbody>
               </table>
             </div>

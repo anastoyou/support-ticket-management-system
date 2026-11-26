@@ -2141,6 +2141,7 @@ class WorkerClaimViewSet(viewsets.ModelViewSet):
             'submitted_by__sub_departments',
             'approved_by__sub_departments',
             'ledgers__ledger_group',
+            'payments',
             Prefetch(
                 'expenses',
                 queryset=Expense.objects.select_related(
@@ -2949,10 +2950,12 @@ class LedgerViewSet(viewsets.ModelViewSet):
                     'approval_instances__step__assigned_role',
                     'approval_instances__step__assigned_users',
                     'approval_instances__action_by',
-                    'ledgers__ledger_group'
+                    'ledgers__ledger_group',
+                    'payments'
                 )
             ),
 
+            'payments',
             'approval_instances__step__assigned_role',
             'approval_instances__step__assigned_users',
             'approval_instances__action_by',
@@ -3467,6 +3470,19 @@ class PaymentViewSet(viewsets.ModelViewSet):
             )
         remarks = request.data.get('remarks')
         recipient_name = request.data.get('recipient_name')
+        receipt_image = request.FILES.get('receipt_image')
+        if not receipt_image:
+            raw_receipt = request.data.get('receipt_image')
+            if raw_receipt and hasattr(raw_receipt, 'read'):
+                receipt_image = raw_receipt
+
+        if receipt_image:
+            import os
+            allowed_exts = {'.jpg', '.jpeg', '.png', '.webp', '.gif', '.bmp', '.heic', '.heif'}
+            _, ext = os.path.splitext(getattr(receipt_image, 'name', '') or '')
+            content_type = (getattr(receipt_image, 'content_type', '') or '').lower()
+            if not (content_type.startswith('image/') or ext.lower() in allowed_exts):
+                raise exceptions.ValidationError({'detail': 'Receipt upload must be a valid image file.'})
 
         from django.core.exceptions import ValidationError as DjangoValidationError
         try:
@@ -3479,6 +3495,7 @@ class PaymentViewSet(viewsets.ModelViewSet):
                 expense_id=expense_id,
                 remarks=remarks,
                 recipient_name=recipient_name,
+                receipt_image=receipt_image,
                 ip_address=request.META.get('REMOTE_ADDR')
             )
             return Response(PaymentSerializer(payment).data, status=status.HTTP_201_CREATED)
