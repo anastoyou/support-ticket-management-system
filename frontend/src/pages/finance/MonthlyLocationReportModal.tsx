@@ -263,6 +263,39 @@ export function formatWorkHours(val?: number | string | null): string {
   return isNeg ? `-${res}` : res;
 }
 
+type ReportMode = 'single' | 'comparison';
+type GroupingMode = 'location' | 'batch' | 'store_type' | 'worker';
+
+const REPORT_TITLES: Record<ReportMode, Record<GroupingMode, string>> = {
+  single: {
+    location: 'Monthly Location Report',
+    batch: 'Monthly Ledger Group Report',
+    store_type: 'Monthly Store Type Report',
+    worker: 'Monthly Worker Report',
+  },
+  comparison: {
+    location: 'Monthly Comparison by Location',
+    batch: 'Monthly Comparison by Ledger Group',
+    store_type: 'Monthly Comparison by Store Type',
+    worker: 'Monthly Comparison by Worker',
+  },
+};
+
+const EXCEL_SHEET_NAMES: Record<ReportMode, Record<GroupingMode, string>> = {
+  single: {
+    location: 'Monthly Location Report',
+    batch: 'Monthly Ledger Group Report',
+    store_type: 'Monthly Store Type Report',
+    worker: 'Monthly Worker Report',
+  },
+  comparison: {
+    location: 'Comparison by Location',
+    batch: 'Comparison by Ledger Group',
+    store_type: 'Comparison by Store Type',
+    worker: 'Comparison by Worker',
+  },
+};
+
 interface MonthlyLocationReportModalProps {
   isOpen: boolean;
   onClose: () => void;
@@ -281,7 +314,7 @@ export const MonthlyLocationReportModal: React.FC<MonthlyLocationReportModalProp
   const { hasPermission } = usePermission();
 
   // Mode: Single Month Location Report vs Comparison Report
-  const [reportMode, setReportMode] = useState<'single' | 'comparison'>('single');
+  const [reportMode, setReportMode] = useState<ReportMode>('single');
   // Orientation: Vertical (Portrait) default as requested vs Horizontal (Landscape)
   const [isVerticalOrientation, setIsVerticalOrientation] = useState(true);
 
@@ -334,7 +367,7 @@ export const MonthlyLocationReportModal: React.FC<MonthlyLocationReportModalProp
   const [statusFilter, setStatusFilter] = useState<'approved' | 'all' | 'paid'>('approved');
   const [selectedStoreType, setSelectedStoreType] = useState<string>('all');
   const [selectedBatch, setSelectedBatch] = useState<string>('all');
-  const [groupingMode, setGroupingMode] = useState<'location' | 'batch' | 'store_type' | 'worker'>('location');
+  const [groupingMode, setGroupingMode] = useState<GroupingMode>('location');
   const [searchTerm, setSearchTerm] = useState('');
   const [showDetailedCategoriesInComparison, setShowDetailedCategoriesInComparison] = useState(false);
   const [expandedLocations, setExpandedLocations] = useState<Record<string, boolean>>({});
@@ -674,9 +707,8 @@ export const MonthlyLocationReportModal: React.FC<MonthlyLocationReportModalProp
   const handlePrint = () => {
     const isComp = reportMode === 'comparison' && comparisonData;
     const isWorkerMode = groupingMode === 'worker';
-    const title = isComp
-      ? (isWorkerMode ? 'WORKER EXPENSE COMPARISON REPORT' : 'LOCATION EXPENSE COMPARISON REPORT')
-      : (isWorkerMode ? 'MONTHLY WORKER EXPENSE REPORT' : 'MONTHLY LOCATION EXPENSE REPORT');
+    const activeMode: ReportMode = isComp ? 'comparison' : 'single';
+    const title = REPORT_TITLES[activeMode][groupingMode].toUpperCase();
     const subtitle = isComp
       ? `Period 1: ${comparisonData.period1.month_label} (${comparisonData.period1.from_date} to ${comparisonData.period1.to_date}) vs Period 2: ${comparisonData.period2.month_label} (${comparisonData.period2.from_date} to ${comparisonData.period2.to_date})`
       : `Period: ${singleData?.month_label || `${singleFromDate} to ${singleToDate}`}`;
@@ -1502,9 +1534,9 @@ export const MonthlyLocationReportModal: React.FC<MonthlyLocationReportModalProp
   const handleExportExcel = () => {
     const isComp = reportMode === 'comparison' && comparisonData;
     const isWorkerMode = groupingMode === 'worker';
-    const title = isComp
-      ? (isWorkerMode ? 'Worker Expense Comparison Report' : 'Location Expense Comparison Report')
-      : (isWorkerMode ? 'Monthly Worker Expense Report' : 'Monthly Location Expense Report');
+    const activeMode: ReportMode = isComp ? 'comparison' : 'single';
+    const title = REPORT_TITLES[activeMode][groupingMode];
+    const sheetName = EXCEL_SHEET_NAMES[activeMode][groupingMode];
     const wb = XLSX.utils.book_new();
 
     const rows: any[][] = [
@@ -1788,7 +1820,7 @@ export const MonthlyLocationReportModal: React.FC<MonthlyLocationReportModalProp
       if (excelMerges.length > 0) {
         ws['!merges'] = excelMerges;
       }
-      XLSX.utils.book_append_sheet(wb, ws, 'Location Expense Report');
+      XLSX.utils.book_append_sheet(wb, ws, sheetName);
 
       const fileName = `${title.replace(/\s+/g, '_')}_${new Date().toISOString().split('T')[0]}.xlsx`;
       XLSX.writeFile(wb, fileName);
@@ -1802,7 +1834,7 @@ export const MonthlyLocationReportModal: React.FC<MonthlyLocationReportModalProp
     rows.push(signaturesList.map(s => s.name));
 
     const ws = XLSX.utils.aoa_to_sheet(rows);
-    XLSX.utils.book_append_sheet(wb, ws, 'Location Expense Report');
+    XLSX.utils.book_append_sheet(wb, ws, sheetName);
 
     const fileName = `${title.replace(/\s+/g, '_')}_${new Date().toISOString().split('T')[0]}.xlsx`;
     XLSX.writeFile(wb, fileName);
@@ -2250,7 +2282,7 @@ export const MonthlyLocationReportModal: React.FC<MonthlyLocationReportModalProp
                         />
                         <div>
                           <h3 className="text-base sm:text-lg font-black text-primary uppercase tracking-tight">
-                            {groupingMode === 'worker' ? 'Monthly Worker Expense Report' : 'Monthly Location Expense Report'}
+                            {REPORT_TITLES.single[groupingMode]}
                           </h3>
                           <p className="text-xs sm:text-sm font-medium text-on-surface-variant">
                             Grand Hypermarket — {singleData?.department_name ? `${singleData.department_name} Operations` : 'Maintenance & Facilities Operations'}
@@ -2762,7 +2794,7 @@ export const MonthlyLocationReportModal: React.FC<MonthlyLocationReportModalProp
                         />
                         <div>
                           <h3 className="text-base sm:text-lg font-black text-primary uppercase tracking-tight">
-                            {groupingMode === 'worker' ? 'Worker Expense Comparison Statement' : 'Location Expense Comparison Statement'}
+                            {REPORT_TITLES.comparison[groupingMode]}
                           </h3>
                           <p className="text-xs sm:text-sm font-medium text-on-surface-variant">
                             {comparisonData?.department_name ? `${comparisonData.department_name} — ` : ''}{comparisonData.period1.month_label} vs {comparisonData.period2.month_label}

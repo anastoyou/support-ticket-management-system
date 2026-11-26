@@ -4344,6 +4344,7 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
                                                         </span>
                                                     )}
                                                 </div>
+
                                                 <input
                                                     name="remarks"
                                                     type="text"
