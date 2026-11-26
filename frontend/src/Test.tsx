@@ -272,8 +272,10 @@ export default function Test() {
             }
 
             const output = await ffmpeg.readFile(outputName);
+            const blobPart: BlobPart =
+                typeof output === "string" ? output : new Uint8Array(output);
 
-            const blob = new Blob([output], {
+            const blob = new Blob([blobPart], {
                 type: "video/mp4",
             });
 

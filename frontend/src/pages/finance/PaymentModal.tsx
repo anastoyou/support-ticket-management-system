@@ -214,7 +214,10 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
   const handleOpenLiveCamera = () => {
     // Prefer in-browser LiveCameraModal on mobile & desktop so mobile OS does not
     // suspend/reload the browser tab when handing off to an external camera app.
-    if (typeof navigator !== 'undefined' && navigator.mediaDevices?.getUserMedia) {
+    if (
+      typeof navigator !== 'undefined' &&
+      typeof navigator.mediaDevices?.getUserMedia === 'function'
+    ) {
       setIsCameraModalOpen(true);
     } else if (cameraInputRef.current) {
       cameraInputRef.current.click();

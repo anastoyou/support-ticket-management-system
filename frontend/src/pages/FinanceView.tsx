@@ -2723,7 +2723,6 @@ export const FinanceView: React.FC = () => {
           token={token || ''}
           API_URL={API_URL}
           setShowPaymentModal={setShowPaymentModal}
-          setPreviewMediaUrl={setPreviewMediaUrl}
           approvalsProps={approvalsProps}
           setSelectedTicketForModal={setSelectedTicketForModal}
           onRefresh={() => fetchData(true, true)}
