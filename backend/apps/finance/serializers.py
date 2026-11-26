@@ -488,6 +488,8 @@ class ExpenseSerializer(serializers.ModelSerializer):
                 'parent_id': parent.expense_type_id if parent else None,
                 'parent_name': parent.expense_name if parent else None,
                 'approve_required': obj.expense_type.approve_required,
+                'default_fill': obj.expense_type.default_fill,
+                'default_fill_template': obj.expense_type.default_fill_template,
                 'department_name': obj.expense_type.department.department_name if obj.expense_type.department else None
             }
         return None

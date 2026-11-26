@@ -84,8 +84,8 @@ export interface WorkLog {
 export interface Expense {
     expense_id: number;
     worker: UserStub;
-    expense_type: { expense_type_id: number; expense_name: string; parent?: { expense_name: string } | null; required?: boolean; approve_required?: boolean };
-    expense_type_detail?: { expense_type_id?: number; expense_name?: string; approve_required?: boolean };
+    expense_type: { expense_type_id: number; expense_name: string; parent?: { expense_name: string } | null; required?: boolean; approve_required?: boolean; default_fill?: boolean; default_fill_template?: string };
+    expense_type_detail?: { expense_type_id?: number; expense_name?: string; approve_required?: boolean; default_fill?: boolean; default_fill_template?: string };
     amount: string;
     expense_date: string;
     remarks: string;

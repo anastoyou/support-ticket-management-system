@@ -15,6 +15,18 @@ class ExpenseType(models.Model):
         'self', on_delete=models.SET_NULL, null=True, blank=True, related_name='sub_types')
     required = models.BooleanField(default=True)
     approve_required = models.BooleanField(default=False)
+    default_fill = models.BooleanField(
+        default=False,
+        verbose_name='Default fill',
+        help_text='When enabled, automatically fills the expense remark with the predefined prefix/template.'
+    )
+    default_fill_template = models.CharField(
+        max_length=255,
+        blank=True,
+        default='',
+        verbose_name='Default fill prefix / template',
+        help_text='Optional predefined prefix or template using {LOCATION} (e.g. "Bus ticket for {LOCATION}" or "{LOCATION} Taxi fair").'
+    )
 
     class Meta:
         constraints = [

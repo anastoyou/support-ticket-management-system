@@ -344,3 +344,71 @@ export const renderFinanceStatusBadge = (
       );
   }
 };
+
+export interface ExpenseTypeLike {
+  expense_name?: string;
+  default_fill?: boolean;
+  default_fill_template?: string | null;
+}
+
+const formatLocationForRemark = (name?: string | null): string =>
+  (name || '')
+    .replace(/\s*\([A-Za-z]+\)\s*$/, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLowerCase()
+    .replace(/(^|[\s-/])([a-z])/g, (_, sep: string, ch: string) => `${sep}${ch.toUpperCase()}`);
+
+/**
+ * Builds the pre-filled expense remark for an expense type when `default_fill` is enabled.
+ * Substitutes `{LOCATION}` (case-insensitive) and `{EXPENSE_TYPE}` placeholders.
+ */
+export const buildDefaultExpenseRemark = (
+  expenseType?: ExpenseTypeLike | null,
+  locationName?: string | null
+): string => {
+  if (!expenseType?.default_fill) return '';
+
+  const expName = (expenseType.expense_name || '').trim();
+  const loc = formatLocationForRemark(locationName);
+  const customTemplate = expenseType.default_fill_template || '';
+
+  let template = customTemplate.trim() ? customTemplate : '';
+  if (!template) {
+    if (/\bbus\b/i.test(expName)) {
+      template = loc ? 'Bus ticket for {LOCATION}' : 'Bus ticket';
+    } else if (/\btaxi\b/i.test(expName)) {
+      template = loc ? '{LOCATION} Taxi fair' : 'Taxi fair';
+    } else {
+      template = loc ? `${expName} for {LOCATION}` : expName;
+    }
+  }
+
+  let result = template.replace(/\{expense_(?:type|name)\}/gi, expName);
+  if (loc) {
+    result = result.replace(/\{location\}/gi, loc);
+  } else {
+    result = result.replace(/\s*\{location\}\s*/gi, ' ').trim();
+  }
+  return result;
+};
+
+/**
+ * Resolves updated remarks when an expense category changes, preserving user-entered text
+ * while replacing empty or previously auto-filled remarks.
+ */
+export const resolveRemarkOnExpenseTypeChange = (
+  currentRemarks: string,
+  prevAutoFilledRemark: string,
+  expenseType?: ExpenseTypeLike | null,
+  locationName?: string | null
+): { remarks: string; nextAutoFilledRemark: string; changed: boolean } => {
+  const nextAuto = buildDefaultExpenseRemark(expenseType, locationName);
+  const currentTrimmed = (currentRemarks || '').trim();
+  const prevTrimmed = (prevAutoFilledRemark || '').trim();
+
+  if (!currentTrimmed || (prevTrimmed !== '' && currentTrimmed === prevTrimmed)) {
+    return { remarks: nextAuto, nextAutoFilledRemark: nextAuto, changed: true };
+  }
+  return { remarks: currentRemarks, nextAutoFilledRemark: prevAutoFilledRemark, changed: false };
+};

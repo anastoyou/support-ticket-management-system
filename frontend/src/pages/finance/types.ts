@@ -34,8 +34,8 @@ export interface ExpenseItem {
   };
   sub_department_id?: number;
   sub_department_name?: string;
-  expense_type?: { expense_id: number; expense_name: string; approve_required?: boolean };
-  expense_type_detail?: { expense_name: string; approve_required?: boolean };
+  expense_type?: { expense_id: number; expense_name: string; approve_required?: boolean; default_fill?: boolean; default_fill_template?: string };
+  expense_type_detail?: { expense_name: string; approve_required?: boolean; default_fill?: boolean; default_fill_template?: string };
   receipts?: MediaFileItem[];
   receipt?: MediaFileItem;
   responsible_store?: { store_id: string; store_name: string; type?: string; store_type?: string };

@@ -711,3 +711,30 @@ class LedgerGroupBundleRemovalTestCase(TestCase):
         for lg in group.ledgers.all():
             self.assertEqual(lg.status, "Draft")
             self.assertEqual(lg.approval_instances.count(), 0)
+
+    def test_expense_type_default_fill_fields_and_serialization(self):
+        from apps.finance.serializers import ExpenseTypeSerializer, ExpenseTypeWriteSerializer
+
+        et = ExpenseType.objects.create(
+            department=self.dept,
+            expense_name="Bus Fare",
+            required=False,
+            approve_required=True,
+            default_fill=True,
+            default_fill_template="Bus ticket for {LOCATION}",
+        )
+        data = ExpenseTypeSerializer(et).data
+        self.assertTrue(data["default_fill"])
+        self.assertEqual(data["default_fill_template"], "Bus ticket for {LOCATION}")
+
+        # Updating default_fill via write serializer
+        write_ser = ExpenseTypeWriteSerializer(
+            instance=et,
+            data={"default_fill": False, "default_fill_template": "{Location} Taxi fair"},
+            partial=True,
+        )
+        self.assertTrue(write_ser.is_valid(), write_ser.errors)
+        updated = write_ser.save()
+        self.assertFalse(updated.default_fill)
+        self.assertEqual(updated.default_fill_template, "{Location} Taxi fair")
+

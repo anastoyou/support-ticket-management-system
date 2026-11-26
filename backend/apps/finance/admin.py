@@ -20,9 +20,11 @@ from apps.common.admin_mixins import (
 @admin.register(ExpenseType)
 class ExpenseTypeAdmin(SearchableModelAdmin):
     list_display = ('expense_type_id', 'department',
-                    'expense_name', 'parent', 'required', 'approve_required')
-    list_filter = (('department', AutocompleteSelectFilter), 'required', ('parent', AutocompleteSelectFilter))
-    search_fields = ('expense_name',)
+                    'expense_name', 'parent', 'required', 'approve_required',
+                    'default_fill', 'default_fill_template')
+    list_filter = (('department', AutocompleteSelectFilter), 'required', 'default_fill', ('parent', AutocompleteSelectFilter))
+    list_editable = ('default_fill',)
+    search_fields = ('expense_name', 'default_fill_template')
     autocomplete_fields = ('department', 'parent')
 
 

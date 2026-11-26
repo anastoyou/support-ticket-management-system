@@ -3,6 +3,7 @@ import {
   Receipt, PlusCircle, Trash2, X, AlertCircle, Loader2, FileText, Eye, CheckCircle2, Building2, Calendar, DollarSign, User, Paperclip, Upload, RotateCcw, RotateCw, Image as ImageIcon, ShieldCheck, Headphones, Video, Check, ChevronDown, ChevronRight, MessageSquare, Ticket, ExternalLink, Pencil, SlidersHorizontal, Rows3, ChevronsUp, RefreshCw, Plus, ArrowUpDown, ArrowUp, ArrowDown, Send
 } from 'lucide-react';
 import type { ExpenseItem, ApprovalInstanceItem, ApprovalStepInfo } from './types';
+import { resolveRemarkOnExpenseTypeChange } from './expenseStatus';
 import { ApprovalsSubpage, type ApprovalsSubpageProps } from './ApprovalsSubpage';
 import { MediaPreviewModal, MediaGrid, getMediaUrl, AvatarCircle, isImage, isAudio, isVideo, type Media } from '../ticket/TicketsTypesAndComponents';
 
@@ -171,6 +172,7 @@ export const ExpensesSubpage: React.FC<ExpensesSubpageProps> = ({
   const [amount, setAmount] = useState<string>('');
   const [expenseDate, setExpenseDate] = useState<string>(new Date().toISOString().split('T')[0]);
   const [remarks, setRemarks] = useState<string>('');
+  const lastAutoFilledRemarkRef = useRef<string>('');
 
   const getCleanRemarks = (raw?: string) => {
     if (!raw) return '';
@@ -641,6 +643,10 @@ export const ExpensesSubpage: React.FC<ExpensesSubpageProps> = ({
     setSelectedTicketId(ticketId);
     setSelectedExpenseTypeId('');
     setSelectedStoreId(''); // By default Responsible Store NOT selected
+    if (lastAutoFilledRemarkRef.current && remarks.trim() === lastAutoFilledRemarkRef.current.trim()) {
+      setRemarks('');
+    }
+    lastAutoFilledRemarkRef.current = '';
 
     // Preselect worker if current user is allocated or if only 1 worker is allocated to this ticket
     const ticket = ticketsList.find(t => String(t.ticket_id || t.id) === String(ticketId));
@@ -709,6 +715,23 @@ export const ExpensesSubpage: React.FC<ExpensesSubpageProps> = ({
     });
   };
 
+  const handleExpenseTypeChange = (nextTypeId: string) => {
+    setSelectedExpenseTypeId(nextTypeId);
+    const expTypeObj = expenseTypesList.find(
+      et => String(et.expense_type_id || et.id) === String(nextTypeId)
+    );
+    const resolved = resolveRemarkOnExpenseTypeChange(
+      remarks,
+      lastAutoFilledRemarkRef.current,
+      expTypeObj,
+      selectedTicketStore?.storeName
+    );
+    if (resolved.changed) {
+      setRemarks(resolved.remarks);
+      lastAutoFilledRemarkRef.current = resolved.nextAutoFilledRemark;
+    }
+  };
+
   const resetForm = () => {
     setSelectedTicketId('');
     setSelectedWorkerId('');
@@ -717,6 +740,7 @@ export const ExpensesSubpage: React.FC<ExpensesSubpageProps> = ({
     setAmount('');
     setExpenseDate(new Date().toISOString().split('T')[0]);
     setRemarks('');
+    lastAutoFilledRemarkRef.current = '';
     setFormError(null);
     attachedMediaList.forEach(item => URL.revokeObjectURL(item.previewUrl));
     setAttachedMediaList([]);
@@ -824,6 +848,7 @@ export const ExpensesSubpage: React.FC<ExpensesSubpageProps> = ({
     setAmount(String(exp.amount || ''));
     setExpenseDate(exp.expense_date ? String(exp.expense_date).split('T')[0] : new Date().toISOString().split('T')[0]);
     setRemarks(getCleanRemarks(exp.remarks));
+    lastAutoFilledRemarkRef.current = '';
     setFormError(null);
     setAttachedMediaList([]);
 
@@ -3044,7 +3069,7 @@ export const ExpensesSubpage: React.FC<ExpensesSubpageProps> = ({
                           </label>
                           <SearchableSelect
                             value={selectedExpenseTypeId}
-                            onChange={(val) => setSelectedExpenseTypeId(val)}
+                            onChange={handleExpenseTypeChange}
                             options={expenseTypeDropdownOptions}
                             placeholder="-- Select Expense Category --"
                           />

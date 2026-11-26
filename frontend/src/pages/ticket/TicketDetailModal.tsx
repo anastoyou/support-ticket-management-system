@@ -18,7 +18,7 @@ import {
     API_URL, type Ticket, type Allocation, type WorkLog, type Expense, type MediaCategory, type Media,
     AvatarCircle, MediaGrid, SectionTitle, Divider, statusColor, getMediaUrl, isImage, isVideo, isAudio, rotateImageFile, RotatableVideoPlayer
 } from './TicketsTypesAndComponents';
-import { resolveExpenseStatus, renderFinanceStatusBadge } from '../finance/expenseStatus';
+import { resolveExpenseStatus, renderFinanceStatusBadge, resolveRemarkOnExpenseTypeChange } from '../finance/expenseStatus';
 import { VoiceRecorder } from '@/components/VoiceRecorder';
 import { LiveCameraModal } from '@/components/LiveCameraModal';
 import { SearchableSelect, type SelectOption } from '@/components/SearchableSelect';
@@ -811,6 +811,56 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
     const [addExpenseRemarksError, setAddExpenseRemarksError] = useState<string | null>(null);
     const [addExpenseError, setAddExpenseError] = useState<string | null>(null);
     const [editExpenseRemarksError, setEditExpenseRemarksError] = useState<string | null>(null);
+    const lastAutoFilledAddRemarkRef = useRef<string>('');
+    const lastAutoFilledEditRemarkRef = useRef<string>('');
+
+    const ticketLocationName =
+        ticketDetails?.store?.store_name ||
+        (ticketDetails?.store as any)?.short_code ||
+        (typeof ticketDetails?.store === 'string' ? ticketDetails.store : '');
+
+    const resetAddExpenseModalState = () => {
+        setIsAddExpenseModalOpen(false);
+        setSelectedExpenseTypeId('');
+        setAddExpenseRemarks('');
+        setAddExpenseRemarksError(null);
+        setAddExpenseError(null);
+        lastAutoFilledAddRemarkRef.current = '';
+    };
+
+    const handleAddExpenseTypeChange = (nextTypeId: string) => {
+        setSelectedExpenseTypeId(nextTypeId);
+        setAddExpenseRemarksError(null);
+        setAddExpenseError(null);
+
+        const expTypeObj = expenseTypes.find(et => String(et.expense_type_id) === String(nextTypeId));
+        const resolved = resolveRemarkOnExpenseTypeChange(
+            addExpenseRemarks,
+            lastAutoFilledAddRemarkRef.current,
+            expTypeObj,
+            ticketLocationName
+        );
+        if (resolved.changed) {
+            setAddExpenseRemarks(resolved.remarks);
+            lastAutoFilledAddRemarkRef.current = resolved.nextAutoFilledRemark;
+        }
+    };
+
+    const handleEditExpenseTypeChange = (nextTypeId: string) => {
+        const expTypeObj = expenseTypes.find(et => String(et.expense_type_id) === String(nextTypeId));
+        const resolved = resolveRemarkOnExpenseTypeChange(
+            editExpenseForm.remarks,
+            lastAutoFilledEditRemarkRef.current,
+            expTypeObj,
+            ticketLocationName
+        );
+        if (resolved.changed) {
+            lastAutoFilledEditRemarkRef.current = resolved.nextAutoFilledRemark;
+        }
+
+        setEditExpenseForm({ ...editExpenseForm, expense_type_id: nextTypeId, remarks: resolved.remarks });
+        if (editExpenseRemarksError) setEditExpenseRemarksError(null);
+    };
     const [editAllocationForm, setEditAllocationForm] = useState({ planned_hours: '', remarks: '' });
     const [editAllocationVoiceFile, setEditAllocationVoiceFile] = useState<File | null>(null);
     const [deleteExistingVoiceNote, setDeleteExistingVoiceNote] = useState(false);
@@ -1892,11 +1942,7 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
                 }, 500);
                 setExpenseFiles(prev => { const next = { ...prev }; delete next[workerId]; return next; });
                 await refreshTicketData();
-                setIsAddExpenseModalOpen(false);
-                setSelectedExpenseTypeId('');
-                setAddExpenseRemarks('');
-                setAddExpenseRemarksError(null);
-                setAddExpenseError(null);
+                resetAddExpenseModalState();
                 setAddExpenseDinar('');
                 setAddExpenseFils('');
                 if (failedUploads > 0) {
@@ -3072,6 +3118,7 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
                                                                                                             remarks: exp.remarks || '',
                                                                                                             expense_type_id: exp.expense_type.expense_type_id.toString()
                                                                                                         });
+                                                                                                        lastAutoFilledEditRemarkRef.current = '';
                                                                                                         setEditExpenseRemarksError(null);
                                                                                                     }}
                                                                                                     className="p-1 rounded text-outline hover:text-primary cursor-pointer active:scale-95"
@@ -4129,11 +4176,7 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
                                 exit={{ opacity: 0 }}
                                 onClick={() => {
                                     if (actionLoading) return;
-                                    setIsAddExpenseModalOpen(false);
-                                    setSelectedExpenseTypeId('');
-                                    setAddExpenseRemarks('');
-                                    setAddExpenseRemarksError(null);
-                                    setAddExpenseError(null);
+                                    resetAddExpenseModalState();
                                 }}
                                 className="absolute inset-0 bg-black touch-manipulation"
                             />
@@ -4143,13 +4186,7 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
                                     <button
                                         type="button"
                                         disabled={actionLoading}
-                                        onClick={() => {
-                                            setIsAddExpenseModalOpen(false);
-                                            setSelectedExpenseTypeId('');
-                                            setAddExpenseRemarks('');
-                                            setAddExpenseRemarksError(null);
-                                            setAddExpenseError(null);
-                                        }}
+                                        onClick={resetAddExpenseModalState}
                                         className="rounded text-outline hover:bg-surface-container-high min-h-[15px] .min-w-[44px] flex items-center justify-center cursor-pointer disabled:opacity-50"
                                     >
                                         <X className="w-4 h-4" />
@@ -4183,7 +4220,7 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
                                 <form onSubmit={e => handleAddExpense(e, activeWorkerId)} className="space-y-4">
                                     <div>
                                         <label className="block text-xs font-semibold text-outline mb-1.5">Expense Category</label>
-                                        <select required name="expense_type_id" disabled={actionLoading} value={selectedExpenseTypeId} onChange={e => { setSelectedExpenseTypeId(e.target.value); setAddExpenseRemarksError(null); setAddExpenseError(null); }} className="w-full text-xs sm:text-sm bg-surface dark:bg-dark-surface border border-outline-variant dark:border-dark-outline-variant rounded p-3 min-h-[15px] text-on-surface dark:text-dark-on-surface focus:ring-2 focus:ring-primary/30">
+                                        <select required name="expense_type_id" disabled={actionLoading} value={selectedExpenseTypeId} onChange={e => handleAddExpenseTypeChange(e.target.value)} className="w-full text-xs sm:text-sm bg-surface dark:bg-dark-surface border border-outline-variant dark:border-dark-outline-variant rounded p-3 min-h-[15px] text-on-surface dark:text-dark-on-surface focus:ring-2 focus:ring-primary/30">
                                             <option value="">Select Expense Type</option>
                                             {filteredExpenseTypes.map(et => (
                                                 <option key={et.expense_type_id} value={et.expense_type_id}>
@@ -4374,13 +4411,7 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
                                         <button
                                             type="button"
                                             disabled={actionLoading}
-                                            onClick={() => {
-                                                setIsAddExpenseModalOpen(false);
-                                                setSelectedExpenseTypeId('');
-                                                setAddExpenseRemarks('');
-                                                setAddExpenseRemarksError(null);
-                                                setAddExpenseError(null);
-                                            }}
+                                            onClick={resetAddExpenseModalState}
                                             className="min-h-[15px] px-4 py-2 border border-outline-variant dark:border-dark-outline-variant rounded text-xs font-semibold text-on-surface dark:text-dark-on-surface hover:bg-surface-container-high active:scale-95 transition-all disabled:opacity-50"
                                         >
                                             Cancel
@@ -4590,7 +4621,7 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
                                                 <form onSubmit={handleUpdateExpense} className="space-y-4">
                                                     <div>
                                                         <label className="block text-xs font-semibold text-outline mb-1.5">Expense Category</label>
-                                                        <select required value={editExpenseForm.expense_type_id} onChange={e => { setEditExpenseForm({ ...editExpenseForm, expense_type_id: e.target.value }); if (editExpenseRemarksError) setEditExpenseRemarksError(null); }} className="w-full text-xs sm:text-sm bg-surface dark:bg-dark-surface border border-outline-variant dark:border-dark-outline-variant rounded p-3 min-h-[15px] text-on-surface dark:text-dark-on-surface focus:ring-2 focus:ring-primary/30">
+                                                        <select required value={editExpenseForm.expense_type_id} onChange={e => handleEditExpenseTypeChange(e.target.value)} className="w-full text-xs sm:text-sm bg-surface dark:bg-dark-surface border border-outline-variant dark:border-dark-outline-variant rounded p-3 min-h-[15px] text-on-surface dark:text-dark-on-surface focus:ring-2 focus:ring-primary/30">
                                                             <option value="">Expense Type</option>
                                                             {filteredExpenseTypes.map(et => (
                                                                 <option key={et.expense_type_id} value={et.expense_type_id}>
