@@ -1,0 +1,464 @@
+
+// import React, { useEffect, useRef, useState } from "react";
+// import { FFmpeg } from "@ffmpeg/ffmpeg";
+// import { toBlobURL } from "@ffmpeg/util";
+
+// type MediaData = {
+//     file: File;
+//     preview: string;
+//     type: "image" | "video";
+// };
+
+// export default function Test() {
+//     const ffmpegRef = useRef<FFmpeg>(new FFmpeg());
+//     const videoRef = useRef<HTMLVideoElement>(null);
+
+//     const [media, setMedia] = useState<MediaData | null>(null);
+//     const [watermark, setWatermark] = useState("© My Brand");
+//     const [opacity, setOpacity] = useState(0.6);
+//     const [fontSize, setFontSize] = useState(48);
+
+//     const [loaded, setLoaded] = useState(false);
+//     const [loading, setLoading] = useState(false);
+//     const [processing, setProcessing] = useState(false);
+//     const [progress, setProgress] = useState(0);
+//     const [status, setStatus] = useState("");
+
+//     useEffect(() => {
+//         return () => {
+//             if (media?.preview) {
+//                 URL.revokeObjectURL(media.preview);
+//             }
+//         };
+//     }, [media]);
+
+//     // Upload JPG, PNG or MP4
+//     const handleUpload = (
+//         e: React.ChangeEvent<HTMLInputElement>
+//     ) => {
+//         const file = e.target.files?.[0];
+//         if (!file) return;
+
+//         const ext = file.name.split(".").pop()?.toLowerCase();
+
+//         const isImage = ["jpg", "jpeg", "png"].includes(ext || "");
+//         const isVideo = ext === "mp4";
+
+//         if (!isImage && !isVideo) {
+//             setStatus("Only JPG, PNG and MP4 files are supported.");
+//             e.target.value = "";
+//             return;
+//         }
+
+//         setMedia({
+//             file,
+//             preview: URL.createObjectURL(file),
+//             type: isVideo ? "video" : "image",
+//         });
+
+//         setProgress(0);
+//         setStatus("");
+//         e.target.value = "";
+//     };
+
+//     // Load FFmpeg only when processing video
+//     const loadFFmpeg = async () => {
+//         const ffmpeg = ffmpegRef.current;
+
+//         if (loaded || ffmpeg.loaded) {
+//             setLoaded(true);
+//             return;
+//         }
+
+//         setLoading(true);
+//         setStatus("Loading video processing engine...");
+
+//         try {
+//             const baseURL =
+//                 "https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.12.10/dist/esm";
+
+//             ffmpeg.on("log", ({ message }) => {
+//                 console.log("[FFmpeg]", message);
+//             });
+
+//             ffmpeg.on("progress", ({ progress }) => {
+//                 if (Number.isFinite(progress)) {
+//                     setProgress(Math.min(100, Math.round(progress * 100)));
+//                 }
+//             });
+
+//             await ffmpeg.load({
+//                 coreURL: await toBlobURL(
+//                     `${baseURL}/ffmpeg-core.js`,
+//                     "text/javascript"
+//                 ),
+//                 wasmURL: await toBlobURL(
+//                     `${baseURL}/ffmpeg-core.wasm`,
+//                     "application/wasm"
+//                 ),
+//             });
+
+//             setLoaded(true);
+//             setStatus("Video engine ready.");
+//         } catch (error) {
+//             console.error("FFmpeg load error:", error);
+//             throw error;
+//         } finally {
+//             setLoading(false);
+//         }
+//     };
+
+//     // Create transparent full-size watermark canvas
+//     const createWatermark = async (
+//         width: number,
+//         height: number
+//     ): Promise<Blob> => {
+//         const canvas = document.createElement("canvas");
+
+//         canvas.width = width;
+//         canvas.height = height;
+
+//         const ctx = canvas.getContext("2d");
+
+//         if (!ctx) {
+//             throw new Error("Canvas is not supported.");
+//         }
+
+//         const margin = Math.max(25, Math.round(width * 0.025));
+
+//         ctx.globalAlpha = opacity;
+//         ctx.font = `bold ${fontSize}px Arial`;
+//         ctx.fillStyle = "#ffffff";
+//         ctx.textAlign = "right";
+//         ctx.textBaseline = "bottom";
+
+//         ctx.shadowColor = "#000000";
+//         ctx.shadowBlur = 5;
+
+//         ctx.fillText(
+//             watermark,
+//             width - margin,
+//             height - margin,
+//             width * 0.85
+//         );
+
+//         return new Promise((resolve, reject) => {
+//             canvas.toBlob((blob) => {
+//                 if (blob) resolve(blob);
+//                 else reject(new Error("Watermark canvas failed."));
+//             }, "image/png");
+//         });
+//     };
+
+//     // Download generated media
+//     const downloadFile = (blob: Blob, filename: string) => {
+//         const url = URL.createObjectURL(blob);
+//         const link = document.createElement("a");
+
+//         link.href = url;
+//         link.download = filename;
+
+//         document.body.appendChild(link);
+//         link.click();
+//         link.remove();
+
+//         setTimeout(() => URL.revokeObjectURL(url), 2000);
+//     };
+
+//     // Image watermark using native Canvas
+//     const processImage = async () => {
+//         if (!media) return;
+
+//         const image = new Image();
+//         image.src = media.preview;
+
+//         await image.decode();
+
+//         const canvas = document.createElement("canvas");
+
+//         canvas.width = image.naturalWidth;
+//         canvas.height = image.naturalHeight;
+
+//         const ctx = canvas.getContext("2d");
+
+//         if (!ctx) throw new Error("Canvas is not supported.");
+
+//         ctx.drawImage(image, 0, 0);
+
+//         const watermarkBlob = await createWatermark(
+//             canvas.width,
+//             canvas.height
+//         );
+
+//         const watermarkImage = new Image();
+//         watermarkImage.src = URL.createObjectURL(watermarkBlob);
+
+//         try {
+//             await watermarkImage.decode();
+
+//             ctx.drawImage(watermarkImage, 0, 0);
+//         } finally {
+//             URL.revokeObjectURL(watermarkImage.src);
+//         }
+
+//         const result = await new Promise<Blob>((resolve, reject) => {
+//             canvas.toBlob(
+//                 (blob) => {
+//                     if (blob) resolve(blob);
+//                     else reject(new Error("Image export failed."));
+//                 },
+//                 "image/png"
+//             );
+//         });
+
+//         downloadFile(result, "watermarked-image.png");
+//     };
+
+//     // Video watermark using FFmpeg
+//     const processVideo = async () => {
+//         if (!media || !videoRef.current) return;
+
+//         await loadFFmpeg();
+
+//         const ffmpeg = ffmpegRef.current;
+
+//         const width = videoRef.current.videoWidth;
+//         const height = videoRef.current.videoHeight;
+
+//         if (!width || !height) {
+//             throw new Error("Unable to read video dimensions.");
+//         }
+
+//         const inputName = "input.mp4";
+//         const watermarkName = "watermark.png";
+//         const outputName = "watermarked.mp4";
+
+//         try {
+//             setStatus("Preparing video...");
+
+//             await ffmpeg.writeFile(
+//                 inputName,
+//                 new Uint8Array(await media.file.arrayBuffer())
+//             );
+
+//             const watermarkBlob = await createWatermark(width, height);
+
+//             await ffmpeg.writeFile(
+//                 watermarkName,
+//                 new Uint8Array(await watermarkBlob.arrayBuffer())
+//             );
+
+//             setStatus("Applying video watermark...");
+
+//             const exitCode = await ffmpeg.exec([
+//                 "-i", inputName,
+//                 "-i", watermarkName,
+//                 "-filter_complex",
+//                 "[0:v][1:v]overlay=0:0:format=auto[v]",
+//                 "-map", "[v]",
+//                 "-map", "0:a?",
+//                 "-c:v", "libx264",
+//                 "-preset", "ultrafast",
+//                 "-crf", "23",
+//                 "-pix_fmt", "yuv420p",
+//                 "-c:a", "aac",
+//                 "-b:a", "128k",
+//                 "-movflags", "+faststart",
+//                 outputName,
+//             ]);
+
+//             if (exitCode !== 0) {
+//                 throw new Error("FFmpeg could not process this video.");
+//             }
+
+//             const output = await ffmpeg.readFile(outputName);
+
+//             const blob = new Blob([output], {
+//                 type: "video/mp4",
+//             });
+
+//             downloadFile(blob, "watermarked-video.mp4");
+
+//         } finally {
+//             for (const filename of [
+//                 inputName,
+//                 watermarkName,
+//                 outputName,
+//             ]) {
+//                 try {
+//                     await ffmpeg.deleteFile(filename);
+//                 } catch {
+//                     // Ignore files that were not created.
+//                 }
+//             }
+//         }
+//     };
+
+//     // Main processing function
+//     const handleProcess = async () => {
+//         if (!media || !watermark.trim()) return;
+
+//         setProcessing(true);
+//         setProgress(0);
+//         setStatus("Starting...");
+
+//         try {
+//             if (media.type === "image") {
+//                 await processImage();
+//             } else {
+//                 await processVideo();
+//             }
+
+//             setProgress(100);
+//             setStatus("Watermarked media downloaded successfully!");
+//         } catch (error) {
+//             console.error("Processing error:", error);
+
+//             setStatus(
+//                 error instanceof Error
+//                     ? `Error: ${error.message}`
+//                     : String(error)
+//             );
+//         } finally {
+//             setProcessing(false);
+//         }
+//     };
+
+//     return (
+//         <div style={{
+//             maxWidth: 750,
+//             margin: "30px auto",
+//             padding: 24,
+//             border: "1px solid #ddd",
+//             borderRadius: 12,
+//             fontFamily: "Arial, sans-serif",
+//         }}>
+//             <h2>Media Watermark Studio</h2>
+
+//             <p>Upload JPG, PNG or MP4 files.</p>
+
+//             <input
+//                 type="file"
+//                 accept=".jpg,.jpeg,.png,.mp4,image/jpeg,image/png,video/mp4"
+//                 onChange={handleUpload}
+//             />
+
+//             {media && (
+//                 <>
+//                     <div style={{ marginTop: 20 }}>
+//                         {media.type === "image" ? (
+//                             <img
+//                                 src={media.preview}
+//                                 alt="Preview"
+//                                 style={{
+//                                     width: "100%",
+//                                     maxHeight: 400,
+//                                     objectFit: "contain",
+//                                 }}
+//                             />
+//                         ) : (
+//                             <video
+//                                 ref={videoRef}
+//                                 src={media.preview}
+//                                 controls
+//                                 onLoadedMetadata={() => {
+//                                     setStatus("Video ready.");
+//                                 }}
+//                                 style={{
+//                                     width: "100%",
+//                                     maxHeight: 400,
+//                                 }}
+//                             />
+//                         )}
+//                     </div>
+
+//                     <div style={{ marginTop: 20 }}>
+//                         <label>Watermark text</label>
+
+//                         <input
+//                             value={watermark}
+//                             onChange={(e) => setWatermark(e.target.value)}
+//                             style={{
+//                                 display: "block",
+//                                 width: "100%",
+//                                 padding: 10,
+//                                 marginTop: 8,
+//                                 boxSizing: "border-box",
+//                             }}
+//                         />
+
+//                         <p>Opacity: {opacity}</p>
+
+//                         <input
+//                             type="range"
+//                             min={0.1}
+//                             max={1}
+//                             step={0.05}
+//                             value={opacity}
+//                             onChange={(e) => setOpacity(Number(e.target.value))}
+//                             style={{ width: "100%" }}
+//                         />
+
+//                         <p>Font size: {fontSize}px</p>
+
+//                         <input
+//                             type="range"
+//                             min={20}
+//                             max={120}
+//                             value={fontSize}
+//                             onChange={(e) => setFontSize(Number(e.target.value))}
+//                             style={{ width: "100%" }}
+//                         />
+//                     </div>
+
+//                     <button
+//                         onClick={handleProcess}
+//                         disabled={
+//                             processing ||
+//                             loading ||
+//                             !watermark.trim() ||
+//                             (media.type === "video" &&
+//                                 !videoRef.current?.videoWidth)
+//                         }
+//                         style={{
+//                             width: "100%",
+//                             padding: 14,
+//                             marginTop: 20,
+//                             background: "#2563eb",
+//                             color: "white",
+//                             border: 0,
+//                             borderRadius: 8,
+//                             cursor: "pointer",
+//                         }}
+//                     >
+//                         {processing
+//                             ? "Processing..."
+//                             : "Add Watermark & Download"}
+//                     </button>
+//                 </>
+//             )}
+
+//             {(status || processing) && (
+//                 <div style={{ marginTop: 20 }}>
+//                     <p>{status}</p>
+
+//                     {media?.type === "video" && processing && (
+//                         <div style={{
+//                             height: 8,
+//                             background: "#ddd",
+//                             borderRadius: 10,
+//                             overflow: "hidden",
+//                         }}>
+//                             <div style={{
+//                                 height: "100%",
+//                                 width: `${progress}%`,
+//                                 background: "#2563eb",
+//                                 transition: "width 0.2s",
+//                             }} />
+//                         </div>
+//                     )}
+//                 </div>
+//             )}
+//         </div>
+//     );
+// }
