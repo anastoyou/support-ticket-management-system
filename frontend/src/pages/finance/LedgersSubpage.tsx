@@ -1878,6 +1878,40 @@ export const LedgersSubpage: React.FC<LedgersSubpageProps> = ({
     }
   };
 
+  const renderPrintAllSlipsButton = (
+    cluster: LedgerGroupCluster,
+    variant: 'compact' | 'mobile-sheet' = 'compact'
+  ) => {
+    const isPreparing = printingGroupSlipsId === cluster.groupId;
+    return (
+      <Can permission="finance.single_payment_process">
+        <button
+          type="button"
+          disabled={isPreparing}
+          onClick={(e) => handlePrintGroupSlips(cluster, e)}
+          className={
+            variant === 'mobile-sheet'
+              ? 'flex-1 min-w-[125px] h-9 px-3 rounded bg-rose-700 hover:bg-rose-800 text-white text-xs font-semibold inline-flex items-center justify-center gap-1.5 shadow-xs cursor-pointer disabled:opacity-50'
+              : 'px-2.5 py-1 rounded bg-rose-700 hover:bg-rose-800 text-white text-[11px] font-semibold inline-flex items-center gap-1 transition-all shadow-xs hover:shadow cursor-pointer disabled:opacity-50 shrink-0'
+          }
+          title="Print all bundle Payment Slips (1/2 A4 each) for this ledger in one click"
+        >
+          {isPreparing ? (
+            <>
+              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              <span>Preparing...</span>
+            </>
+          ) : (
+            <>
+              <Printer className="w-3.5 h-3.5" />
+              <span>Print All Slips</span>
+            </>
+          )}
+        </button>
+      </Can>
+    );
+  };
+
   const getClusterMeta = (cluster: LedgerGroupCluster) => {
     const isGroupPaid =
       cluster.isPaid ||
@@ -2838,32 +2872,6 @@ export const LedgersSubpage: React.FC<LedgersSubpageProps> = ({
                         <ChevronRight className="w-4 h-4 text-on-surface-variant shrink-0" />
                       </div>
                     </div>
-
-                    {(cluster.allApproved || cluster.isCompleted || isGroupPaid) &&
-                      totalBundleCount > 0 && (
-                        <Can permission="finance.single_payment_process">
-                          <div className="flex items-center gap-2 pt-0.5" onClick={(e) => e.stopPropagation()}>
-                            <button
-                              type="button"
-                              disabled={printingGroupSlipsId === cluster.groupId}
-                              onClick={(e) => handlePrintGroupSlips(cluster, e)}
-                              className="flex-1 h-9 px-3 rounded bg-rose-700 hover:bg-rose-800 text-white text-xs font-semibold inline-flex items-center justify-center gap-1.5 shadow-xs cursor-pointer disabled:opacity-50"
-                            >
-                              {printingGroupSlipsId === cluster.groupId ? (
-                                <>
-                                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                                  <span>Preparing...</span>
-                                </>
-                              ) : (
-                                <>
-                                  <Printer className="w-3.5 h-3.5" />
-                                  <span>Print All Slips</span>
-                                </>
-                              )}
-                            </button>
-                          </div>
-                        </Can>
-                      )}
                   </div>
                 );
               })}
@@ -3321,111 +3329,103 @@ export const LedgersSubpage: React.FC<LedgersSubpageProps> = ({
                                 )}
                               </Can>
 
-                              {/* Single-click Print All Bundle Payment Slips for this Main Ledger */}
-                              {(cluster.allApproved || cluster.isCompleted || isGroupPaid) &&
-                                getGroupBundleBreakdown(cluster).length > 0 && (
-                                  <Can permission="finance.single_payment_process">
-                                    <button
-                                      type="button"
-                                      disabled={printingGroupSlipsId === cluster.groupId}
-                                      onClick={(e) => handlePrintGroupSlips(cluster, e)}
-                                      className="px-2.5 py-1 rounded bg-rose-700 hover:bg-rose-800 text-white text-[11px] font-semibold inline-flex items-center gap-1 transition-all shadow-xs hover:shadow cursor-pointer disabled:opacity-50 shrink-0"
-                                      title="Print all bundle Payment Slips (1/2 A4 each) for this ledger in one click"
-                                    >
-                                      {printingGroupSlipsId === cluster.groupId ? (
-                                        <>
-                                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                                          <span>Preparing...</span>
-                                        </>
-                                      ) : (
-                                        <>
-                                          <Printer className="w-3.5 h-3.5" />
-                                          <span>Print All Slips</span>
-                                        </>
-                                      )}
-                                    </button>
-                                  </Can>
-                                )}
-
-
                             </div>
                           </td>
 
                         </tr>
 
-                        {/* 1.5 GROUP APPROVAL STEPPER & INLINE ACTION CONTROLS */}
-                        {!isGroupCollapsed && (showStepper || (isGroupInReview && canUserApproveGroup)) && (groupStatus !== "Draft") && (
-                          <tr className="bg-surface-container-lowest/80 border-b border-outline-variant/60">
-                            <td colSpan={8} className="px-6 py-3 bg-indigo-50/30 dark:bg-indigo-950/20 space-y-3 border-l-4 border-l-indigo-500/60">
-                              {showStepper && (
-                                <>
-                                  <div className="flex items-center justify-between pb-1.5 mb-1.5 border-b border-outline-variant/40">
-                                    <span className="text-[10px] font-bold text-indigo-700 dark:text-indigo-300 uppercase tracking-wider flex items-center gap-1.5">
-                                      <GitCommit className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
-                                      <span>Approval Pipeline • {cluster.groupName}</span>
+                        {/* 1.5 GROUP APPROVAL STEPPER, PRINT ALL SLIPS & INLINE ACTION CONTROLS */}
+                        {!isGroupCollapsed && (() => {
+                          const canShowPrintAllSlips =
+                            (cluster.allApproved || cluster.isCompleted || isGroupPaid) &&
+                            getGroupBundleBreakdown(cluster).length > 0;
+                          const showStepperSection = showStepper && groupStatus !== 'Draft';
+                          const showPendingApproveBar = isGroupInReview && canUserApproveGroup && groupStatus !== 'Draft';
+                          if (!showStepperSection && !showPendingApproveBar && !canShowPrintAllSlips) {
+                            return null;
+                          }
+                          return (
+                            <tr className="bg-surface-container-lowest/80 border-b border-outline-variant/60">
+                              <td colSpan={8} className="px-6 py-3 bg-indigo-50/30 dark:bg-indigo-950/20 space-y-3 border-l-4 border-l-indigo-500/60">
+                                {showStepperSection ? (
+                                  <>
+                                    <div className="flex items-center justify-between gap-2 pb-1.5 mb-1.5 border-b border-outline-variant/40">
+                                      <span className="text-[10px] font-bold text-indigo-700 dark:text-indigo-300 uppercase tracking-wider flex items-center gap-1.5">
+                                        <GitCommit className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
+                                        <span>Approval Pipeline • {cluster.groupName}</span>
+                                      </span>
+                                      <div className="flex items-center gap-2.5">
+                                        {canShowPrintAllSlips && renderPrintAllSlipsButton(cluster, 'compact')}
+                                        <span className="text-[10px] text-on-surface-variant font-medium">
+                                          Status: <span className="font-semibold text-on-surface">{groupStatus}</span>
+                                        </span>
+                                      </div>
+                                    </div>
+                                    {renderGroupApprovalStepper(cluster)}
+                                  </>
+                                ) : canShowPrintAllSlips ? (
+                                  <div className="flex items-center justify-between gap-2">
+                                    <span className="text-[11px] font-semibold text-on-surface-variant">
+                                      {cluster.groupName} • {getGroupBundleBreakdown(cluster).length} Bundle Slip{getGroupBundleBreakdown(cluster).length !== 1 ? 's' : ''}
                                     </span>
-                                    <span className="text-[10px] text-on-surface-variant font-medium">
-                                      Status: <span className="font-semibold text-on-surface">{groupStatus}</span>
-                                    </span>
+                                    {renderPrintAllSlipsButton(cluster, 'compact')}
                                   </div>
-                                  {renderGroupApprovalStepper(cluster)}
-                                </>
-                              )}
+                                ) : null}
 
-
-                              {isGroupInReview && canUserApproveGroup && (
-                                <div className="p-3 bg-surface-container rounded border border-outline-variant/80 flex flex-wrap items-center justify-between gap-2 shadow-xs mt-2">
-                                  <div className="flex items-center gap-2">
-                                    <ShieldCheck className="w-4 h-4 text-primary" />
-                                    <span className="text-xs font-bold text-on-surface">Action Pending Approval Step: {groupPendingStep}</span>
+                                {showPendingApproveBar && (
+                                  <div className="p-3 bg-surface-container rounded border border-outline-variant/80 flex flex-wrap items-center justify-between gap-2 shadow-xs mt-2">
+                                    <div className="flex items-center gap-2">
+                                      <ShieldCheck className="w-4 h-4 text-primary" />
+                                      <span className="text-xs font-bold text-on-surface">Action Pending Approval Step: {groupPendingStep}</span>
+                                    </div>
+                                    <div className="flex items-center gap-2 flex-wrap">
+                                      <input
+                                        type="text"
+                                        value={groupReworkComments[cluster.groupId] || ''}
+                                        onChange={(e) => {
+                                          const val = e.target.value;
+                                          setGroupReworkComments(prev => ({ ...prev, [cluster.groupId]: val }));
+                                          if (val.trim()) setGroupReworkErrors(prev => ({ ...prev, [cluster.groupId]: '' }));
+                                        }}
+                                        placeholder="Review comments (required for rework)..."
+                                        className={`px-2.5 py-1.5 rounded border text-xs text-on-surface focus:outline-none placeholder:text-on-surface-variant/60 w-64 ${groupReworkErrors[cluster.groupId]
+                                          ? 'border-rose-500 bg-rose-500/10'
+                                          : 'border-outline-variant bg-surface-container-low focus:border-primary'
+                                          }`}
+                                      />
+                                      <button
+                                        type="button"
+                                        disabled={actioningGroupId === cluster.groupId}
+                                        onClick={() => handleGroupAction(cluster, 'APPROVED')}
+                                        className="px-3.5 py-1.5 rounded bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition-all shadow-xs cursor-pointer flex items-center gap-1.5 disabled:opacity-50"
+                                      >
+                                        {actioningGroupId === cluster.groupId && actioningGroupAction === 'APPROVED' ? (
+                                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                        ) : (
+                                          <CheckCircle2 className="w-3.5 h-3.5" />
+                                        )}
+                                        <span>Approve</span>
+                                      </button>
+                                      <button
+                                        type="button"
+                                        disabled={actioningGroupId === cluster.groupId}
+                                        onClick={() => handleGroupAction(cluster, 'REWORK')}
+                                        className="px-3.5 py-1.5 rounded bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold transition-all shadow-xs cursor-pointer flex items-center gap-1.5 disabled:opacity-50"
+                                      >
+                                        {actioningGroupId === cluster.groupId && actioningGroupAction === 'REWORK' ? (
+                                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                        ) : (
+                                          <RotateCcw className="w-3.5 h-3.5" />
+                                        )}
+                                        <span>Rework</span>
+                                      </button>
+                                    </div>
                                   </div>
-                                  <div className="flex items-center gap-2 flex-wrap">
-                                    <input
-                                      type="text"
-                                      value={groupReworkComments[cluster.groupId] || ''}
-                                      onChange={(e) => {
-                                        const val = e.target.value;
-                                        setGroupReworkComments(prev => ({ ...prev, [cluster.groupId]: val }));
-                                        if (val.trim()) setGroupReworkErrors(prev => ({ ...prev, [cluster.groupId]: '' }));
-                                      }}
-                                      placeholder="Review comments (required for rework)..."
-                                      className={`px-2.5 py-1.5 rounded border text-xs text-on-surface focus:outline-none placeholder:text-on-surface-variant/60 w-64 ${groupReworkErrors[cluster.groupId]
-                                        ? 'border-rose-500 bg-rose-500/10'
-                                        : 'border-outline-variant bg-surface-container-low focus:border-primary'
-                                        }`}
-                                    />
-                                    <button
-                                      type="button"
-                                      disabled={actioningGroupId === cluster.groupId}
-                                      onClick={() => handleGroupAction(cluster, 'APPROVED')}
-                                      className="px-3.5 py-1.5 rounded bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition-all shadow-xs cursor-pointer flex items-center gap-1.5 disabled:opacity-50"
-                                    >
-                                      {actioningGroupId === cluster.groupId && actioningGroupAction === 'APPROVED' ? (
-                                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                                      ) : (
-                                        <CheckCircle2 className="w-3.5 h-3.5" />
-                                      )}
-                                      <span>Approve</span>
-                                    </button>
-                                    <button
-                                      type="button"
-                                      disabled={actioningGroupId === cluster.groupId}
-                                      onClick={() => handleGroupAction(cluster, 'REWORK')}
-                                      className="px-3.5 py-1.5 rounded bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold transition-all shadow-xs cursor-pointer flex items-center gap-1.5 disabled:opacity-50"
-                                    >
-                                      {actioningGroupId === cluster.groupId && actioningGroupAction === 'REWORK' ? (
-                                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                                      ) : (
-                                        <RotateCcw className="w-3.5 h-3.5" />
-                                      )}
-                                      <span>Rework</span>
-                                    </button>
-                                  </div>
-                                </div>
-                              )}
-                            </td>
-                          </tr>
-                        )}
+                                )}
+                              </td>
+                            </tr>
+                          );
+                        })()}
 
                         {/* 2. BUNDLE-WISE VIEW ROWS IN THIS GROUP */}
                         {!isGroupCollapsed && hierarchyGrouping === 'bundle_wise' && (
@@ -5485,28 +5485,8 @@ export const LedgersSubpage: React.FC<LedgersSubpageProps> = ({
                 {/* Top Quick Actions */}
                 <div className="flex flex-wrap items-center gap-2">
                   {(cluster.allApproved || cluster.isCompleted || isGroupPaid) &&
-                    totalBundleCount > 0 && (
-                      <Can permission="finance.single_payment_process">
-                        <button
-                          type="button"
-                          disabled={printingGroupSlipsId === cluster.groupId}
-                          onClick={(e) => handlePrintGroupSlips(cluster, e)}
-                          className="flex-1 min-w-[125px] h-9 px-3 rounded bg-rose-700 hover:bg-rose-800 text-white text-xs font-semibold inline-flex items-center justify-center gap-1.5 shadow-xs cursor-pointer disabled:opacity-50"
-                        >
-                          {printingGroupSlipsId === cluster.groupId ? (
-                            <>
-                              <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                              <span>Preparing...</span>
-                            </>
-                          ) : (
-                            <>
-                              <Printer className="w-3.5 h-3.5" />
-                              <span>Print All Slips</span>
-                            </>
-                          )}
-                        </button>
-                      </Can>
-                    )}
+                    totalBundleCount > 0 &&
+                    renderPrintAllSlipsButton(cluster, 'mobile-sheet')}
 
                   {(cluster.allApproved || cluster.isCompleted) && !isGroupPaid && canBulkPay && (
                     <Can permission={['finance.bulk_payment_processs', 'finance.bulk_payment_process']}>
