@@ -3356,9 +3356,9 @@ export const LedgersSubpage: React.FC<LedgersSubpageProps> = ({
                                       </span>
                                       <div className="flex items-center gap-2.5">
                                         {canShowPrintAllSlips && renderPrintAllSlipsButton(cluster, 'compact')}
-                                        <span className="text-[10px] text-on-surface-variant font-medium">
+                                        {/* <span className="text-[10px] text-on-surface-variant font-medium">
                                           Status: <span className="font-semibold text-on-surface">{groupStatus}</span>
-                                        </span>
+                                        </span> */}
                                       </div>
                                     </div>
                                     {renderGroupApprovalStepper(cluster)}
@@ -5636,7 +5636,7 @@ export const LedgersSubpage: React.FC<LedgersSubpageProps> = ({
                                   {bundleItem.workerName}
                                 </div>
                                 <div className="text-[11px] text-on-surface-variant">
-                                  Bundle #{bundleItem.bundleId} • {bundleItem.expenses.length} exp
+                                  Bundle {bundleItem.bundleId} • {bundleItem.expenses.length} exp
                                 </div>
                               </div>
                             </div>
