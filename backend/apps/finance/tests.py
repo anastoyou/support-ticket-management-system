@@ -802,6 +802,72 @@ class LedgerGroupBundleRemovalTestCase(TestCase):
                 self.assertEqual(len(bundles_data), 1)
                 self.assertTrue(bundles_data[0].get("payment_receipt_image"))
                 self.assertIn("payment_receipts/", bundles_data[0]["payment_receipt_image"])
+
+                # Non-admin users (worker and Office Administrator) cannot upload/replace or delete settled receipts
+                for non_admin in (self.worker, self.office_user):
+                    non_admin_client = APIClient()
+                    non_admin_client.force_authenticate(user=non_admin)
+                    forbid_up = non_admin_client.post(
+                        "/api/finance/payments/upload-receipt/",
+                        data={
+                            "bundle_id": bundle.claim_id,
+                            "receipt_image": SimpleUploadedFile(
+                                "unauth.png",
+                                b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR",
+                                content_type="image/png",
+                            ),
+                        },
+                        format="multipart",
+                    )
+                    self.assertEqual(forbid_up.status_code, 403)
+                    forbid_del = non_admin_client.post(
+                        "/api/finance/payments/delete-receipt/",
+                        data={"bundle_id": bundle.claim_id},
+                        format="json",
+                    )
+                    self.assertEqual(forbid_del.status_code, 403)
+
+                # Administrator user (role="Administrator") can replace & delete receipt
+                role_administrator, _ = Role.objects.get_or_create(role_name="Administrator")
+                admin_role_user = User.objects.create_user(
+                    username="main_admin_receipt",
+                    password="pw",
+                    role=role_administrator,
+                )
+                admin_client = APIClient()
+                admin_client.force_authenticate(user=admin_role_user)
+
+                replace_file = SimpleUploadedFile(
+                    "replaced_voucher.png",
+                    b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR",
+                    content_type="image/png",
+                )
+                up_resp = admin_client.post(
+                    "/api/finance/payments/upload-receipt/",
+                    data={
+                        "bundle_id": bundle.claim_id,
+                        "receipt_image": replace_file,
+                    },
+                    format="multipart",
+                )
+                self.assertEqual(up_resp.status_code, 200, up_resp.data)
+                self.assertTrue(up_resp.data.get("payment_receipt_image"))
+                self.assertNotEqual(
+                    up_resp.data["payment_receipt_image"],
+                    bundles_data[0]["payment_receipt_image"],
+                )
+
+                del_resp = admin_client.delete(
+                    f"/api/finance/payments/delete-receipt/?bundle_id={bundle.claim_id}"
+                )
+                self.assertEqual(del_resp.status_code, 200, del_resp.data)
+                self.assertGreaterEqual(del_resp.data.get("deleted_count", 0), 1)
+                payment.refresh_from_db()
+                self.assertFalse(bool(payment.receipt_image))
+
+                after_del_resp = admin_client.get(f"/api/finance/ledgers/{ledger.ledger_id}/")
+                self.assertEqual(after_del_resp.status_code, 200)
+                self.assertIsNone(after_del_resp.data["bundles"][0].get("payment_receipt_image"))
         finally:
             shutil.rmtree(temp_media, ignore_errors=True)
 

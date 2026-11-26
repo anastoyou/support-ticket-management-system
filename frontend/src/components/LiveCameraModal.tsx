@@ -47,6 +47,16 @@ export const LiveCameraModal: React.FC<LiveCameraModalProps> = ({
         }
     }, [isOpen, initialMode]);
 
+    // Revoke temporary blob preview URLs to prevent mobile memory buildup
+    useEffect(() => {
+        const previewUrl = capturedPreview?.url;
+        return () => {
+            if (previewUrl) {
+                URL.revokeObjectURL(previewUrl);
+            }
+        };
+    }, [capturedPreview?.url]);
+
     // Start/Stop Camera Stream
     useEffect(() => {
         if (!isOpen || capturedPreview) {
@@ -136,9 +146,14 @@ export const LiveCameraModal: React.FC<LiveCameraModalProps> = ({
         if (!videoRef.current) return;
 
         const video = videoRef.current;
+        const srcW = video.videoWidth || 1280;
+        const srcH = video.videoHeight || 720;
+        const MAX_DIM = 1600;
+        const scale = Math.min(1, MAX_DIM / Math.max(srcW, srcH));
+
         const canvas = document.createElement('canvas');
-        canvas.width = video.videoWidth || 1280;
-        canvas.height = video.videoHeight || 720;
+        canvas.width = Math.max(1, Math.round(srcW * scale));
+        canvas.height = Math.max(1, Math.round(srcH * scale));
 
         const ctx = canvas.getContext('2d');
         if (!ctx) return;
@@ -159,7 +174,7 @@ export const LiveCameraModal: React.FC<LiveCameraModalProps> = ({
             setPhotoRotation(0);
             setCapturedPreview({ url, file, type: 'photo' });
             stopStream();
-        }, 'image/jpeg', 0.92);
+        }, 'image/jpeg', 0.9);
     };
 
     // Start Recording Live Video

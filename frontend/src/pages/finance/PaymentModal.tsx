@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { useSelector } from 'react-redux';
 import {
   X,
   Banknote,
@@ -20,6 +21,8 @@ import {
   CheckCircle2,
   Trash2,
 } from 'lucide-react';
+import type { RootState } from '../../store';
+import Can from '../../hooks/Can';
 import type { PaymentItem, WorkerClaimItem, LedgerItem } from './types';
 import { formatDateDMY } from './types';
 import { getMediaUrl } from '../ticket/TicketsTypesAndComponents';
@@ -39,6 +42,8 @@ interface PaymentModalProps {
   paymentRecipient: string;
   setPaymentRecipient: (rec: string) => void;
   handleProcessPayment: (receiptFile?: File | null) => Promise<void>;
+  handleUploadSettledReceipt?: (receiptFile: File) => Promise<void>;
+  handleDeleteSettledReceipt?: () => Promise<void>;
   submitting: boolean;
   errorMessage?: string | null;
 }
@@ -53,9 +58,29 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
   paymentRecipient,
   setPaymentRecipient,
   handleProcessPayment,
+  handleUploadSettledReceipt,
+  handleDeleteSettledReceipt,
   submitting,
   errorMessage,
 }) => {
+  const currentUser = useSelector((state: RootState) => state.auth.user);
+  const isAdmin = useMemo(() => {
+    if (!currentUser) return false;
+    const roleName = (
+      (currentUser?.role as any)?.role_name ||
+      (typeof currentUser?.role === 'string' ? currentUser.role : '') ||
+      (currentUser as any)?.role_name ||
+      ''
+    )
+      .toLowerCase()
+      .trim();
+    return Boolean(
+      currentUser?.is_superuser ||
+      roleName === 'administrator' ||
+      roleName === 'admin'
+    );
+  }, [currentUser]);
+
   const [showPhotoZoom, setShowPhotoZoom] = useState(false);
   const [imgError, setImgError] = useState(false);
 
@@ -68,6 +93,7 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
   const [isDraggingFile, setIsDraggingFile] = useState(false);
   const [showReceiptZoom, setShowReceiptZoom] = useState(false);
   const [isCameraModalOpen, setIsCameraModalOpen] = useState(false);
+  const [confirmDeleteReceipt, setConfirmDeleteReceipt] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
@@ -94,6 +120,7 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
     setShowReceiptZoom(false);
     setSlipActionError(null);
     setIsCameraModalOpen(false);
+    setConfirmDeleteReceipt(false);
     if (fileInputRef.current) fileInputRef.current.value = '';
     if (cameraInputRef.current) cameraInputRef.current.value = '';
   }, [showPaymentModal]);
@@ -221,6 +248,28 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
       setIsCameraModalOpen(true);
     } else if (cameraInputRef.current) {
       cameraInputRef.current.click();
+    }
+  };
+
+  const handleSubmitSettledReceiptUpload = async () => {
+    if (!receiptFile || !handleUploadSettledReceipt) return;
+    setReceiptError(null);
+    try {
+      await handleUploadSettledReceipt(receiptFile);
+      handleClearReceipt();
+    } catch (err: any) {
+      setReceiptError(err?.message || 'Failed to upload receipt.');
+    }
+  };
+
+  const handleConfirmDeleteReceipt = async () => {
+    if (!handleDeleteSettledReceipt) return;
+    setReceiptError(null);
+    try {
+      await handleDeleteSettledReceipt();
+      setConfirmDeleteReceipt(false);
+    } catch (err: any) {
+      setReceiptError(err?.message || 'Failed to delete receipt.');
     }
   };
 
@@ -522,60 +571,63 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
               </div>
 
               {/* 2. PAYMENT SLIP (1/2 A4) — NO PREVIEW */}
-              <div className="p-3 rounded border border-outline-variant bg-surface-container-low flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2.5">
-                <div className="flex items-center justify-between sm:block">
-                  <div className="flex items-center gap-1.5 text-xs font-bold text-on-surface">
-                    <Receipt className="w-4 h-4 text-rose-600 dark:text-rose-400 shrink-0" />
-                    <span>Payment Slip</span>
+              <Can permission="finance.single_payment_process">
+                <div className="p-3 rounded border border-outline-variant bg-surface-container-low flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2.5">
+                  <div className="flex items-center justify-between sm:block">
+                    <div className="flex items-center gap-1.5 text-xs font-bold text-on-surface">
+                      <Receipt className="w-4 h-4 text-rose-600 dark:text-rose-400 shrink-0" />
+                      <span>Payment Slip</span>
+                    </div>
+                    <p className="text-[10px] text-on-surface-variant sm:mt-0.5">
+                      1/2 A4 • Signatures blank
+                    </p>
                   </div>
-                  <p className="text-[10px] text-on-surface-variant sm:mt-0.5">
-                    1/2 A4 • Signatures blank
-                  </p>
-                </div>
 
-                <div className="grid grid-cols-2 sm:flex items-center gap-2 w-full sm:w-auto">
-                  <button
-                    type="button"
-                    onClick={handleDownloadSlipPdf}
-                    disabled={downloadingPdf || printingSlip}
-                    className="h-10 sm:h-auto px-3 sm:py-1.5 rounded bg-rose-700 hover:bg-rose-800 text-white text-xs font-semibold inline-flex items-center justify-center gap-1.5 shadow-xs cursor-pointer transition-colors disabled:opacity-50"
-                    title="Download 1/2 A4 Payment Slip as PDF"
-                  >
-                    {downloadingPdf ? (
-                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                    ) : (
-                      <Download className="w-3.5 h-3.5" />
-                    )}
-                    <span>{downloadingPdf ? 'Saving...' : 'PDF'}</span>
-                  </button>
+                  <div className="grid grid-cols-2 sm:flex items-center gap-2 w-full sm:w-auto">
+                    <button
+                      type="button"
+                      onClick={handleDownloadSlipPdf}
+                      disabled={downloadingPdf || printingSlip}
+                      className="h-10 sm:h-auto px-3 sm:py-1.5 rounded bg-rose-700 hover:bg-rose-800 text-white text-xs font-semibold inline-flex items-center justify-center gap-1.5 shadow-xs cursor-pointer transition-colors disabled:opacity-50"
+                      title="Download 1/2 A4 Payment Slip as PDF"
+                    >
+                      {downloadingPdf ? (
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      ) : (
+                        <Download className="w-3.5 h-3.5" />
+                      )}
+                      <span>{downloadingPdf ? 'Saving...' : 'PDF'}</span>
+                    </button>
 
-                  <button
-                    type="button"
-                    onClick={handlePrintSlip}
-                    disabled={printingSlip || downloadingPdf}
-                    className="h-10 sm:h-auto px-3 sm:py-1.5 rounded bg-primary hover:bg-primary/90 text-on-primary text-xs font-semibold inline-flex items-center justify-center gap-1.5 shadow-xs cursor-pointer transition-colors disabled:opacity-50"
-                    title="Print 1/2 A4 Payment Slip"
-                  >
-                    {printingSlip ? (
-                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                    ) : (
-                      <Printer className="w-3.5 h-3.5" />
-                    )}
-                    <span>{printingSlip ? 'Printing...' : 'Print Slip'}</span>
-                  </button>
-                </div>
-
-                {slipActionError && (
-                  <div className="w-full p-2 rounded bg-rose-500/10 border border-rose-500/30 text-rose-600 dark:text-rose-400 text-[11px] flex items-center gap-1.5">
-                    <AlertCircle className="w-3.5 h-3.5 shrink-0" />
-                    <span>{slipActionError}</span>
+                    <button
+                      type="button"
+                      onClick={handlePrintSlip}
+                      disabled={printingSlip || downloadingPdf}
+                      className="h-10 sm:h-auto px-3 sm:py-1.5 rounded bg-primary hover:bg-primary/90 text-on-primary text-xs font-semibold inline-flex items-center justify-center gap-1.5 shadow-xs cursor-pointer transition-colors disabled:opacity-50"
+                      title="Print 1/2 A4 Payment Slip"
+                    >
+                      {printingSlip ? (
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      ) : (
+                        <Printer className="w-3.5 h-3.5" />
+                      )}
+                      <span>{printingSlip ? 'Printing...' : 'Print Slip'}</span>
+                    </button>
                   </div>
-                )}
-              </div>
+
+                  {slipActionError && (
+                    <div className="w-full p-2 rounded bg-rose-500/10 border border-rose-500/30 text-rose-600 dark:text-rose-400 text-[11px] flex items-center gap-1.5">
+                      <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                      <span>{slipActionError}</span>
+                    </div>
+                  )}
+                </div>
+              </Can>
 
               {/* 3. MINIMAL UPLOAD SIGNED RECEIPT IMAGE (FILE OR LIVE CAMERA) */}
-              {(!isAlreadySettled || !existingReceiptUrl) && (
-                <div className="p-3 rounded border border-outline-variant bg-surface-container-low space-y-2">
+              {(!isAlreadySettled || isAdmin || !existingReceiptUrl) && (
+                <Can permission="finance.single_payment_process">
+                  <div className="p-3 rounded border border-outline-variant bg-surface-container-low space-y-2">
                   <div className="flex items-center justify-between gap-2">
                     <label className="text-xs font-bold text-on-surface flex items-center gap-1">
                       <span>Signed Receipt Photo</span>
@@ -585,7 +637,12 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
                     {receiptFile ? (
                       <span className="text-[10px] px-2 py-0.5 rounded bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border border-emerald-500/30 font-semibold inline-flex items-center gap-1">
                         <CheckCircle2 className="w-3 h-3" />
-                        <span>Attached</span>
+                        <span>{isAlreadySettled ? 'Ready to Save' : 'Attached'}</span>
+                      </span>
+                    ) : isAlreadySettled && existingReceiptUrl ? (
+                      <span className="text-[10px] px-2 py-0.5 rounded bg-teal-500/15 text-teal-700 dark:text-teal-300 border border-teal-500/30 font-semibold inline-flex items-center gap-1">
+                        <CheckCircle2 className="w-3 h-3" />
+                        <span>Uploaded</span>
                       </span>
                     ) : isAlreadySettled ? (
                       <span className="text-[10px] px-2 py-0.5 rounded bg-surface-container-high text-on-surface-variant border border-outline-variant font-semibold">
@@ -607,6 +664,7 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
                     className="hidden"
                     onChange={(e) => {
                       handleReceiptSelected(e.target.files?.[0]);
+                      setConfirmDeleteReceipt(false);
                       e.target.value = '';
                     }}
                   />
@@ -619,14 +677,85 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
                     className="hidden"
                     onChange={(e) => {
                       handleReceiptSelected(e.target.files?.[0]);
+                      setConfirmDeleteReceipt(false);
                       e.target.value = '';
                     }}
                   />
 
                   {!receiptFile ? (
-                    isAlreadySettled ? (
+                    isAlreadySettled && !isAdmin ? (
                       <div className="p-2.5 rounded border border-dashed border-outline-variant bg-surface-container text-[11px] text-on-surface-variant">
                         No signed receipt image was uploaded when this earlier settlement was recorded.
+                      </div>
+                    ) : isAlreadySettled && existingReceiptUrl ? (
+                      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 p-2.5 rounded border border-outline-variant bg-surface-container">
+                        <span className="text-[11px] text-on-surface-variant">
+                          Signed settlement receipt is attached.
+                        </span>
+                        {!confirmDeleteReceipt ? (
+                          <div className="flex items-center gap-1.5 flex-wrap shrink-0">
+                            {handleUploadSettledReceipt && (
+                              <>
+                                <button
+                                  type="button"
+                                  onClick={() => fileInputRef.current?.click()}
+                                  disabled={submitting}
+                                  className="h-9 sm:h-auto px-2.5 sm:py-1 rounded border border-outline bg-surface-container-low hover:bg-surface-container-high text-[11px] font-semibold text-on-surface inline-flex items-center justify-center gap-1 cursor-pointer transition-colors disabled:opacity-50"
+                                  title="Upload replacement receipt image"
+                                >
+                                  <Upload className="w-3.5 h-3.5 text-primary" />
+                                  <span>Upload</span>
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={handleOpenLiveCamera}
+                                  disabled={submitting}
+                                  className="h-9 sm:h-auto px-2.5 sm:py-1 rounded border border-emerald-500/30 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-500/10 text-[11px] font-semibold inline-flex items-center justify-center gap-1 cursor-pointer transition-colors disabled:opacity-50"
+                                  title="Replace with live camera photo"
+                                >
+                                  <Camera className="w-3.5 h-3.5" />
+                                  <span>Camera</span>
+                                </button>
+                              </>
+                            )}
+                            {handleDeleteSettledReceipt && (
+                              <button
+                                type="button"
+                                onClick={() => setConfirmDeleteReceipt(true)}
+                                disabled={submitting}
+                                className="h-9 sm:h-auto px-2.5 sm:py-1 rounded border border-rose-500/35 bg-rose-500/10 hover:bg-rose-500/20 text-rose-600 dark:text-rose-400 text-[11px] font-semibold inline-flex items-center justify-center gap-1 cursor-pointer transition-colors disabled:opacity-50"
+                                title="Delete uploaded settlement receipt (Administrator only)"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                                <span>Delete</span>
+                              </button>
+                            )}
+                          </div>
+                        ) : (
+                          <div className="flex items-center gap-1.5 shrink-0">
+                            <button
+                              type="button"
+                              onClick={handleConfirmDeleteReceipt}
+                              disabled={submitting}
+                              className="h-9 sm:h-auto px-2.5 sm:py-1 rounded bg-rose-600 hover:bg-rose-700 text-white text-[11px] font-semibold inline-flex items-center justify-center gap-1 cursor-pointer transition-colors disabled:opacity-50"
+                            >
+                              {submitting ? (
+                                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                              ) : (
+                                <Trash2 className="w-3.5 h-3.5" />
+                              )}
+                              <span>Confirm Delete</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setConfirmDeleteReceipt(false)}
+                              disabled={submitting}
+                              className="h-9 sm:h-auto px-2.5 sm:py-1 rounded border border-outline bg-surface-container-low hover:bg-surface-container-high text-[11px] font-semibold text-on-surface cursor-pointer transition-colors disabled:opacity-50"
+                            >
+                              Cancel
+                            </button>
+                          </div>
+                        )}
                       </div>
                     ) : (
                       <div
@@ -653,7 +782,8 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
                           <button
                             type="button"
                             onClick={() => fileInputRef.current?.click()}
-                            className="h-10 sm:h-auto px-3 sm:px-2.5 sm:py-1.5 rounded border border-outline bg-surface-container-low hover:bg-surface-container-high text-xs font-semibold text-on-surface inline-flex items-center justify-center gap-1.5 cursor-pointer transition-colors"
+                            disabled={submitting}
+                            className="h-10 sm:h-auto px-3 sm:px-2.5 sm:py-1.5 rounded border border-outline bg-surface-container-low hover:bg-surface-container-high text-xs font-semibold text-on-surface inline-flex items-center justify-center gap-1.5 cursor-pointer transition-colors disabled:opacity-50"
                           >
                             <Upload className="w-3.5 h-3.5 text-primary" />
                             <span>Select Image</span>
@@ -661,7 +791,8 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
                           <button
                             type="button"
                             onClick={handleOpenLiveCamera}
-                            className="h-10 sm:h-auto px-3 sm:px-2.5 sm:py-1.5 rounded border border-emerald-500/35 bg-emerald-500/10 hover:bg-emerald-500/20 text-xs font-semibold text-emerald-700 dark:text-emerald-300 inline-flex items-center justify-center gap-1.5 cursor-pointer transition-colors"
+                            disabled={submitting}
+                            className="h-10 sm:h-auto px-3 sm:px-2.5 sm:py-1.5 rounded border border-emerald-500/35 bg-emerald-500/10 hover:bg-emerald-500/20 text-xs font-semibold text-emerald-700 dark:text-emerald-300 inline-flex items-center justify-center gap-1.5 cursor-pointer transition-colors disabled:opacity-50"
                           >
                             <Camera className="w-3.5 h-3.5" />
                             <span>Camera</span>
@@ -683,7 +814,22 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
                         </p>
                       </div>
 
-                      <div className="flex items-center gap-1.5 shrink-0">
+                      <div className="flex items-center gap-1.5 shrink-0 flex-wrap">
+                        {isAlreadySettled && isAdmin && handleUploadSettledReceipt && (
+                          <button
+                            type="button"
+                            onClick={handleSubmitSettledReceiptUpload}
+                            disabled={submitting}
+                            className="flex-1 sm:flex-none h-9 sm:h-auto px-3 sm:px-2.5 sm:py-1 rounded bg-teal-600 hover:bg-teal-700 text-white text-[11px] font-semibold inline-flex items-center justify-center gap-1 cursor-pointer transition-colors disabled:opacity-50"
+                          >
+                            {submitting ? (
+                              <Loader2 className="w-3.5 h-3.5 sm:w-3 sm:h-3 animate-spin" />
+                            ) : (
+                              <Upload className="w-3.5 h-3.5 sm:w-3 sm:h-3" />
+                            )}
+                            <span>Save Receipt</span>
+                          </button>
+                        )}
                         <button
                           type="button"
                           onClick={handleOpenLiveCamera}
@@ -707,7 +853,7 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
                           onClick={handleClearReceipt}
                           disabled={submitting}
                           className="h-9 w-9 sm:h-auto sm:w-auto sm:p-1 rounded border border-rose-500/30 text-rose-600 dark:text-rose-400 hover:bg-rose-500/10 inline-flex items-center justify-center cursor-pointer transition-colors disabled:opacity-50"
-                          title="Remove uploaded receipt image"
+                          title="Clear selected receipt image"
                         >
                           <Trash2 className="w-4 h-4 sm:w-3.5 sm:h-3.5" />
                         </button>
@@ -721,7 +867,8 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
                       <span>{receiptError}</span>
                     </div>
                   )}
-                </div>
+                  </div>
+                </Can>
               )}
 
               {/* Error message */}
@@ -755,37 +902,62 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
               {isAlreadySettled ? 'Close' : 'Cancel'}
             </button>
             {isAlreadySettled ? (
-              <span className="px-4 h-11 sm:h-auto sm:py-2 rounded bg-teal-500/15 text-teal-700 dark:text-teal-300 border border-teal-500/30 text-xs font-semibold inline-flex items-center justify-center gap-1.5">
-                <CheckCircle2 className="w-4 h-4 sm:w-3.5 sm:h-3.5" />
-                <span>Settled (KD {targetAmount.toFixed(3)})</span>
-              </span>
+              isAdmin && receiptFile && handleUploadSettledReceipt ? (
+                <Can permission="finance.single_payment_process">
+                  <button
+                    type="button"
+                    onClick={handleSubmitSettledReceiptUpload}
+                    disabled={submitting}
+                    className="flex-1 sm:flex-none px-4 h-11 sm:h-auto sm:py-2 rounded bg-teal-600 hover:bg-teal-700 text-white text-xs font-semibold flex items-center justify-center gap-1.5 transition-all shadow-sm hover:shadow cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {submitting ? (
+                      <>
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        <span>Uploading...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Upload className="w-4 h-4 sm:w-3.5 sm:h-3.5" />
+                        <span>Upload Receipt</span>
+                      </>
+                    )}
+                  </button>
+                </Can>
+              ) : (
+                <span className="px-4 h-11 sm:h-auto sm:py-2 rounded bg-teal-500/15 text-teal-700 dark:text-teal-300 border border-teal-500/30 text-xs font-semibold inline-flex items-center justify-center gap-1.5">
+                  <CheckCircle2 className="w-4 h-4 sm:w-3.5 sm:h-3.5" />
+                  <span>Settled (KD {targetAmount.toFixed(3)})</span>
+                </span>
+              )
             ) : (
-              <button
-                type="button"
-                onClick={() => {
-                  if (!receiptFile) return;
-                  handleProcessPayment(receiptFile);
-                }}
-                disabled={!canConfirmSettlement}
-                title={
-                  !receiptFile
-                    ? 'Please upload the signed payment receipt image first'
-                    : 'Confirm Cash Settlement'
-                }
-                className="flex-1 sm:flex-none px-4 h-11 sm:h-auto sm:py-2 rounded bg-teal-600 hover:bg-teal-700 text-white text-xs font-semibold flex items-center justify-center gap-1.5 transition-all shadow-sm hover:shadow cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                {submitting ? (
-                  <>
-                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                    <span>Settling...</span>
-                  </>
-                ) : (
-                  <>
-                    <Banknote className="w-4 h-4 sm:w-3.5 sm:h-3.5" />
-                    <span>Confirm Settlement (KD {targetAmount.toFixed(3)})</span>
-                  </>
-                )}
-              </button>
+              <Can permission="finance.single_payment_process">
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (!receiptFile) return;
+                    handleProcessPayment(receiptFile);
+                  }}
+                  disabled={!canConfirmSettlement}
+                  title={
+                    !receiptFile
+                      ? 'Please upload the signed payment receipt image first'
+                      : 'Confirm Cash Settlement'
+                  }
+                  className="flex-1 sm:flex-none px-4 h-11 sm:h-auto sm:py-2 rounded bg-teal-600 hover:bg-teal-700 text-white text-xs font-semibold flex items-center justify-center gap-1.5 transition-all shadow-sm hover:shadow cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {submitting ? (
+                    <>
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      <span>Settling...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Banknote className="w-4 h-4 sm:w-3.5 sm:h-3.5" />
+                      <span>Confirm Settlement (KD {targetAmount.toFixed(3)})</span>
+                    </>
+                  )}
+                </button>
+              </Can>
             )}
           </div>
         </div>

@@ -3413,6 +3413,48 @@ class AuditEventViewSet(viewsets.ReadOnlyModelViewSet):
         return queryset
 
 
+def _is_administrator_user(user):
+    if not user or user.is_anonymous:
+        return False
+    if getattr(user, 'is_superuser', False):
+        return True
+    role_obj = getattr(user, 'role', None)
+    role_name = (
+        role_obj.role_name.lower().strip()
+        if role_obj and getattr(role_obj, 'role_name', None)
+        else ''
+    )
+    return role_name in ('administrator', 'admin')
+
+
+def _extract_and_validate_receipt_image(request):
+    import os
+
+    receipt_image = request.FILES.get('receipt_image')
+    if not receipt_image:
+        raw_receipt = request.data.get('receipt_image')
+        if raw_receipt and hasattr(raw_receipt, 'read'):
+            receipt_image = raw_receipt
+
+    if receipt_image:
+        allowed_exts = {'.jpg', '.jpeg', '.png', '.webp', '.gif', '.bmp', '.heic', '.heif'}
+        _, ext = os.path.splitext(getattr(receipt_image, 'name', '') or '')
+        content_type = (getattr(receipt_image, 'content_type', '') or '').lower()
+        if not (content_type.startswith('image/') or ext.lower() in allowed_exts):
+            raise exceptions.ValidationError({'detail': 'Receipt upload must be a valid image file.'})
+
+    return receipt_image
+
+
+def _parse_optional_pk(value, field_name):
+    if value is None or value == '':
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        raise exceptions.ValidationError({'detail': f'Invalid {field_name}.'})
+
+
 class PaymentViewSet(viewsets.ModelViewSet):
     queryset = Payment.objects.all().select_related('paid_by', 'paid_by__role',
                                                     'claim', 'ledger', 'expense').order_by('-paid_at', '-payment_id')
@@ -3431,6 +3473,82 @@ class PaymentViewSet(viewsets.ModelViewSet):
         if to_date:
             queryset = queryset.filter(paid_at__date__lte=to_date)
         return queryset
+
+    @staticmethod
+    def _resolve_target_for_receipt(payment_id=None, bundle_id=None, ledger_id=None, for_delete=False):
+        """
+        Resolve matching Payment rows and optional WorkerClaim / Ledger target under row locks.
+        """
+        bundle = None
+        ledger = None
+        payments = []
+
+        if payment_id is not None:
+            payment = Payment.objects.select_for_update().filter(pk=payment_id).first()
+            if not payment:
+                raise exceptions.ValidationError({'detail': f'Payment #{payment_id} not found.'})
+            payments = [payment]
+        elif bundle_id is not None:
+            bundle = WorkerClaim.objects.select_for_update().filter(pk=bundle_id).first()
+            if not bundle:
+                raise exceptions.ValidationError({'detail': f'Bundle #{bundle_id} not found.'})
+            direct = list(
+                Payment.objects.select_for_update()
+                .filter(claim=bundle)
+                .order_by('-paid_at', '-payment_id')
+            )
+            parent_ledger_ids = list(bundle.ledgers.values_list('ledger_id', flat=True))
+            if for_delete:
+                direct_with_receipt = [p for p in direct if getattr(p, 'receipt_image', None)]
+                if direct_with_receipt:
+                    payments = direct_with_receipt
+                elif parent_ledger_ids:
+                    ledger_payments = list(
+                        Payment.objects.select_for_update()
+                        .filter(ledger_id__in=parent_ledger_ids)
+                        .order_by('-paid_at', '-payment_id')
+                    )
+                    payments = [p for p in ledger_payments if getattr(p, 'receipt_image', None)]
+            else:
+                if direct:
+                    payments = direct
+                elif parent_ledger_ids:
+                    ledger_payments = list(
+                        Payment.objects.select_for_update()
+                        .filter(ledger_id__in=parent_ledger_ids)
+                        .order_by('-paid_at', '-payment_id')
+                    )
+                    # Reuse single-bundle ledger payment directly instead of inserting another row
+                    if ledger_payments and ledger_payments[0].ledger and ledger_payments[0].ledger.bundles.count() <= 1:
+                        payments = ledger_payments
+        elif ledger_id is not None:
+            ledger = Ledger.objects.select_for_update().filter(pk=ledger_id).first()
+            if not ledger:
+                raise exceptions.ValidationError({'detail': f'Ledger #{ledger_id} not found.'})
+            direct = list(
+                Payment.objects.select_for_update()
+                .filter(ledger=ledger)
+                .order_by('-paid_at', '-payment_id')
+            )
+            if for_delete:
+                direct_with_receipt = [p for p in direct if getattr(p, 'receipt_image', None)]
+                if direct_with_receipt:
+                    payments = direct_with_receipt
+                else:
+                    bundle_ids = list(ledger.bundles.values_list('claim_id', flat=True))
+                    if bundle_ids:
+                        claim_payments = list(
+                            Payment.objects.select_for_update()
+                            .filter(claim_id__in=bundle_ids)
+                            .order_by('-paid_at', '-payment_id')
+                        )
+                        payments = [p for p in claim_payments if getattr(p, 'receipt_image', None)]
+            else:
+                payments = direct
+        else:
+            raise exceptions.ValidationError({'detail': 'Must provide payment_id, bundle_id, or ledger_id.'})
+
+        return payments, bundle, ledger
 
     @action(detail=False, methods=['post'], url_path='process-payment')
     def process_payment(self, request):
@@ -3470,19 +3588,7 @@ class PaymentViewSet(viewsets.ModelViewSet):
             )
         remarks = request.data.get('remarks')
         recipient_name = request.data.get('recipient_name')
-        receipt_image = request.FILES.get('receipt_image')
-        if not receipt_image:
-            raw_receipt = request.data.get('receipt_image')
-            if raw_receipt and hasattr(raw_receipt, 'read'):
-                receipt_image = raw_receipt
-
-        if receipt_image:
-            import os
-            allowed_exts = {'.jpg', '.jpeg', '.png', '.webp', '.gif', '.bmp', '.heic', '.heif'}
-            _, ext = os.path.splitext(getattr(receipt_image, 'name', '') or '')
-            content_type = (getattr(receipt_image, 'content_type', '') or '').lower()
-            if not (content_type.startswith('image/') or ext.lower() in allowed_exts):
-                raise exceptions.ValidationError({'detail': 'Receipt upload must be a valid image file.'})
+        receipt_image = _extract_and_validate_receipt_image(request)
 
         from django.core.exceptions import ValidationError as DjangoValidationError
         try:
@@ -3503,6 +3609,165 @@ class PaymentViewSet(viewsets.ModelViewSet):
             msg = e.messages[0] if hasattr(
                 e, 'messages') and e.messages else str(e)
             raise exceptions.ValidationError({'detail': msg})
+
+    @action(detail=False, methods=['post'], url_path='upload-receipt')
+    def upload_receipt(self, request):
+        if not _is_administrator_user(request.user):
+            return Response(
+                {'detail': 'Permission denied. Only Administrator users can upload or replace settlement receipts.'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
+        receipt_image = _extract_and_validate_receipt_image(request)
+        if not receipt_image:
+            raise exceptions.ValidationError({'detail': 'Please select a valid signed receipt image to upload.'})
+
+        payment_id = _parse_optional_pk(request.data.get('payment_id'), 'payment_id')
+        bundle_id = _parse_optional_pk(request.data.get('bundle_id'), 'bundle_id')
+        ledger_id = _parse_optional_pk(request.data.get('ledger_id'), 'ledger_id')
+
+        from django.db import transaction
+
+        with transaction.atomic():
+            payments, bundle, ledger = self._resolve_target_for_receipt(
+                payment_id=payment_id,
+                bundle_id=bundle_id,
+                ledger_id=ledger_id,
+                for_delete=False,
+            )
+
+            if payments:
+                target_payment = payments[0]
+                for existing in payments:
+                    if getattr(existing, 'receipt_image', None):
+                        existing.receipt_image.delete(save=False)
+                        if existing.pk != target_payment.pk:
+                            existing.receipt_image = None
+                            existing.save(update_fields=['receipt_image'])
+                target_payment.receipt_image = receipt_image
+                target_payment.save(update_fields=['receipt_image'])
+            elif bundle is not None:
+                if bundle.status != 'Paid':
+                    raise exceptions.ValidationError({
+                        'detail': f"Cannot attach settlement receipt to Bundle #{bundle.claim_id} because its status is '{bundle.status}'."
+                    })
+                has_parent_payment = Payment.objects.filter(ledger__in=bundle.ledgers.all()).exists()
+                recipient_name = (
+                    (bundle.worker.get_full_name() or bundle.worker.username)
+                    if bundle.worker else None
+                )
+                target_payment = Payment.objects.create(
+                    claim=bundle,
+                    amount_paid=Decimal('0.000') if has_parent_payment else bundle.total_claimed_amount,
+                    payment_method='Cash',
+                    recipient_name=recipient_name,
+                    paid_by=request.user,
+                    receipt_image=receipt_image,
+                    remarks=f"Signed receipt uploaded by Administrator for Bundle #{bundle.claim_id}",
+                )
+            elif ledger is not None:
+                if ledger.status != 'Paid':
+                    raise exceptions.ValidationError({
+                        'detail': f"Cannot attach settlement receipt to Ledger #{ledger.ledger_id} because its status is '{ledger.status}'."
+                    })
+                recipient_name = (
+                    (ledger.created_by.get_full_name() or ledger.created_by.username)
+                    if getattr(ledger, 'created_by', None) else None
+                )
+                target_payment = Payment.objects.create(
+                    ledger=ledger,
+                    amount_paid=ledger.total_amount,
+                    payment_method='Cash',
+                    recipient_name=recipient_name,
+                    paid_by=request.user,
+                    receipt_image=receipt_image,
+                    remarks=f"Signed receipt uploaded by Administrator for Ledger #{ledger.ledger_id}",
+                )
+
+            receipt_url = target_payment.receipt_image.url if target_payment.receipt_image else None
+            entity_name = 'WorkerClaim' if target_payment.claim_id else ('Ledger' if target_payment.ledger_id else 'Payment')
+            entity_id = target_payment.claim_id or target_payment.ledger_id or target_payment.payment_id
+            create_audit_event(
+                entity_name,
+                entity_id,
+                'RECEIPT_UPLOADED',
+                actor=request.user,
+                payload={
+                    'payment_id': target_payment.payment_id,
+                    'receipt_image': receipt_url,
+                },
+                ip_address=request.META.get('REMOTE_ADDR'),
+            )
+
+        data = PaymentSerializer(target_payment).data
+        data['payment_receipt_image'] = receipt_url
+        return Response(data, status=status.HTTP_200_OK)
+
+    @action(detail=False, methods=['post', 'delete'], url_path='delete-receipt')
+    def delete_receipt(self, request):
+        if not _is_administrator_user(request.user):
+            return Response(
+                {'detail': 'Permission denied. Only Administrator users can delete settlement receipts.'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
+        req_data = request.data if isinstance(getattr(request, 'data', None), dict) else {}
+
+        def _get_param(name):
+            val = req_data.get(name)
+            return val if val not in (None, '') else request.query_params.get(name)
+
+        payment_id = _parse_optional_pk(_get_param('payment_id'), 'payment_id')
+        bundle_id = _parse_optional_pk(_get_param('bundle_id'), 'bundle_id')
+        ledger_id = _parse_optional_pk(_get_param('ledger_id'), 'ledger_id')
+
+        from django.db import transaction
+
+        with transaction.atomic():
+            payments, bundle, ledger = self._resolve_target_for_receipt(
+                payment_id=payment_id,
+                bundle_id=bundle_id,
+                ledger_id=ledger_id,
+                for_delete=True,
+            )
+
+            deleted_payment_ids = []
+            for p in payments:
+                if getattr(p, 'receipt_image', None):
+                    p.receipt_image.delete(save=False)
+                    p.receipt_image = None
+                    p.save(update_fields=['receipt_image'])
+                    deleted_payment_ids.append(p.payment_id)
+
+            entity_name = 'WorkerClaim' if bundle else ('Ledger' if ledger else 'Payment')
+            entity_id = (
+                (bundle.claim_id if bundle else None)
+                or (ledger.ledger_id if ledger else None)
+                or payment_id
+            )
+            create_audit_event(
+                entity_name,
+                entity_id,
+                'RECEIPT_DELETED',
+                actor=request.user,
+                payload={
+                    'deleted_count': len(deleted_payment_ids),
+                    'payment_ids': deleted_payment_ids,
+                },
+                ip_address=request.META.get('REMOTE_ADDR'),
+            )
+
+        return Response(
+            {
+                'deleted_count': len(deleted_payment_ids),
+                'receipt_image': None,
+                'payment_receipt_image': None,
+                'claim_id': bundle_id,
+                'ledger_id': ledger_id,
+                'payment_id': payment_id,
+            },
+            status=status.HTTP_200_OK,
+        )
 
 
 def recalculate_reconciliation(instance):

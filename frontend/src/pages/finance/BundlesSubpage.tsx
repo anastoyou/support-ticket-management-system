@@ -2119,7 +2119,7 @@ export const BundlesSubpage: React.FC<BundlesSubpageProps> = ({
                                     </>
                                   ) : (
                                     setShowPaymentModal && (
-                                      <Can permission={["finance.add_payment", "finance.change_payment", "finance.single_payment_process"] as any}>
+                                      <Can permission="finance.single_payment_process">
                                         <button
                                           type="button"
                                           onClick={(e) => {

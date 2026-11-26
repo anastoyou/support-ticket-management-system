@@ -202,10 +202,6 @@ export const LedgersSubpage: React.FC<LedgersSubpageProps> = ({
     );
   }, [currentUser, hasPermission]);
 
-  const isCashOffice = useMemo(() => {
-    return canBulkPay || canSinglePay;
-  }, [canBulkPay, canSinglePay]);
-
   // Ledger Group Accordion State (groupId -> boolean expanded)
   const [expandedGroupIds, setExpandedGroupIds] = useState<Record<string | number, boolean>>({});
 
@@ -2844,28 +2840,29 @@ export const LedgersSubpage: React.FC<LedgersSubpageProps> = ({
                     </div>
 
                     {(cluster.allApproved || cluster.isCompleted || isGroupPaid) &&
-                      (isCashOffice || hasPermission('finance.view_ledger_report') || hasPermission('reports.can_generate_report')) &&
                       totalBundleCount > 0 && (
-                        <div className="flex items-center gap-2 pt-0.5" onClick={(e) => e.stopPropagation()}>
-                          <button
-                            type="button"
-                            disabled={printingGroupSlipsId === cluster.groupId}
-                            onClick={(e) => handlePrintGroupSlips(cluster, e)}
-                            className="flex-1 h-9 px-3 rounded bg-rose-700 hover:bg-rose-800 text-white text-xs font-semibold inline-flex items-center justify-center gap-1.5 shadow-xs cursor-pointer disabled:opacity-50"
-                          >
-                            {printingGroupSlipsId === cluster.groupId ? (
-                              <>
-                                <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                                <span>Preparing...</span>
-                              </>
-                            ) : (
-                              <>
-                                <Printer className="w-3.5 h-3.5" />
-                                <span>Print All Slips</span>
-                              </>
-                            )}
-                          </button>
-                        </div>
+                        <Can permission="finance.single_payment_process">
+                          <div className="flex items-center gap-2 pt-0.5" onClick={(e) => e.stopPropagation()}>
+                            <button
+                              type="button"
+                              disabled={printingGroupSlipsId === cluster.groupId}
+                              onClick={(e) => handlePrintGroupSlips(cluster, e)}
+                              className="flex-1 h-9 px-3 rounded bg-rose-700 hover:bg-rose-800 text-white text-xs font-semibold inline-flex items-center justify-center gap-1.5 shadow-xs cursor-pointer disabled:opacity-50"
+                            >
+                              {printingGroupSlipsId === cluster.groupId ? (
+                                <>
+                                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                  <span>Preparing...</span>
+                                </>
+                              ) : (
+                                <>
+                                  <Printer className="w-3.5 h-3.5" />
+                                  <span>Print All Slips</span>
+                                </>
+                              )}
+                            </button>
+                          </div>
+                        </Can>
                       )}
                   </div>
                 );
@@ -3326,27 +3323,28 @@ export const LedgersSubpage: React.FC<LedgersSubpageProps> = ({
 
                               {/* Single-click Print All Bundle Payment Slips for this Main Ledger */}
                               {(cluster.allApproved || cluster.isCompleted || isGroupPaid) &&
-                                (isCashOffice || hasPermission('finance.view_ledger_report') || hasPermission('reports.can_generate_report')) &&
                                 getGroupBundleBreakdown(cluster).length > 0 && (
-                                  <button
-                                    type="button"
-                                    disabled={printingGroupSlipsId === cluster.groupId}
-                                    onClick={(e) => handlePrintGroupSlips(cluster, e)}
-                                    className="px-2.5 py-1 rounded bg-rose-700 hover:bg-rose-800 text-white text-[11px] font-semibold inline-flex items-center gap-1 transition-all shadow-xs hover:shadow cursor-pointer disabled:opacity-50 shrink-0"
-                                    title="Print all bundle Payment Slips (1/2 A4 each) for this ledger in one click"
-                                  >
-                                    {printingGroupSlipsId === cluster.groupId ? (
-                                      <>
-                                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                                        <span>Preparing...</span>
-                                      </>
-                                    ) : (
-                                      <>
-                                        <Printer className="w-3.5 h-3.5" />
-                                        <span>Print All Slips</span>
-                                      </>
-                                    )}
-                                  </button>
+                                  <Can permission="finance.single_payment_process">
+                                    <button
+                                      type="button"
+                                      disabled={printingGroupSlipsId === cluster.groupId}
+                                      onClick={(e) => handlePrintGroupSlips(cluster, e)}
+                                      className="px-2.5 py-1 rounded bg-rose-700 hover:bg-rose-800 text-white text-[11px] font-semibold inline-flex items-center gap-1 transition-all shadow-xs hover:shadow cursor-pointer disabled:opacity-50 shrink-0"
+                                      title="Print all bundle Payment Slips (1/2 A4 each) for this ledger in one click"
+                                    >
+                                      {printingGroupSlipsId === cluster.groupId ? (
+                                        <>
+                                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                          <span>Preparing...</span>
+                                        </>
+                                      ) : (
+                                        <>
+                                          <Printer className="w-3.5 h-3.5" />
+                                          <span>Print All Slips</span>
+                                        </>
+                                      )}
+                                    </button>
+                                  </Can>
                                 )}
 
 
@@ -5487,26 +5485,27 @@ export const LedgersSubpage: React.FC<LedgersSubpageProps> = ({
                 {/* Top Quick Actions */}
                 <div className="flex flex-wrap items-center gap-2">
                   {(cluster.allApproved || cluster.isCompleted || isGroupPaid) &&
-                    (isCashOffice || hasPermission('finance.view_ledger_report') || hasPermission('reports.can_generate_report')) &&
                     totalBundleCount > 0 && (
-                      <button
-                        type="button"
-                        disabled={printingGroupSlipsId === cluster.groupId}
-                        onClick={(e) => handlePrintGroupSlips(cluster, e)}
-                        className="flex-1 min-w-[125px] h-9 px-3 rounded bg-rose-700 hover:bg-rose-800 text-white text-xs font-semibold inline-flex items-center justify-center gap-1.5 shadow-xs cursor-pointer disabled:opacity-50"
-                      >
-                        {printingGroupSlipsId === cluster.groupId ? (
-                          <>
-                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                            <span>Preparing...</span>
-                          </>
-                        ) : (
-                          <>
-                            <Printer className="w-3.5 h-3.5" />
-                            <span>Print All Slips</span>
-                          </>
-                        )}
-                      </button>
+                      <Can permission="finance.single_payment_process">
+                        <button
+                          type="button"
+                          disabled={printingGroupSlipsId === cluster.groupId}
+                          onClick={(e) => handlePrintGroupSlips(cluster, e)}
+                          className="flex-1 min-w-[125px] h-9 px-3 rounded bg-rose-700 hover:bg-rose-800 text-white text-xs font-semibold inline-flex items-center justify-center gap-1.5 shadow-xs cursor-pointer disabled:opacity-50"
+                        >
+                          {printingGroupSlipsId === cluster.groupId ? (
+                            <>
+                              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                              <span>Preparing...</span>
+                            </>
+                          ) : (
+                            <>
+                              <Printer className="w-3.5 h-3.5" />
+                              <span>Print All Slips</span>
+                            </>
+                          )}
+                        </button>
+                      </Can>
                     )}
 
                   {(cluster.allApproved || cluster.isCompleted) && !isGroupPaid && canBulkPay && (

@@ -2030,6 +2030,149 @@ export const FinanceView: React.FC = () => {
     }
   };
 
+  const syncReceiptInFinanceState = (
+    target: PaymentItem | WorkerClaimItem | LedgerItem,
+    updatedReceiptUrl: string | null
+  ) => {
+    const isClaimTarget = 'claim_id' in target;
+    const isLedgerTarget = 'ledger_id' in target && !isClaimTarget;
+    const isPaymentTarget = 'payment_id' in target;
+
+    const claimId = isClaimTarget
+      ? (target as WorkerClaimItem).claim_id
+      : isPaymentTarget
+        ? (target as PaymentItem).claim
+        : undefined;
+    const ledgerId = isLedgerTarget
+      ? (target as LedgerItem).ledger_id
+      : isPaymentTarget
+        ? (target as PaymentItem).ledger
+        : undefined;
+    const paymentId = isPaymentTarget ? (target as PaymentItem).payment_id : undefined;
+
+    setShowPaymentModal((prev) =>
+      prev
+        ? ({
+            ...prev,
+            payment_receipt_image: updatedReceiptUrl,
+            receipt_image: updatedReceiptUrl,
+          } as any)
+        : null
+    );
+
+    if (claimId !== undefined) {
+      setSelectedBundleForView((prev) =>
+        prev && prev.claim_id === claimId
+          ? { ...prev, payment_receipt_image: updatedReceiptUrl }
+          : prev
+      );
+      setBundles((prev) =>
+        prev.map((b) =>
+          b.claim_id === claimId ? { ...b, payment_receipt_image: updatedReceiptUrl } : b
+        )
+      );
+      setLedgers((prev) =>
+        prev.map((l) => ({
+          ...l,
+          ...(updatedReceiptUrl === null && l.ledger_id === (target as any)?.ledger_details?.ledger_id
+            ? { payment_receipt_image: null }
+            : {}),
+          bundles: (l.bundles || []).map((b) =>
+            b.claim_id === claimId ? { ...b, payment_receipt_image: updatedReceiptUrl } : b
+          ),
+        }))
+      );
+    } else if (ledgerId !== undefined) {
+      setLedgers((prev) =>
+        prev.map((l) =>
+          l.ledger_id === ledgerId ? { ...l, payment_receipt_image: updatedReceiptUrl } : l
+        )
+      );
+    }
+
+    if (paymentId !== undefined) {
+      setPayments((prev) =>
+        prev.map((p) =>
+          p.payment_id === paymentId ? { ...p, receipt_image: updatedReceiptUrl } : p
+        )
+      );
+    }
+  };
+
+  const getReceiptTargetIds = (target: PaymentItem | WorkerClaimItem | LedgerItem) => {
+    const isClaim = 'claim_id' in target;
+    const isLedger = 'ledger_id' in target && !isClaim;
+    const isPayment = 'payment_id' in target;
+    return {
+      paymentId: isPayment ? (target as PaymentItem).payment_id : undefined,
+      claimId: isClaim ? (target as WorkerClaimItem).claim_id : undefined,
+      ledgerId: isLedger ? (target as LedgerItem).ledger_id : undefined,
+    };
+  };
+
+  const handleUploadSettledReceipt = async (receiptFile: File) => {
+    if (!showPaymentModal || !receiptFile) return;
+    setSubmitting(true);
+    setErrorMessage(null);
+    const { paymentId, claimId, ledgerId } = getReceiptTargetIds(showPaymentModal);
+    try {
+      const formData = new FormData();
+      if (paymentId !== undefined) formData.append('payment_id', String(paymentId));
+      if (claimId !== undefined) formData.append('bundle_id', String(claimId));
+      if (ledgerId !== undefined) formData.append('ledger_id', String(ledgerId));
+      formData.append('receipt_image', receiptFile);
+
+      const res = await fetch(`${API_URL}/finance/payments/upload-receipt/`, {
+        method: 'POST',
+        headers: { 'Authorization': `Token ${token}` },
+        body: formData,
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || JSON.stringify(data));
+      const updatedUrl: string | null = data?.payment_receipt_image ?? data?.receipt_image ?? null;
+      syncReceiptInFinanceState(showPaymentModal, updatedUrl);
+      setSuccessMessage('Signed settlement receipt uploaded successfully.');
+      await fetchData(true, true);
+    } catch (err: any) {
+      setErrorMessage(err.message || 'Failed to upload settlement receipt.');
+      throw err;
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleDeleteSettledReceipt = async () => {
+    if (!showPaymentModal) return;
+    setSubmitting(true);
+    setErrorMessage(null);
+    const { paymentId, claimId, ledgerId } = getReceiptTargetIds(showPaymentModal);
+    try {
+      const bodyPayload: Record<string, number> = {};
+      if (paymentId !== undefined) bodyPayload.payment_id = paymentId;
+      if (claimId !== undefined) bodyPayload.bundle_id = claimId;
+      if (ledgerId !== undefined) bodyPayload.ledger_id = ledgerId;
+
+      const res = await fetch(`${API_URL}/finance/payments/delete-receipt/`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Token ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(bodyPayload),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || JSON.stringify(data));
+      syncReceiptInFinanceState(showPaymentModal, null);
+      setSuccessMessage('Signed settlement receipt deleted successfully.');
+      await fetchData(true, true);
+    } catch (err: any) {
+      setErrorMessage(err.message || 'Failed to delete settlement receipt.');
+      throw err;
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
   const handleProcessPayment = async (receiptFile?: File | null) => {
     if (!showPaymentModal) return;
     if (!receiptFile) {
@@ -2808,6 +2951,8 @@ export const FinanceView: React.FC = () => {
         paymentRecipient={paymentRecipient}
         setPaymentRecipient={setPaymentRecipient}
         handleProcessPayment={handleProcessPayment}
+        handleUploadSettledReceipt={handleUploadSettledReceipt}
+        handleDeleteSettledReceipt={handleDeleteSettledReceipt}
         submitting={submitting}
         errorMessage={errorMessage}
       />
