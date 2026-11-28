@@ -926,13 +926,22 @@ class LedgerGroupBundleRemovalTestCase(TestCase):
             self.assertEqual(forbid_resp.status_code, 403)
 
         # Administrator reverts b1 via API -> b1 returns to Approved, Payment deleted, expenses unpaid
+        # Also verify no SQL query mixes FOR UPDATE with LEFT OUTER JOIN (PostgreSQL compatibility)
+        from django.db import connection
+        from django.test.utils import CaptureQueriesContext
+
         admin_client = APIClient()
         admin_client.force_authenticate(user=self.admin_user)
-        rev_resp = admin_client.post(
-            "/api/finance/payments/revert-payment/",
-            data={"bundle_id": b1.claim_id, "reason": "Accidental click"},
-            format="json",
-        )
+        with CaptureQueriesContext(connection) as captured_queries:
+            rev_resp = admin_client.post(
+                "/api/finance/payments/revert-payment/",
+                data={"bundle_id": b1.claim_id, "reason": "Accidental click"},
+                format="json",
+            )
+        for q in captured_queries:
+            sql_upper = q["sql"].upper()
+            if "FOR UPDATE" in sql_upper:
+                self.assertNotIn("OUTER JOIN", sql_upper, q["sql"])
         self.assertEqual(rev_resp.status_code, 200, rev_resp.data)
         self.assertEqual(rev_resp.data["bundle"]["status"], "Approved")
         b1.refresh_from_db()

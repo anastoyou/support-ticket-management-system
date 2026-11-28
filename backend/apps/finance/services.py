@@ -1854,20 +1854,27 @@ class PaymentService:
                     f"Bundle #{bundle_id} is in status '{bundle.status}' and is not Paid."
                 )
 
-            parent_ledgers = list(
-                bundle.ledgers.select_for_update().select_related('ledger_group').all()
+            parent_ledger_ids = list(
+                bundle.ledgers.values_list('ledger_id', flat=True)
+            )
+            parent_ledgers = (
+                list(Ledger.objects.select_for_update().filter(ledger_id__in=parent_ledger_ids))
+                if parent_ledger_ids
+                else []
             )
             direct_payments = list(
                 Payment.objects.select_for_update().filter(claim=bundle)
             )
 
             # Check if settled via a bulk Ledger or LedgerGroup payment
-            bulk_ledger_ids = {l.ledger_id for l in parent_ledgers}
-            for l in parent_ledgers:
-                if l.ledger_group_id:
-                    bulk_ledger_ids.update(
-                        l.ledger_group.ledgers.values_list('ledger_id', flat=True)
-                    )
+            bulk_ledger_ids = set(parent_ledger_ids)
+            group_ids = {
+                l.ledger_group_id for l in parent_ledgers if l.ledger_group_id is not None
+            }
+            if group_ids:
+                bulk_ledger_ids.update(
+                    Ledger.objects.filter(ledger_group_id__in=group_ids).values_list('ledger_id', flat=True)
+                )
 
             has_bulk_ledger_payment = bool(
                 bulk_ledger_ids
@@ -1892,9 +1899,13 @@ class PaymentService:
             bundle.status = 'Approved'
             bundle.save(update_fields=['status'])
 
-            # Reset tied expenses back to unpaid
-            tied_expenses = Expense.objects.select_for_update().filter(claim=bundle)
-            reverted_expenses_count = tied_expenses.update(
+            # Lock and reset tied expenses back to unpaid (no outer joins in FOR UPDATE)
+            list(
+                Expense.objects.select_for_update()
+                .filter(claim=bundle)
+                .values_list('pk', flat=True)
+            )
+            reverted_expenses_count = Expense.objects.filter(claim=bundle).update(
                 is_paid=False,
                 paid_at=None,
                 paid_by=None,
@@ -1903,7 +1914,6 @@ class PaymentService:
             # Revert any parent Ledgers / LedgerGroups that became Paid via ALL_BUNDLES_PAID
             reverted_ledger_ids = []
             reverted_group_ids = []
-            seen_groups = {}
             for parent_ledger in parent_ledgers:
                 if parent_ledger.status == 'Paid':
                     parent_ledger.status = 'Approved'
@@ -1922,11 +1932,7 @@ class PaymentService:
                         ip_address=ip_address,
                     )
 
-                grp = parent_ledger.ledger_group
-                if grp and grp.ledger_group_id not in seen_groups:
-                    seen_groups[grp.ledger_group_id] = grp
-
-            for grp_id, grp in seen_groups.items():
+            for grp_id in sorted(group_ids):
                 locked_grp = LedgerGroup.objects.select_for_update().get(pk=grp_id)
                 if locked_grp.is_paid:
                     locked_grp.is_paid = False
