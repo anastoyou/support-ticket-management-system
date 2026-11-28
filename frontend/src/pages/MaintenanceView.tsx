@@ -887,7 +887,7 @@ export const MaintenanceView: React.FC = () => {
               const delta = e.deltaY < 0 ? 0.08 : -0.08;
               setFlowZoom(prev => Math.min(2.0, Math.max(0.4, Number((prev + delta).toFixed(2)))));
             }}
-            className="relative overflow-hidden p-6 h-[calc(100vh-220px)] min-h-[500px] bg-surface-container-lowest flex items-center justify-center select-none"
+            className="relative overflow-hidden p-6 h-[clamp(340px,calc(100dvh-235px),780px)] bg-surface-container-lowest flex items-center justify-center select-none"
           >
 
             {/* Tree Flow Graph Canvas - Instant Draggable Entire UI */}
@@ -1119,7 +1119,7 @@ export const MaintenanceView: React.FC = () => {
            AG GRID TABLE VIEW
            ══════════════════════════════════════════════════════════════════════ */
         <div className="border border-outline-variant dark:border-dark-outline-variant bg-surface dark:bg-dark-surface rounded overflow-hidden flex flex-col">
-          <div className="ag-theme-app w-full h-[calc(100vh-220px)] min-h-[500px]">
+          <div className="ag-theme-app w-full h-[clamp(340px,calc(100dvh-235px),780px)]">
             <AgGridReact
               theme={appTheme}
               rowData={data}
@@ -1143,7 +1143,7 @@ export const MaintenanceView: React.FC = () => {
 
           {/* Standardized Pagination Footer */}
           {!loading && filteredData.length > 0 && (
-            <div className="flex justify-between items-center text-xs text-on-surface-variant dark:text-dark-on-surface-variant px-3 py-2 border-t border-outline-variant dark:border-dark-outline-variant bg-surface-container-low dark:bg-dark-surface-container-low">
+            <div className="flex flex-wrap justify-between items-center gap-2 text-xs text-on-surface-variant dark:text-dark-on-surface-variant px-3 py-2 border-t border-outline-variant dark:border-dark-outline-variant bg-surface-container-low dark:bg-dark-surface-container-low">
               <div className="flex items-center gap-3">
                 <span>
                   Showing {startIndex + 1}–{endIndex} of {totalItems.toLocaleString()}

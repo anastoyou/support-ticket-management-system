@@ -244,7 +244,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
   };
 
   const sidebarContent = (
-    <div className="flex flex-col h-full bg-surface-container border-r border-outline-variant w-60 select-none">
+    <div className="flex flex-col h-full bg-surface-container border-r border-outline-variant w-60 max-w-[82vw] lg:w-56 xl:w-60 select-none">
       {/* Brand Header */}
       <div className="flex items-center justify-between px-4 py-3.5 border-b border-outline-variant bg-surface-container-low shrink-0">
         <div className="flex items-center gap-2.5">
@@ -381,7 +381,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
                                 key={subIdx}
                                 to={sub.path}
                                 onClick={() => {
-                                  if (window.innerWidth < 768) onClose();
+                                  if (window.innerWidth < 1024) onClose();
                                 }}
                                 className={`block px-2.5 py-1.5 rounded text-xs transition-colors ${subActive
                                   ? 'text-primary bg-primary/10 font-semibold'
@@ -407,7 +407,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
                   <Link
                     to={targetPath || '#'}
                     onClick={() => {
-                      if (window.innerWidth < 768) onClose();
+                      if (window.innerWidth < 1024) onClose();
                     }}
                     className={`flex items-center gap-2.5 px-3 py-2 rounded text-xs font-medium transition-colors ${location.pathname === targetPath
                       ? 'text-primary bg-primary/10 font-semibold'
@@ -524,15 +524,15 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
 
   return (
     <>
-      {/* Desktop Sidebar (Permanent toggleable) */}
-      <div className={`hidden md:flex shrink-0 h-screen sticky top-0 z-30 transition-all duration-300 ${isOpen ? 'w-60' : 'w-0 overflow-hidden border-r-0'}`}>
+      {/* Desktop Sidebar (Permanent toggleable at lg+) */}
+      <div className={`hidden lg:flex shrink-0 h-full transition-all duration-300 ${isOpen ? 'w-56 xl:w-60' : 'w-0 overflow-hidden border-r-0'}`}>
         {sidebarContent}
       </div>
 
-      {/* Mobile Sidebar (Drawer Overlay) */}
+      {/* Tablet / Mobile Sidebar (Drawer Overlay below lg) */}
       <AnimatePresence>
         {isOpen && (
-          <div className="md:hidden fixed inset-0 z-40 flex">
+          <div className="lg:hidden fixed inset-0 z-40 flex">
             {/* Backdrop */}
             <motion.div
               initial={{ opacity: 0 }}

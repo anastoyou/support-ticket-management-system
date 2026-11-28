@@ -522,7 +522,7 @@ export const TicketsMapView: React.FC<TicketsMapViewProps> = ({
     };
 
     return (
-        <div className="relative w-full h-[calc(100vh-210px)] min-h-[500px] rounded overflow-hidden border border-outline-variant bg-surface-container-lowest shadow-sm flex flex-col">
+        <div className="relative w-full h-[clamp(340px,calc(100dvh-235px),800px)] rounded overflow-hidden border border-outline-variant bg-surface-container-lowest shadow-sm flex flex-col">
             {/* Custom Leaflet Tooltip Overrides */}
             <style>{`
                 .leaflet-hover-card-tooltip {

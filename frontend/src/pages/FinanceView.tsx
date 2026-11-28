@@ -2525,7 +2525,7 @@ export const FinanceView: React.FC = () => {
   };
 
   return (
-    <div className=" min-h-screen flex flex-col gap-2 bg-surface dark:bg-dark-surface text-on-surface dark:text-dark-on-surface">
+    <div className="min-h-full flex flex-col gap-2 bg-surface dark:bg-dark-surface text-on-surface dark:text-dark-on-surface">
 
       {/* Global Floating Popup Toast (visible above all modals & full viewport) */}
       {(errorMessage || successMessage) && (
@@ -2613,8 +2613,8 @@ export const FinanceView: React.FC = () => {
       </div>
 
       {/* SEARCH AND DATEWISE FILTER TOOLBAR */}
-      <div className="p-3.5 rounded border border-outline-variant bg-surface-container flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3 text-xs">        {/* Left Side: Search Input */}
-        <div className="relative w-full sm:w-72 md:w-80 shrink-0">
+      <div className="p-3.5 rounded border border-outline-variant bg-surface-container flex flex-col xl:flex-row items-stretch xl:items-center justify-between gap-3 text-xs">        {/* Left Side: Search Input */}
+        <div className="relative w-full xl:w-72 2xl:w-80 shrink-0">
           <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant" />
           <input
             type="text"
@@ -2644,7 +2644,7 @@ export const FinanceView: React.FC = () => {
         </div>
 
         {/* Right Side: Filters (Date Range, Status, Bundle/Ledger Filter) */}
-        <div className="flex items-center gap-2.5 flex-wrap justify-start md:justify-end">
+        <div className="flex items-center gap-2.5 flex-wrap justify-start xl:justify-end">
           {/* Popover Date Range Picker */}
           <DateRangePickerCard
             fromDate={filterDateFrom}
@@ -2664,7 +2664,7 @@ export const FinanceView: React.FC = () => {
 
           {/* Status Dropdown Filter */}
           {subpage !== 'payments' && (
-            <div className="w-full sm:w-48 shrink-0">
+            <div className="w-full sm:w-44 lg:w-48 shrink-0">
               <SearchableSelect
                 value={statusFilter}
                 onChange={(val) => setStatusFilter(val)}
@@ -2677,7 +2677,7 @@ export const FinanceView: React.FC = () => {
 
           {/* Worker / Technician Filter (Applicable for Expenses subpage) */}
           {subpage === 'expenses' && (
-            <div className="w-full sm:w-52 shrink-0">
+            <div className="w-full sm:w-44 lg:w-48 shrink-0">
               <SearchableSelect
                 value={expenseWorkerFilter}
                 onChange={(val) => {
@@ -2693,7 +2693,7 @@ export const FinanceView: React.FC = () => {
 
           {/* Bundle Attachment Filter (Applicable for Expenses subpage) */}
           {subpage === 'expenses' && (
-            <div className="w-full sm:w-52 shrink-0">
+            <div className="w-full sm:w-44 lg:w-48 shrink-0">
               <SearchableSelect
                 value={bundleFilter}
                 onChange={(val) => setBundleFilter(val as any)}
@@ -2710,7 +2710,7 @@ export const FinanceView: React.FC = () => {
 
           {/* Ledger Batch Filter (Applicable for Expenses subpage) */}
           {subpage === 'expenses' && (
-            <div className="w-full sm:w-52 shrink-0">
+            <div className="w-full sm:w-44 lg:w-48 shrink-0">
               <SearchableSelect
                 value={ledgerBatchFilter}
                 onChange={(val) => setLedgerBatchFilter(val)}
@@ -2729,7 +2729,7 @@ export const FinanceView: React.FC = () => {
 
           {/* Ledger Attachment Filter (Applicable for Bundles subpage) */}
           {subpage === 'bundles' && (
-            <div className="w-full sm:w-40 shrink-0">
+            <div className="w-full sm:w-40 lg:w-44 shrink-0">
               <SearchableSelect
                 value={ledgerFilter}
                 onChange={(val) => setLedgerFilter(val as any)}

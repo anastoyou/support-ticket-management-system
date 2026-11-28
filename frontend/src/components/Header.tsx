@@ -239,25 +239,25 @@ export const Header: React.FC<HeaderProps> = ({ onToggleSidebar, pageTitle, isSi
       <GlobalApiProgressBar />
 
       {/* Left section: Hamburger & Breadcrumbs */}
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-2 min-w-0 flex-1 mr-2">
         {!isSidebarOpen && (
           <button
             onClick={onToggleSidebar}
-            className="p-2 rounded-lg text-on-surface-variant dark:text-dark-on-surface-variant hover:bg-surface-container-high dark:hover:bg-dark-surface-container-high cursor-pointer transition-colors"
+            className="p-2 rounded-lg text-on-surface-variant dark:text-dark-on-surface-variant hover:bg-surface-container-high dark:hover:bg-dark-surface-container-high cursor-pointer transition-colors shrink-0"
             aria-label="Toggle Sidebar"
           >
             <Menu className="w-5 h-5" />
           </button>
         )}
-        <div className={isSidebarOpen ? "pl-1" : ""}>
-          <h2 className="text-sm text-on-surface dark:text-dark-on-surface tracking-tight leading-tight md:text-lg">
+        <div className={`min-w-0 flex-1 ${isSidebarOpen ? "pl-1" : ""}`}>
+          <h2 className="text-sm sm:text-base lg:text-lg text-on-surface dark:text-dark-on-surface tracking-tight leading-tight truncate">
             {pageTitle}
           </h2>
         </div>
       </div>
 
       {/* Right section: Action controls & Profile */}
-      <div className="flex items-center gap-1">
+      <div className="flex items-center gap-1 shrink-0">
         {/* Latest Notifications Dropdown Button */}
         <div className="relative" ref={notificationDropdownRef}>
           <button
@@ -417,7 +417,7 @@ export const Header: React.FC<HeaderProps> = ({ onToggleSidebar, pageTitle, isSi
                 animate={{ opacity: 1, y: 0, scale: 1 }}
                 exit={{ opacity: 0, y: 10, scale: 0.95 }}
                 transition={{ duration: 0.15 }}
-                className="absolute right-0 mt-2.5 w-72 bg-surface-container-high dark:bg-dark-surface-container-high rounded-xl shadow-xl border border-outline-variant dark:border-dark-outline-variant overflow-hidden"
+                className="absolute right-0 mt-2.5 w-72 max-w-[calc(100vw-1rem)] bg-surface-container-high dark:bg-dark-surface-container-high rounded-xl shadow-xl border border-outline-variant dark:border-dark-outline-variant overflow-hidden"
               >
                 {/* Header User Card */}
                 <div className="p-5 bg-surface-container-low dark:bg-dark-surface-container-low border-b border-outline-variant dark:border-dark-outline-variant text-center">

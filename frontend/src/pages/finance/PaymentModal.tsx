@@ -382,7 +382,7 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
           <div
             className={
               hasUploadedBillSide
-                ? 'grid grid-cols-1 md:grid-cols-[minmax(0,1fr)_340px] gap-4 items-start'
+                ? 'grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_320px] xl:grid-cols-[minmax(0,1fr)_340px] gap-4 items-start'
                 : 'space-y-3 sm:space-y-4'
             }
           >
@@ -649,245 +649,244 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
               {(!isAlreadySettled || isAdmin || !existingReceiptUrl) && (
                 <Can permission="finance.single_payment_process">
                   <div className="p-3 rounded border border-outline-variant bg-surface-container-low space-y-2">
-                  <div className="flex items-center justify-between gap-2">
-                    <label className="text-xs font-bold text-on-surface flex items-center gap-1">
-                      <span>Signed Receipt Photo</span>
-                      {!isAlreadySettled && <span className="text-rose-500">*</span>}
-                    </label>
+                    <div className="flex items-center justify-between gap-2">
+                      <label className="text-xs font-bold text-on-surface flex items-center gap-1">
+                        <span>Signed Receipt Photo</span>
+                        {!isAlreadySettled && <span className="text-rose-500">*</span>}
+                      </label>
 
-                    {receiptFile ? (
-                      <span className="text-[10px] px-2 py-0.5 rounded bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border border-emerald-500/30 font-semibold inline-flex items-center gap-1">
-                        <CheckCircle2 className="w-3 h-3" />
-                        <span>{isAlreadySettled ? 'Ready to Save' : 'Attached'}</span>
-                      </span>
-                    ) : isAlreadySettled && existingReceiptUrl ? (
-                      <span className="text-[10px] px-2 py-0.5 rounded bg-teal-500/15 text-teal-700 dark:text-teal-300 border border-teal-500/30 font-semibold inline-flex items-center gap-1">
-                        <CheckCircle2 className="w-3 h-3" />
-                        <span>Uploaded</span>
-                      </span>
-                    ) : isAlreadySettled ? (
-                      <span className="text-[10px] px-2 py-0.5 rounded bg-surface-container-high text-on-surface-variant border border-outline-variant font-semibold">
-                        Not Uploaded
-                      </span>
-                    ) : (
-                      <span className="text-[10px] text-amber-600 dark:text-amber-400 font-semibold">
-                        Required
-                      </span>
-                    )}
-                  </div>
-
-                  {/* Hidden File + Mobile Camera Inputs */}
-                  <input
-                    ref={fileInputRef}
-                    id="payment-receipt-upload-input"
-                    type="file"
-                    accept="image/*"
-                    className="hidden"
-                    onChange={(e) => {
-                      handleReceiptSelected(e.target.files?.[0]);
-                      setConfirmDeleteReceipt(false);
-                      e.target.value = '';
-                    }}
-                  />
-                  <input
-                    ref={cameraInputRef}
-                    id="payment-receipt-camera-input"
-                    type="file"
-                    accept="image/*"
-                    capture="environment"
-                    className="hidden"
-                    onChange={(e) => {
-                      handleReceiptSelected(e.target.files?.[0]);
-                      setConfirmDeleteReceipt(false);
-                      e.target.value = '';
-                    }}
-                  />
-
-                  {!receiptFile ? (
-                    isAlreadySettled && !isAdmin ? (
-                      <div className="p-2.5 rounded border border-dashed border-outline-variant bg-surface-container text-[11px] text-on-surface-variant">
-                        No signed receipt image was uploaded when this earlier settlement was recorded.
-                      </div>
-                    ) : isAlreadySettled && existingReceiptUrl ? (
-                      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 p-2.5 rounded border border-outline-variant bg-surface-container">
-                        <span className="text-[11px] text-on-surface-variant">
-                          Signed settlement receipt is attached.
+                      {receiptFile ? (
+                        <span className="text-[10px] px-2 py-0.5 rounded bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border border-emerald-500/30 font-semibold inline-flex items-center gap-1">
+                          <CheckCircle2 className="w-3 h-3" />
+                          <span>{isAlreadySettled ? 'Ready to Save' : 'Attached'}</span>
                         </span>
-                        {!confirmDeleteReceipt ? (
-                          <div className="flex items-center gap-1.5 flex-wrap shrink-0">
-                            {handleUploadSettledReceipt && (
-                              <>
+                      ) : isAlreadySettled && existingReceiptUrl ? (
+                        <span className="text-[10px] px-2 py-0.5 rounded bg-teal-500/15 text-teal-700 dark:text-teal-300 border border-teal-500/30 font-semibold inline-flex items-center gap-1">
+                          <CheckCircle2 className="w-3 h-3" />
+                          <span>Uploaded</span>
+                        </span>
+                      ) : isAlreadySettled ? (
+                        <span className="text-[10px] px-2 py-0.5 rounded bg-surface-container-high text-on-surface-variant border border-outline-variant font-semibold">
+                          Not Uploaded
+                        </span>
+                      ) : (
+                        <span className="text-[10px] text-amber-600 dark:text-amber-400 font-semibold">
+                          Required
+                        </span>
+                      )}
+                    </div>
+
+                    {/* Hidden File + Mobile Camera Inputs */}
+                    <input
+                      ref={fileInputRef}
+                      id="payment-receipt-upload-input"
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      onChange={(e) => {
+                        handleReceiptSelected(e.target.files?.[0]);
+                        setConfirmDeleteReceipt(false);
+                        e.target.value = '';
+                      }}
+                    />
+                    <input
+                      ref={cameraInputRef}
+                      id="payment-receipt-camera-input"
+                      type="file"
+                      accept="image/*"
+                      capture="environment"
+                      className="hidden"
+                      onChange={(e) => {
+                        handleReceiptSelected(e.target.files?.[0]);
+                        setConfirmDeleteReceipt(false);
+                        e.target.value = '';
+                      }}
+                    />
+
+                    {!receiptFile ? (
+                      isAlreadySettled && !isAdmin ? (
+                        <div className="p-2.5 rounded border border-dashed border-outline-variant bg-surface-container text-[11px] text-on-surface-variant">
+                          No signed receipt image was uploaded when this earlier settlement was recorded.
+                        </div>
+                      ) : isAlreadySettled && existingReceiptUrl ? (
+                        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 p-2.5 rounded border border-outline-variant bg-surface-container">
+                          <span className="text-[11px] text-on-surface-variant">
+                            Signed settlement receipt is attached.
+                          </span>
+                          {!confirmDeleteReceipt ? (
+                            <div className="flex items-center gap-1.5 flex-wrap shrink-0">
+                              {handleUploadSettledReceipt && (
+                                <>
+                                  <button
+                                    type="button"
+                                    onClick={() => fileInputRef.current?.click()}
+                                    disabled={submitting}
+                                    className="h-9 sm:h-auto px-2.5 sm:py-1 rounded border border-outline bg-surface-container-low hover:bg-surface-container-high text-[11px] font-semibold text-on-surface inline-flex items-center justify-center gap-1 cursor-pointer transition-colors disabled:opacity-50"
+                                    title="Upload replacement receipt image"
+                                  >
+                                    <Upload className="w-3.5 h-3.5 text-primary" />
+                                    <span>Upload</span>
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={handleOpenLiveCamera}
+                                    disabled={submitting}
+                                    className="h-9 sm:h-auto px-2.5 sm:py-1 rounded border border-emerald-500/30 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-500/10 text-[11px] font-semibold inline-flex items-center justify-center gap-1 cursor-pointer transition-colors disabled:opacity-50"
+                                    title="Replace with live camera photo"
+                                  >
+                                    <Camera className="w-3.5 h-3.5" />
+                                    <span>Camera</span>
+                                  </button>
+                                </>
+                              )}
+                              {handleDeleteSettledReceipt && (
                                 <button
                                   type="button"
-                                  onClick={() => fileInputRef.current?.click()}
+                                  onClick={() => setConfirmDeleteReceipt(true)}
                                   disabled={submitting}
-                                  className="h-9 sm:h-auto px-2.5 sm:py-1 rounded border border-outline bg-surface-container-low hover:bg-surface-container-high text-[11px] font-semibold text-on-surface inline-flex items-center justify-center gap-1 cursor-pointer transition-colors disabled:opacity-50"
-                                  title="Upload replacement receipt image"
+                                  className="h-9 sm:h-auto px-2.5 sm:py-1 rounded border border-rose-500/35 bg-rose-500/10 hover:bg-rose-500/20 text-rose-600 dark:text-rose-400 text-[11px] font-semibold inline-flex items-center justify-center gap-1 cursor-pointer transition-colors disabled:opacity-50"
+                                  title="Delete uploaded settlement receipt (Administrator only)"
                                 >
-                                  <Upload className="w-3.5 h-3.5 text-primary" />
-                                  <span>Upload</span>
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                  <span>Delete</span>
                                 </button>
-                                <button
-                                  type="button"
-                                  onClick={handleOpenLiveCamera}
-                                  disabled={submitting}
-                                  className="h-9 sm:h-auto px-2.5 sm:py-1 rounded border border-emerald-500/30 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-500/10 text-[11px] font-semibold inline-flex items-center justify-center gap-1 cursor-pointer transition-colors disabled:opacity-50"
-                                  title="Replace with live camera photo"
-                                >
-                                  <Camera className="w-3.5 h-3.5" />
-                                  <span>Camera</span>
-                                </button>
-                              </>
-                            )}
-                            {handleDeleteSettledReceipt && (
+                              )}
+                            </div>
+                          ) : (
+                            <div className="flex items-center gap-1.5 shrink-0">
                               <button
                                 type="button"
-                                onClick={() => setConfirmDeleteReceipt(true)}
+                                onClick={handleConfirmDeleteReceipt}
                                 disabled={submitting}
-                                className="h-9 sm:h-auto px-2.5 sm:py-1 rounded border border-rose-500/35 bg-rose-500/10 hover:bg-rose-500/20 text-rose-600 dark:text-rose-400 text-[11px] font-semibold inline-flex items-center justify-center gap-1 cursor-pointer transition-colors disabled:opacity-50"
-                                title="Delete uploaded settlement receipt (Administrator only)"
+                                className="h-9 sm:h-auto px-2.5 sm:py-1 rounded bg-rose-600 hover:bg-rose-700 text-white text-[11px] font-semibold inline-flex items-center justify-center gap-1 cursor-pointer transition-colors disabled:opacity-50"
                               >
-                                <Trash2 className="w-3.5 h-3.5" />
-                                <span>Delete</span>
+                                {submitting ? (
+                                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                ) : (
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                )}
+                                <span>Confirm Delete</span>
                               </button>
-                            )}
-                          </div>
-                        ) : (
-                          <div className="flex items-center gap-1.5 shrink-0">
-                            <button
-                              type="button"
-                              onClick={handleConfirmDeleteReceipt}
-                              disabled={submitting}
-                              className="h-9 sm:h-auto px-2.5 sm:py-1 rounded bg-rose-600 hover:bg-rose-700 text-white text-[11px] font-semibold inline-flex items-center justify-center gap-1 cursor-pointer transition-colors disabled:opacity-50"
-                            >
-                              {submitting ? (
-                                <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                              ) : (
-                                <Trash2 className="w-3.5 h-3.5" />
-                              )}
-                              <span>Confirm Delete</span>
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => setConfirmDeleteReceipt(false)}
-                              disabled={submitting}
-                              className="h-9 sm:h-auto px-2.5 sm:py-1 rounded border border-outline bg-surface-container-low hover:bg-surface-container-high text-[11px] font-semibold text-on-surface cursor-pointer transition-colors disabled:opacity-50"
-                            >
-                              Cancel
-                            </button>
-                          </div>
-                        )}
-                      </div>
-                    ) : (
-                      <div
-                        onDragOver={(e) => {
-                          e.preventDefault();
-                          setIsDraggingFile(true);
-                        }}
-                        onDragLeave={() => setIsDraggingFile(false)}
-                        onDrop={(e) => {
-                          e.preventDefault();
-                          setIsDraggingFile(false);
-                          handleReceiptSelected(e.dataTransfer.files?.[0]);
-                        }}
-                        className={`flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 p-2.5 rounded border border-dashed transition-colors ${
-                          isDraggingFile
+                              <button
+                                type="button"
+                                onClick={() => setConfirmDeleteReceipt(false)}
+                                disabled={submitting}
+                                className="h-9 sm:h-auto px-2.5 sm:py-1 rounded border border-outline bg-surface-container-low hover:bg-surface-container-high text-[11px] font-semibold text-on-surface cursor-pointer transition-colors disabled:opacity-50"
+                              >
+                                Cancel
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      ) : (
+                        <div
+                          onDragOver={(e) => {
+                            e.preventDefault();
+                            setIsDraggingFile(true);
+                          }}
+                          onDragLeave={() => setIsDraggingFile(false)}
+                          onDrop={(e) => {
+                            e.preventDefault();
+                            setIsDraggingFile(false);
+                            handleReceiptSelected(e.dataTransfer.files?.[0]);
+                          }}
+                          className={`flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 p-2.5 rounded border border-dashed transition-colors ${isDraggingFile
                             ? 'border-teal-500 bg-teal-500/10'
                             : 'border-outline bg-surface-container'
-                        }`}
-                      >
-                        <span className="text-[11px] text-on-surface-variant hidden sm:inline">
-                          Select an image or capture with live camera
-                        </span>
-                        <div className="grid grid-cols-2 sm:flex items-center gap-2 w-full sm:w-auto shrink-0">
-                          <button
-                            type="button"
-                            onClick={() => fileInputRef.current?.click()}
-                            disabled={submitting}
-                            className="h-10 sm:h-auto px-3 sm:px-2.5 sm:py-1.5 rounded border border-outline bg-surface-container-low hover:bg-surface-container-high text-xs font-semibold text-on-surface inline-flex items-center justify-center gap-1.5 cursor-pointer transition-colors disabled:opacity-50"
+                            }`}
+                        >
+                          <span className="text-[11px] text-on-surface-variant hidden sm:inline">
+                            Select an image or capture with live camera
+                          </span>
+                          <div className="grid grid-cols-2 sm:flex items-center gap-2 w-full sm:w-auto shrink-0">
+                            <button
+                              type="button"
+                              onClick={() => fileInputRef.current?.click()}
+                              disabled={submitting}
+                              className="h-10 sm:h-auto px-3 sm:px-2.5 sm:py-1.5 rounded border border-outline bg-surface-container-low hover:bg-surface-container-high text-xs font-semibold text-on-surface inline-flex items-center justify-center gap-1.5 cursor-pointer transition-colors disabled:opacity-50"
+                            >
+                              <Upload className="w-3.5 h-3.5 text-primary" />
+                              <span>Select Image</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={handleOpenLiveCamera}
+                              disabled={submitting}
+                              className="h-10 sm:h-auto px-3 sm:px-2.5 sm:py-1.5 rounded border border-emerald-500/35 bg-emerald-500/10 hover:bg-emerald-500/20 text-xs font-semibold text-emerald-700 dark:text-emerald-300 inline-flex items-center justify-center gap-1.5 cursor-pointer transition-colors disabled:opacity-50"
+                            >
+                              <Camera className="w-3.5 h-3.5" />
+                              <span>Camera</span>
+                            </button>
+                          </div>
+                        </div>
+                      )
+                    ) : (
+                      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 p-2.5 sm:p-2 rounded bg-surface-container border border-emerald-500/40">
+                        <div className="min-w-0">
+                          <p
+                            className="text-xs font-semibold text-on-surface truncate"
+                            title={receiptFile.name}
                           >
-                            <Upload className="w-3.5 h-3.5 text-primary" />
-                            <span>Select Image</span>
-                          </button>
+                            {receiptFile.name}
+                          </p>
+                          <p className="text-[10px] text-on-surface-variant">
+                            {(receiptFile.size / 1024).toFixed(1)} KB
+                          </p>
+                        </div>
+
+                        <div className="flex items-center gap-1.5 shrink-0 flex-wrap">
+                          {isAlreadySettled && isAdmin && handleUploadSettledReceipt && (
+                            <button
+                              type="button"
+                              onClick={handleSubmitSettledReceiptUpload}
+                              disabled={submitting}
+                              className="flex-1 sm:flex-none h-9 sm:h-auto px-3 sm:px-2.5 sm:py-1 rounded bg-teal-600 hover:bg-teal-700 text-white text-[11px] font-semibold inline-flex items-center justify-center gap-1 cursor-pointer transition-colors disabled:opacity-50"
+                            >
+                              {submitting ? (
+                                <Loader2 className="w-3.5 h-3.5 sm:w-3 sm:h-3 animate-spin" />
+                              ) : (
+                                <Upload className="w-3.5 h-3.5 sm:w-3 sm:h-3" />
+                              )}
+                              <span>Save Receipt</span>
+                            </button>
+                          )}
                           <button
                             type="button"
                             onClick={handleOpenLiveCamera}
                             disabled={submitting}
-                            className="h-10 sm:h-auto px-3 sm:px-2.5 sm:py-1.5 rounded border border-emerald-500/35 bg-emerald-500/10 hover:bg-emerald-500/20 text-xs font-semibold text-emerald-700 dark:text-emerald-300 inline-flex items-center justify-center gap-1.5 cursor-pointer transition-colors disabled:opacity-50"
+                            className="flex-1 sm:flex-none h-9 sm:h-auto px-2.5 sm:px-2 sm:py-1 rounded border border-emerald-500/30 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-500/10 text-[11px] font-semibold inline-flex items-center justify-center gap-1 cursor-pointer transition-colors disabled:opacity-50"
+                            title="Retake with camera"
                           >
-                            <Camera className="w-3.5 h-3.5" />
+                            <Camera className="w-3.5 h-3.5 sm:w-3 sm:h-3" />
                             <span>Camera</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => fileInputRef.current?.click()}
+                            disabled={submitting}
+                            className="flex-1 sm:flex-none h-9 sm:h-auto px-2.5 sm:px-2 sm:py-1 rounded border border-outline bg-surface-container-low hover:bg-surface-container-high text-[11px] font-semibold text-on-surface cursor-pointer transition-colors disabled:opacity-50"
+                          >
+                            Change
+                          </button>
+                          <button
+                            type="button"
+                            onClick={handleClearReceipt}
+                            disabled={submitting}
+                            className="h-9 w-9 sm:h-auto sm:w-auto sm:p-1 rounded border border-rose-500/30 text-rose-600 dark:text-rose-400 hover:bg-rose-500/10 inline-flex items-center justify-center cursor-pointer transition-colors disabled:opacity-50"
+                            title="Clear selected receipt image"
+                          >
+                            <Trash2 className="w-4 h-4 sm:w-3.5 sm:h-3.5" />
                           </button>
                         </div>
                       </div>
-                    )
-                  ) : (
-                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 p-2.5 sm:p-2 rounded bg-surface-container border border-emerald-500/40">
-                      <div className="min-w-0">
-                        <p
-                          className="text-xs font-semibold text-on-surface truncate"
-                          title={receiptFile.name}
-                        >
-                          {receiptFile.name}
-                        </p>
-                        <p className="text-[10px] text-on-surface-variant">
-                          {(receiptFile.size / 1024).toFixed(1)} KB
-                        </p>
-                      </div>
+                    )}
 
-                      <div className="flex items-center gap-1.5 shrink-0 flex-wrap">
-                        {isAlreadySettled && isAdmin && handleUploadSettledReceipt && (
-                          <button
-                            type="button"
-                            onClick={handleSubmitSettledReceiptUpload}
-                            disabled={submitting}
-                            className="flex-1 sm:flex-none h-9 sm:h-auto px-3 sm:px-2.5 sm:py-1 rounded bg-teal-600 hover:bg-teal-700 text-white text-[11px] font-semibold inline-flex items-center justify-center gap-1 cursor-pointer transition-colors disabled:opacity-50"
-                          >
-                            {submitting ? (
-                              <Loader2 className="w-3.5 h-3.5 sm:w-3 sm:h-3 animate-spin" />
-                            ) : (
-                              <Upload className="w-3.5 h-3.5 sm:w-3 sm:h-3" />
-                            )}
-                            <span>Save Receipt</span>
-                          </button>
-                        )}
-                        <button
-                          type="button"
-                          onClick={handleOpenLiveCamera}
-                          disabled={submitting}
-                          className="flex-1 sm:flex-none h-9 sm:h-auto px-2.5 sm:px-2 sm:py-1 rounded border border-emerald-500/30 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-500/10 text-[11px] font-semibold inline-flex items-center justify-center gap-1 cursor-pointer transition-colors disabled:opacity-50"
-                          title="Retake with camera"
-                        >
-                          <Camera className="w-3.5 h-3.5 sm:w-3 sm:h-3" />
-                          <span>Camera</span>
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => fileInputRef.current?.click()}
-                          disabled={submitting}
-                          className="flex-1 sm:flex-none h-9 sm:h-auto px-2.5 sm:px-2 sm:py-1 rounded border border-outline bg-surface-container-low hover:bg-surface-container-high text-[11px] font-semibold text-on-surface cursor-pointer transition-colors disabled:opacity-50"
-                        >
-                          Change
-                        </button>
-                        <button
-                          type="button"
-                          onClick={handleClearReceipt}
-                          disabled={submitting}
-                          className="h-9 w-9 sm:h-auto sm:w-auto sm:p-1 rounded border border-rose-500/30 text-rose-600 dark:text-rose-400 hover:bg-rose-500/10 inline-flex items-center justify-center cursor-pointer transition-colors disabled:opacity-50"
-                          title="Clear selected receipt image"
-                        >
-                          <Trash2 className="w-4 h-4 sm:w-3.5 sm:h-3.5" />
-                        </button>
+                    {receiptError && (
+                      <div className="p-2 rounded bg-rose-500/10 border border-rose-500/30 text-rose-600 dark:text-rose-400 text-[11px] flex items-center gap-1.5">
+                        <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                        <span>{receiptError}</span>
                       </div>
-                    </div>
-                  )}
-
-                  {receiptError && (
-                    <div className="p-2 rounded bg-rose-500/10 border border-rose-500/30 text-rose-600 dark:text-rose-400 text-[11px] flex items-center gap-1.5">
-                      <AlertCircle className="w-3.5 h-3.5 shrink-0" />
-                      <span>{receiptError}</span>
-                    </div>
-                  )}
+                    )}
                   </div>
                 </Can>
               )}
@@ -902,9 +901,7 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
                           <RotateCcw className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400 shrink-0" />
                           <span>Revert Settlement Status</span>
                         </div>
-                        <p className="text-[11px] text-on-surface-variant mt-0.5">
-                          Return Bundle #{claimItem?.claim_id} from Paid back to Approved (Waiting in CO) if settled by mistake.
-                        </p>
+
                       </div>
                       {!confirmRevertPayment && (
                         <button

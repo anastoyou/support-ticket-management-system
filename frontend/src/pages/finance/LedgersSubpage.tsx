@@ -1165,7 +1165,7 @@ export const LedgersSubpage: React.FC<LedgersSubpageProps> = ({
 
     return (
       <div className="py-2 px-1 overflow-x-auto">
-        <div className="flex items-start justify-between min-w-[700px]">
+        <div className="flex items-start justify-between min-w-[520px] lg:min-w-0 w-full">
           {/* START NODE */}
           <div className="flex flex-col items-center shrink-0 w-16">
             <div className={`w-5 h-5 rounded-full flex items-center justify-center text-[9px] font-bold border shrink-0 ${isDraft
@@ -4732,7 +4732,7 @@ export const LedgersSubpage: React.FC<LedgersSubpageProps> = ({
       {/* MODAL: ASSEMBLE LEDGER */}
       {showCreateLedgerModal && (
         <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-surface-container rounded border border-outline-variant max-w-7xl w-full p-4 space-y-4 shadow-2xl min-h-[580px] max-h-[90vh] flex flex-col">
+          <div className="bg-surface-container rounded border border-outline-variant max-w-7xl w-full p-4 space-y-4 shadow-2xl min-h-[min(420px,85dvh)] h-[90dvh] max-h-[880px] flex flex-col">
             <div className="flex items-center justify-between border-b border-outline-variant pb-3 shrink-0">
               <div className="flex items-center gap-2">
                 <div className="p-2 rounded bg-primary/10 text-primary">

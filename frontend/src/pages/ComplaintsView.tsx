@@ -293,7 +293,7 @@ export const ComplaintsView: React.FC = () => {
     };
 
     return (
-        <div className=" min-h-screen flex flex-col  bg-surface dark:bg-dark-surface text-on-surface dark:text-dark-on-surface">
+        <div className="min-h-full flex flex-col gap-3 bg-surface dark:bg-dark-surface text-on-surface dark:text-dark-on-surface">
             {/* Header */}
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-outline-variant dark:border-dark-outline-variant pb-4">
                 <div>
@@ -359,7 +359,7 @@ export const ComplaintsView: React.FC = () => {
             </div>
 
             {/* Stat Cards (Live Content + Sibling Skeletons per Design System v2.2) */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
                 {/* Card 1: Total Complaints */}
                 <div className="p-4 rounded border border-outline-variant dark:border-dark-outline-variant bg-surface-container dark:bg-dark-surface-container transition-all hover:border-outline/40">
                     <div className={loading ? 'hidden' : 'block'}>
@@ -526,7 +526,7 @@ export const ComplaintsView: React.FC = () => {
                 {/* Filters: Search + Status + Sort Order */}
                 <div className="flex flex-wrap items-center gap-2">
                     {/* Search Input */}
-                    <div className="relative min-w-[220px] flex-1 sm:flex-none">
+                    <div className="relative min-w-0 w-full sm:w-56 md:w-64">
                         <Search className="w-4 h-4 absolute left-2.5 top-2.5 text-on-surface-variant dark:text-dark-on-surface-variant pointer-events-none" />
                         <input
                             type="text"

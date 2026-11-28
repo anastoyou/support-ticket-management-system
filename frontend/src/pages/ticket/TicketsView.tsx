@@ -856,7 +856,14 @@ export const TicketsView: React.FC = () => {
         });
         return map;
     }, [tickets, statuses]);
-    const isMobile = typeof window !== 'undefined' && window.innerWidth < 640;
+    const [isMobile, setIsMobile] = useState(() => typeof window !== 'undefined' && window.innerWidth < 640);
+
+    useEffect(() => {
+        if (typeof window === 'undefined') return;
+        const handleResize = () => setIsMobile(window.innerWidth < 640);
+        window.addEventListener('resize', handleResize);
+        return () => window.removeEventListener('resize', handleResize);
+    }, []);
 
     // Force table view mode on mobile devices (no card/kanban view support on mobile)
     useEffect(() => {
@@ -1295,7 +1302,7 @@ export const TicketsView: React.FC = () => {
     };
 
     return (
-        <div className={`flex flex-col gap-4 ${viewMode === 'table' ? 'sm:max-h-[calc(100vh-112px)] sm:overflow-hidden' : ''}`}>
+        <div className="flex flex-col gap-3 sm:gap-4 min-w-0">
 
 
             {/* Toast */}
@@ -1543,8 +1550,8 @@ export const TicketsView: React.FC = () => {
                     </div>
 
                     {/* ── Row 2 (hidden on 2xl+): Filter Dropdowns ── */}
-                    <div className="2xl:hidden grid grid-cols-2 sm:flex sm:flex-wrap gap-1.5">
-                        <div className="w-full sm:w-auto sm:min-w-[180px] sm:max-w-[240px]">
+                    <div className="2xl:hidden grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 xl:flex xl:flex-wrap gap-1.5">
+                        <div className="w-full xl:w-auto xl:min-w-[180px] xl:max-w-[230px]">
                             <SearchableSelect
                                 value={filterStore}
                                 onChange={val => { setFilterStore(val); setPage(1); }}
@@ -1556,7 +1563,7 @@ export const TicketsView: React.FC = () => {
                             />
                         </div>
                         {canCreateAllDepts && (
-                            <div className="w-full sm:w-auto sm:min-w-[120px] sm:max-w-[150px]">
+                            <div className="w-full xl:w-auto xl:min-w-[125px] xl:max-w-[155px]">
                                 <SearchableSelect
                                     value={filterDept}
                                     onChange={val => { setFilterDept(val); setPage(1); }}
@@ -1569,7 +1576,7 @@ export const TicketsView: React.FC = () => {
                             </div>
                         )}
                         {!canCreateAllDepts && availableDepartments.length > 1 && (
-                            <div className="w-full sm:w-auto sm:min-w-[120px] sm:max-w-[150px]">
+                            <div className="w-full xl:w-auto xl:min-w-[125px] xl:max-w-[155px]">
                                 <SearchableSelect
                                     value={filterDept}
                                     onChange={val => { setFilterDept(val); setPage(1); }}
@@ -1579,7 +1586,7 @@ export const TicketsView: React.FC = () => {
                             </div>
                         )}
                         <Can permission='maintenance.can_filter_worker_ticket'>
-                            <div className="w-full sm:w-auto sm:min-w-[120px] sm:max-w-[150px]">
+                            <div className="w-full xl:w-auto xl:min-w-[125px] xl:max-w-[155px]">
                                 <SearchableSelect
                                     value={filterSubDept}
                                     onChange={val => { setFilterSubDept(val); setPage(1); }}
@@ -1592,7 +1599,7 @@ export const TicketsView: React.FC = () => {
                             </div>
                         </Can>
                         <Can permission={getAllowedStatusPermissions(statuses) as any}>
-                            <div className="w-full sm:w-auto sm:min-w-[110px] sm:max-w-[135px]">
+                            <div className="w-full xl:w-auto xl:min-w-[115px] xl:max-w-[140px]">
                                 <SearchableSelect
                                     value={filterStatus}
                                     onChange={val => { setFilterStatus(val); setPage(1); }}
@@ -1604,7 +1611,7 @@ export const TicketsView: React.FC = () => {
                                 />
                             </div>
                         </Can>
-                        <div className="w-full sm:w-auto sm:min-w-[100px] sm:max-w-[125px]">
+                        <div className="w-full xl:w-auto xl:min-w-[105px] xl:max-w-[130px]">
                             <SearchableSelect
                                 value={filterPriority}
                                 onChange={val => { setFilterPriority(val); setPage(1); }}
@@ -1616,7 +1623,7 @@ export const TicketsView: React.FC = () => {
                             />
                         </div>
                         <Can permission='maintenance.can_filter_worker_ticket'>
-                            <div className="w-full sm:w-auto sm:min-w-[120px] sm:max-w-[150px]">
+                            <div className="w-full xl:w-auto xl:min-w-[125px] xl:max-w-[155px]">
                                 <SearchableSelect
                                     value={filterWorker}
                                     onChange={val => { setFilterWorker(val); setPage(1); }}
@@ -1628,7 +1635,7 @@ export const TicketsView: React.FC = () => {
                                 />
                             </div>
                         </Can>
-                        <div className="col-span-1 [&:nth-child(odd):last-child]:col-span-2 sm:w-auto">
+                        <div className="col-span-2 sm:col-span-1 xl:w-auto">
                             <DateRangePickerCard
                                 fromDate={fromDate}
                                 toDate={toDate}
@@ -1744,7 +1751,7 @@ export const TicketsView: React.FC = () => {
                         {/* ── Desktop: kanban or grid ───────────────────────────────── */}
                         <div className={`hidden sm:block`}>
                             {viewMode === 'kanban' ? (
-                                <div className="p-2 overflow-x-auto min-h-[550px] bg-surface-container-low scrollbar-thin">
+                                <div className="p-2 overflow-x-auto min-h-[340px] bg-surface-container-low scrollbar-thin">
                                     <div className="flex gap-2 min-w-max items-start">
                                         {statuses
                                             .filter(s => canViewStatus(s.status_name))
@@ -1810,7 +1817,7 @@ export const TicketsView: React.FC = () => {
                                                                 }
                                                             }}
                                                             onClick={() => toggleCollapseColumn(status.status_name, status.status_id)}
-                                                            className={`w-9 shrink-0 rounded-xl border flex flex-col items-center justify-between py-2.5 max-h-[70vh] min-h-[480px] shadow-xs transition-all cursor-pointer select-none hover:border-primary/60 hover:bg-surface-container-high/70 ${columnBorderBgClass}`}
+                                                            className={`w-9 shrink-0 rounded-xl border flex flex-col items-center justify-between py-2.5 max-h-[clamp(340px,calc(100dvh-260px),740px)] min-h-[320px] shadow-xs transition-all cursor-pointer select-none hover:border-primary/60 hover:bg-surface-container-high/70 ${columnBorderBgClass}`}
                                                             title={`Click to expand ${status.status_name} (${colTickets.length} tickets)`}
                                                         >
                                                             {/* Top: Expand button and count */}
@@ -1878,7 +1885,7 @@ export const TicketsView: React.FC = () => {
                                                                 handleDropTicket(Number(ticketIdStr), status);
                                                             }
                                                         }}
-                                                        className={`w-72 sm:w-80 shrink-0 rounded-xl border flex flex-col max-h-[70vh] shadow-xs transition-all ${columnBorderBgClass}`}
+                                                        className={`w-64 sm:w-72 xl:w-80 shrink-0 rounded-xl border flex flex-col max-h-[clamp(340px,calc(100dvh-260px),740px)] shadow-xs transition-all ${columnBorderBgClass}`}
                                                     >
                                                         {/* Column Header */}
                                                         <div className="p-2 border-b border-outline-variant flex items-center justify-between bg-surface-container-high/50 rounded-t-xl sticky top-0 z-10 backdrop-blur-xs">
@@ -2059,7 +2066,7 @@ export const TicketsView: React.FC = () => {
                                     </div>
                                 </div>
                             ) : (
-                                <div className="ag-theme-app w-full h-[calc(100vh-220px)] min-h-[500px]">
+                                <div className="ag-theme-app w-full h-[clamp(320px,calc(100dvh-295px),760px)] 2xl:h-[clamp(380px,calc(100dvh-235px),800px)]">
                                     <AgGridReact<Ticket>
                                         theme={appTheme}
                                         rowData={tickets}

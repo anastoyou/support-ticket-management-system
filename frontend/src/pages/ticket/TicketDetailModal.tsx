@@ -883,7 +883,7 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
     const issueCameraVideoRef = useRef<HTMLInputElement>(null);
     const completedCameraPhotoRef = useRef<HTMLInputElement>(null);
     const completedCameraVideoRef = useRef<HTMLInputElement>(null);
-    const [isChatOpen, setIsChatOpen] = useState(() => typeof window !== 'undefined' && window.innerWidth >= 640);
+    const [isChatOpen, setIsChatOpen] = useState(() => typeof window !== 'undefined' && window.innerWidth >= 1024);
     const [isMobileChatOpen, setIsMobileChatOpen] = useState(false);
     const [chatMessageCount, setChatMessageCount] = useState<number>(0);
     const [hasUnseenChatMessages, setHasUnseenChatMessages] = useState<boolean>(false);
@@ -2299,7 +2299,7 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
                 initial={{ opacity: 0, scale: 0.98, y: 20 }}
                 animate={{ opacity: 1, scale: 1, y: 0 }}
                 exit={{ opacity: 0, scale: 0.98, y: 20 }}
-                className={`relative bg-surface-container dark:bg-dark-surface-container border border-outline-variant dark:border-dark-outline-variant w-full ${isChatOpen ? 'max-w-7xl' : 'max-w-4xl'} max-h-[92vh] sm:max-h-[90vh] flex flex-col rounded-t-xl sm:rounded shadow-2xl overflow-hidden transition-all duration-300`}
+                className={`relative bg-surface-container dark:bg-dark-surface-container border border-outline-variant dark:border-dark-outline-variant w-full ${isChatOpen ? 'max-w-7xl' : 'max-w-4xl'} max-h-[92dvh] sm:max-h-[90dvh] flex flex-col rounded-t-xl sm:rounded shadow-2xl overflow-hidden transition-all duration-300`}
             >
                 {/* Header Toolbar Standard */}
                 <div className="sticky top-0 z-10 bg-surface-container dark:bg-dark-surface-container border-b border-outline-variant dark:border-dark-outline-variant px-2 sm:px-5 py-2 flex items-center justify-between shrink-0">
@@ -2403,9 +2403,9 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
                 </div>
 
                 {/* Parent split-screen container */}
-                <div className="flex flex-1 overflow-hidden relative">
+                <div className="flex flex-1 min-h-0 overflow-hidden relative">
                     {/* Modal Body Container */}
-                    <div className="p-2 sm:p-4 space-y-4 overflow-y-auto scrollbar-thin flex-1">
+                    <div className="min-w-0 p-2 sm:p-4 space-y-4 overflow-y-auto scrollbar-thin flex-1">
                         {modalLoading ? (
                             /* Structural Skeleton Loader for Data Fetching */
                             <div className="space-y-4 animate-pulse">
@@ -3284,7 +3284,7 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
 
                     {/* Desktop Chatroom Split Panel */}
                     {isChatOpen && (
-                        <div className="hidden sm:flex w-80 border-l border-outline-variant dark:border-dark-outline-variant bg-surface-container-low dark:bg-dark-surface-container-low flex-col shrink-0 overflow-hidden">
+                        <div className="hidden sm:flex w-72 lg:w-80 xl:w-96 border-l border-outline-variant dark:border-dark-outline-variant bg-surface-container-low dark:bg-dark-surface-container-low flex-col shrink-0 overflow-hidden">
                             <TicketChatPanel
                                 ticketId={ticketDetails.ticket_id}
                                 onClose={() => setIsChatOpen(false)}
@@ -3823,7 +3823,7 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
                             <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }} className="relative bg-surface-container dark:bg-dark-surface-container border border-outline-variant dark:border-dark-outline-variant w-full max-w-lg sm:max-w-xl lg:max-w-2xl max-h-[92vh] sm:max-h-[85vh] p-4 sm:p-6 rounded-t sm:rounded shadow-2xl overflow-y-auto flex flex-col">
                                 <div className="flex items-center justify-between mb-4">
                                     <h3 className="text-sm font-bold text-on-surface dark:text-dark-on-surface uppercase tracking-wider">Assign Worker</h3>
-                                    <button onClick={() => setIsAssignModalOpen(false)} className="rounded text-outline hover:bg-surface-container-high min-h-[15px] .min-w-[44px] flex items-center justify-center cursor-pointer"><X className="w-4 h-4" /></button>
+                                    <button onClick={() => setIsAssignModalOpen(false)} className="rounded text-outline hover:bg-surface-container-high min-h-[15px] min-w-[44px] flex items-center justify-center cursor-pointer"><X className="w-4 h-4" /></button>
                                 </div>
                                 {/* <form onSubmit={handleAddAllocation} className="space-y-4">
                                 <div>
@@ -4187,7 +4187,7 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
                                         type="button"
                                         disabled={actionLoading}
                                         onClick={resetAddExpenseModalState}
-                                        className="rounded text-outline hover:bg-surface-container-high min-h-[15px] .min-w-[44px] flex items-center justify-center cursor-pointer disabled:opacity-50"
+                                        className="rounded text-outline hover:bg-surface-container-high min-h-[15px] min-w-[44px] flex items-center justify-center cursor-pointer disabled:opacity-50"
                                     >
                                         <X className="w-4 h-4" />
                                     </button>
@@ -4434,7 +4434,7 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
                             <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }} className="relative bg-surface-container dark:bg-dark-surface-container border border-outline-variant dark:border-dark-outline-variant w-full max-w-md p-4 sm:p-5 rounded-t-xl sm:rounded shadow-2xl">
                                 <div className="flex items-center justify-between mb-4">
                                     <h3 className="text-sm font-bold text-on-surface dark:text-dark-on-surface uppercase tracking-wider">Edit Allocation</h3>
-                                    <button onClick={() => setEditingAllocation(null)} className="rounded text-outline hover:bg-surface-container-high min-h-[15px] .min-w-[44px] flex items-center justify-center cursor-pointer"><X className="w-4 h-4" /></button>
+                                    <button onClick={() => setEditingAllocation(null)} className="rounded text-outline hover:bg-surface-container-high min-h-[15px] min-w-[44px] flex items-center justify-center cursor-pointer"><X className="w-4 h-4" /></button>
                                 </div>
                                 <form onSubmit={handleUpdateAllocation} className="space-y-4">
                                     <div>
@@ -4573,7 +4573,7 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
                                         <>
                                             <div className="flex items-center justify-between mb-4">
                                                 <h3 className="text-sm font-bold text-on-surface dark:text-dark-on-surface uppercase tracking-wider">{isEditingLocked ? 'Expense Details' : 'Edit Expense'}</h3>
-                                                <button onClick={() => { setEditingExpense(null); setEditExpenseRemarksError(null); }} className="rounded text-outline hover:bg-surface-container-high min-h-[15px] .min-w-[44px] flex items-center justify-center cursor-pointer"><X className="w-4 h-4" /></button>
+                                                <button onClick={() => { setEditingExpense(null); setEditExpenseRemarksError(null); }} className="rounded text-outline hover:bg-surface-container-high min-h-[15px] min-w-[44px] flex items-center justify-center cursor-pointer"><X className="w-4 h-4" /></button>
                                             </div>
                                             {isEditingLocked ? (
                                                 <div className="space-y-4">
@@ -4818,7 +4818,7 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
                             <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }} className="relative bg-surface-container dark:bg-dark-surface-container border border-outline-variant dark:border-dark-outline-variant w-full max-w-2xl p-3 sm:p-3 rounded-t-xl sm:rounded shadow-2xl overflow-y-auto max-h-[90vh]">
                                 <div className="flex items-center justify-between mb-4">
                                     <h3 className="text-sm font-bold text-on-surface dark:text-dark-on-surface uppercase tracking-wider">Manage Before Repair</h3>
-                                    <button onClick={() => { setIsManageIssueMediaOpen(false); setIssueMediaError(null); }} className="rounded text-outline hover:bg-surface-container-high min-h-[15px] .min-w-[44px] flex items-center justify-center cursor-pointer"><X className="w-4 h-4" /></button>
+                                    <button onClick={() => { setIsManageIssueMediaOpen(false); setIssueMediaError(null); }} className="rounded text-outline hover:bg-surface-container-high min-h-[15px] min-w-[44px] flex items-center justify-center cursor-pointer"><X className="w-4 h-4" /></button>
                                 </div>
                                 <div className="space-y-4">
                                     {issueMediaError && (
@@ -4903,7 +4903,7 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
                             <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }} className="relative bg-surface-container dark:bg-dark-surface-container border border-outline-variant dark:border-dark-outline-variant w-full max-w-2xl p-3 sm:p-3 rounded-t-xl sm:rounded shadow-2xl overflow-y-auto max-h-[90vh]">
                                 <div className="flex items-center justify-between mb-4">
                                     <h3 className="text-sm font-bold text-on-surface dark:text-dark-on-surface uppercase tracking-wider">Manage After Repair</h3>
-                                    <button onClick={() => setIsManageCompletedMediaOpen(false)} className="rounded text-outline hover:bg-surface-container-high min-h-[15px] .min-w-[44px] flex items-center justify-center cursor-pointer"><X className="w-4 h-4" /></button>
+                                    <button onClick={() => setIsManageCompletedMediaOpen(false)} className="rounded text-outline hover:bg-surface-container-high min-h-[15px] min-w-[44px] flex items-center justify-center cursor-pointer"><X className="w-4 h-4" /></button>
                                 </div>
                                 <div className="space-y-4">
                                     <MediaGrid items={completedMedia} emptyLabel="No completion media uploaded yet" onEdit={triggerReplaceMedia} onDelete={handleDeleteMedia} />
@@ -5749,7 +5749,7 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
                             initial={{ opacity: 0, scale: 0.96, y: 12 }}
                             animate={{ opacity: 1, scale: 1, y: 0 }}
                             exit={{ opacity: 0, scale: 0.96, y: 12 }}
-                            className="relative z-10 w-full max-w-7xl bg-surface dark:bg-dark-surface border border-outline-variant dark:border-dark-outline-variant rounded shadow-2xl overflow-hidden flex flex-col h-[88vh] max-h-[88vh]"
+                            className="relative z-10 w-full max-w-7xl bg-surface dark:bg-dark-surface border border-outline-variant dark:border-dark-outline-variant rounded shadow-2xl overflow-hidden flex flex-col h-[88dvh] max-h-[88dvh]"
                         >
                             {/* Header */}
                             <div className="px-4 py-3 border-b border-outline-variant dark:border-dark-outline-variant flex items-center justify-between bg-surface-container dark:bg-dark-surface-container">
@@ -5776,7 +5776,7 @@ export const TicketDetailModal: React.FC<TicketDetailModalProps> = ({
 
                             {/* Split Body: Left Options + Right Live Sample Preview */}
                             <div className="flex flex-col md:flex-row flex-1 overflow-y-auto md:overflow-hidden min-h-0 overscroll-contain">
-                                <div className="w-full md:w-md shrink-0 flex flex-col border-b md:border-b-0 md:border-r border-outline-variant dark:border-dark-outline-variant md:overflow-hidden">
+                                <div className="w-full md:w-80 lg:w-96 shrink-0 flex flex-col border-b md:border-b-0 md:border-r border-outline-variant dark:border-dark-outline-variant md:overflow-hidden">
                                     {/* Quick Toggle Bar */}
                                     <div className="px-4 py-2 bg-surface-container-low dark:bg-dark-surface-container-low border-b border-outline-variant/60 flex items-center justify-between text-xs">
                                         <span className="font-semibold text-outline">

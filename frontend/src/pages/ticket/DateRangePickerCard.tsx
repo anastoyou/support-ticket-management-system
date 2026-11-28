@@ -64,8 +64,15 @@ export const DateRangePickerCard: React.FC<DateRangePickerCardProps> = ({
     hideDateType = false,
 }) => {
     const [isOpen, setIsOpen] = useState(false);
-    const [panelPos, setPanelPos] = useState<{ top: number; left: number } | null>(null);
-    const isMobile = typeof window !== 'undefined' && window.innerWidth < 640;
+    const [panelPos, setPanelPos] = useState<{ top: number; left: number; width: number } | null>(null);
+    const [isMobile, setIsMobile] = useState(() => typeof window !== 'undefined' && window.innerWidth < 640);
+
+    useEffect(() => {
+        if (typeof window === 'undefined') return;
+        const onResize = () => setIsMobile(window.innerWidth < 640);
+        window.addEventListener('resize', onResize);
+        return () => window.removeEventListener('resize', onResize);
+    }, []);
 
     const getResolvedDateType = useCallback((val?: string) => {
         if (val !== undefined && val !== null) return val;
@@ -93,28 +100,40 @@ export const DateRangePickerCard: React.FC<DateRangePickerCardProps> = ({
 
     const triggerRef = useRef<HTMLButtonElement>(null);
 
+    const computePanelPos = useCallback(() => {
+        if (!triggerRef.current || typeof window === 'undefined') return null;
+        const rect = triggerRef.current.getBoundingClientRect();
+        const width = Math.min(PANEL_WIDTH, window.innerWidth - 16);
+        const left = Math.min(Math.max(8, rect.right - width), window.innerWidth - width - 8);
+        const estimatedHeight = 430;
+        let top = rect.bottom + 6;
+        if (top + estimatedHeight > window.innerHeight - 8) {
+            const aboveTop = rect.top - estimatedHeight - 6;
+            top = aboveTop >= 8 ? aboveTop : Math.max(8, window.innerHeight - estimatedHeight - 8);
+        }
+        return { top, left, width };
+    }, []);
+
     const openPanel = () => {
         if (isMobile) {
             setPanelPos(null); // mobile uses full-screen fixed
-        } else if (triggerRef.current) {
-            const rect = triggerRef.current.getBoundingClientRect();
-            // Try to align right edge of panel with right edge of button;
-            // clamp to viewport left.
-            const left = Math.max(4, rect.right - PANEL_WIDTH);
-            const top = rect.bottom + 6;
-            setPanelPos({ top, left });
+        } else {
+            const pos = computePanelPos();
+            if (pos) setPanelPos(pos);
         }
         setIsOpen(true);
     };
 
     // Recompute position on scroll/resize while open
     const recomputePos = useCallback(() => {
-        if (!isOpen || isMobile || !triggerRef.current) return;
-        const rect = triggerRef.current.getBoundingClientRect();
-        const left = Math.max(4, rect.right - PANEL_WIDTH);
-        const top = rect.bottom + 6;
-        setPanelPos({ top, left });
-    }, [isOpen, isMobile]);
+        if (!isOpen) return;
+        if (isMobile) {
+            setPanelPos(null);
+            return;
+        }
+        const pos = computePanelPos();
+        if (pos) setPanelPos(pos);
+    }, [isOpen, isMobile, computePanelPos]);
 
     useEffect(() => {
         window.addEventListener('scroll', recomputePos, true);
@@ -198,7 +217,7 @@ export const DateRangePickerCard: React.FC<DateRangePickerCardProps> = ({
                     position: 'fixed',
                     top: panelPos.top,
                     left: panelPos.left,
-                    width: PANEL_WIDTH,
+                    width: panelPos.width,
                 } : {
                     // Mobile: bottom sheet
                     position: 'fixed',

@@ -369,6 +369,7 @@ export const WorkforceView: React.FC = () => {
           headerName: 'Employee ID',
           field: 'employee_no',
           width: 120,
+          minWidth: 100,
           cellClass: ' text-xs font-medium text-primary',
         },
         {
@@ -405,6 +406,7 @@ export const WorkforceView: React.FC = () => {
           headerName: 'Role',
           field: 'role.role_name',
           width: 140,
+          minWidth: 115,
           valueGetter: params => params.data?.role?.role_name || params.data?.role || 'No Role',
           cellRenderer: (params: any) => (
             <span className="text-xs font-semibold text-primary uppercase tracking-wide">
@@ -430,6 +432,7 @@ export const WorkforceView: React.FC = () => {
           headerName: 'Hourly Rate',
           field: 'hourly_rate',
           width: 120,
+          minWidth: 105,
           cellClass: 'font-bold text-emerald-600 dark:text-emerald-400 ',
           valueFormatter: params => params.value ? `${params.value} KWD/hr` : '-'
         },
@@ -437,6 +440,7 @@ export const WorkforceView: React.FC = () => {
           headerName: 'Actions',
           field: 'actions',
           width: 145,
+          minWidth: 115,
           pinned: 'right',
           sortable: false,
           filter: false,
@@ -478,12 +482,14 @@ export const WorkforceView: React.FC = () => {
           field: 'worker.employee_no',
           valueGetter: params => params.data?.worker?.employee_no || '',
           width: 130,
+          minWidth: 105,
           cellClass: ' text-xs text-primary'
         },
         {
           headerName: 'Hourly Rate',
           field: 'hourly_rate',
           width: 140,
+          minWidth: 110,
           cellClass: 'font-bold text-emerald-600 dark:text-emerald-400 ',
           valueFormatter: params => `${params.value} KWD/hr`
         },
@@ -491,12 +497,14 @@ export const WorkforceView: React.FC = () => {
           headerName: 'Effective From',
           field: 'effective_from',
           width: 140,
+          minWidth: 115,
           cellClass: 'text-on-surface-variant '
         },
         {
           headerName: 'Effective To',
           field: 'effective_to',
           width: 140,
+          minWidth: 115,
           cellClass: 'text-on-surface-variant ',
           valueFormatter: params => params.value || 'Ongoing'
         },
@@ -504,6 +512,7 @@ export const WorkforceView: React.FC = () => {
           headerName: 'Actions',
           field: 'actions',
           width: 80,
+          minWidth: 75,
           pinned: 'right',
           cellClass: 'justify-end flex items-center',
           cellRenderer: (params: any) => {
@@ -1067,7 +1076,7 @@ export const WorkforceView: React.FC = () => {
 
             </div>
           ) : (
-            <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
+            <div className="flex flex-col sm:flex-row sm:flex-wrap items-stretch sm:items-center justify-between gap-3">
               {/* Left: Search input */}
               <div className="flex items-center gap-2 flex-1 max-w-md w-full">
                 <div className="relative flex-1">
@@ -1155,7 +1164,7 @@ export const WorkforceView: React.FC = () => {
 
           {/* Row 2: Sub-tabs for Office Staff/Admin (Approved vs Unapproved vs Leave Approvals) */}
           {(subpage === 'employees' || !subpage || isLeaveSection) && isOfficeStaffOrAdmin && (
-            <div className="flex items-center gap-2 py-2 border-t border-outline-variant/60">
+            <div className="flex flex-wrap items-center gap-2 py-2 border-t border-outline-variant/60">
               <button
                 type="button"
                 onClick={() => {
@@ -1317,7 +1326,7 @@ export const WorkforceView: React.FC = () => {
 
             {/* Desktop View: Table */}
             <div className="hidden sm:block">
-              <div className="ag-theme-app w-full h-[calc(100vh-220px)] min-h-[500px]">
+              <div className="ag-theme-app w-full h-[clamp(340px,calc(100dvh-260px),760px)]">
                 <AgGridReact
                   theme={appTheme}
                   rowData={filteredData}
@@ -1343,7 +1352,7 @@ export const WorkforceView: React.FC = () => {
             </div>
           </>
         ) : (
-          <div className="ag-theme-app w-full h-[calc(100vh-220px)] min-h-[500px]">
+          <div className="ag-theme-app w-full h-[clamp(340px,calc(100dvh-260px),760px)]">
             <AgGridReact
               theme={appTheme}
               rowData={filteredData}
@@ -1558,7 +1567,7 @@ export const WorkforceView: React.FC = () => {
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.95 }}
-              className="bg-surface-container border border-outline-variant w-full max-w-2xl rounded-xl shadow-2xl flex flex-col h-[650px] overflow-hidden"
+              className="bg-surface-container border border-outline-variant w-full max-w-2xl rounded-xl shadow-2xl flex flex-col h-[min(650px,90dvh)] max-h-[90dvh] overflow-hidden"
             >
               {/* Header */}
               <div className="flex items-center justify-between px-6 py-4 border-b border-outline-variant bg-surface-container-low shrink-0">
@@ -1926,7 +1935,7 @@ export const WorkforceView: React.FC = () => {
 
                 {/* TAB 3: Departments & Skills */}
                 {activeFormTab === 'skills' && needsWorkingDepartments && (
-                  <div className="flex flex-col h-[480px] min-h-0 border border-outline-variant rounded bg-surface-container-low overflow-hidden">
+                  <div className="flex flex-col h-[min(460px,56dvh)] min-h-[260px] border border-outline-variant rounded bg-surface-container-low overflow-hidden">
                     {/* Header with combined search */}
                     <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-outline-variant p-3 bg-surface-container shrink-0 gap-2">
                       <h4 className="text-xs font-bold text-primary uppercase tracking-wider flex items-center gap-1.5">
@@ -1946,7 +1955,7 @@ export const WorkforceView: React.FC = () => {
                     </div>
 
                     {/* Scrollable Tree List */}
-                    <div className="flex-1 overflow-y-auto p-4 space-y-4 max-h-[440px]">
+                    <div className="flex-1 min-h-0 overflow-y-auto p-4 space-y-4">
                       {(() => {
                         const deptKeys = Object.keys(groupedDepartments).sort();
                         if (deptKeys.length === 0) {
@@ -2110,7 +2119,7 @@ export const WorkforceView: React.FC = () => {
                           <Calendar className="w-4 h-4" />
                           Wage History Records
                         </h4>
-                        <div className="border border-outline-variant rounded overflow-hidden bg-surface-container">
+                        <div className="border border-outline-variant rounded overflow-x-auto bg-surface-container">
                           <table className="w-full text-left text-xs border-collapse">
                             <thead>
                               <tr className="bg-surface-container-low border-b border-outline-variant text-[10px] uppercase font-bold text-on-surface-variant">

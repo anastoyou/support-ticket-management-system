@@ -1648,7 +1648,7 @@ export const ExpensesSubpage: React.FC<ExpensesSubpageProps> = ({
 
     return (
       <div className={compact ? "p-1.5 bg-transparent overflow-x-auto" : "p-4 bg-surface-container-low border border-outline-variant/60 rounded overflow-x-auto shadow-2xs"}>
-        <div className={`flex items-start justify-between px-1 py-1 ${compact ? 'min-w-[480px]' : 'min-w-[650px]'}`}>
+        <div className={`flex items-start justify-between px-1 py-1 w-full ${compact ? 'min-w-[440px] lg:min-w-0' : 'min-w-[540px] lg:min-w-0'}`}>
           {/* START NODE */}
           <div className={`flex flex-col items-center shrink-0 ${compact ? 'w-12' : 'w-16'}`}>
             <div className={`${compact ? 'w-6 h-6 text-[9px]' : 'w-7 h-7 text-[10px]'} rounded-full bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 flex items-center justify-center font-bold border border-emerald-500/40 shrink-0`}>
@@ -1797,7 +1797,7 @@ export const ExpensesSubpage: React.FC<ExpensesSubpageProps> = ({
   return (
     <div className="space-y-4">
       {/* Summary Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
         <div className="p-4 rounded border border-outline-variant bg-surface-container">
           <span className="text-xs font-medium text-on-surface-variant block">Total Expenses Recorded</span>
           <span className="text-2xl font-semibold text-on-surface mt-1 block">

@@ -239,7 +239,7 @@ export const ApprovalsSubpage: React.FC<ApprovalsSubpageProps> = ({
 
     return (
       <div className="p-4 bg-surface-container-low border-b border-outline-variant/60 overflow-x-auto">
-        <div className="flex items-start justify-between min-w-[650px] px-2 py-2">
+        <div className="flex items-start justify-between min-w-[520px] lg:min-w-0 w-full px-2 py-2">
           {/* START NODE */}
           <div className="flex flex-col items-center shrink-0 w-16">
             <div className="w-7 h-7 rounded-full bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 flex items-center justify-center text-[10px] font-bold border border-emerald-500/40 shrink-0">
@@ -817,7 +817,7 @@ export const ApprovalsSubpage: React.FC<ApprovalsSubpageProps> = ({
                                       No worker claim bundles attached to this ledger.
                                     </p>
                                   ) : (
-                                    <div className="border border-outline-variant rounded-lg overflow-hidden bg-surface-container shadow-xs">
+                                    <div className="border border-outline-variant rounded-lg overflow-x-auto bg-surface-container shadow-xs">
                                       <table className="w-full text-xs text-left text-on-surface">
                                         <thead className="bg-surface-container-low text-on-surface-variant uppercase text-[9px] tracking-wider border-b border-outline-variant">
                                           <tr>
@@ -944,7 +944,7 @@ export const ApprovalsSubpage: React.FC<ApprovalsSubpageProps> = ({
                                                         {bundleExpenses.length === 0 ? (
                                                           <p className="text-[11px] text-on-surface-variant italic">No expenses recorded in this bundle.</p>
                                                         ) : (
-                                                          <div className="border border-outline-variant rounded overflow-hidden bg-surface-container">
+                                                          <div className="border border-outline-variant rounded overflow-x-auto bg-surface-container">
                                                             <table className="w-full text-[11px] text-left text-on-surface">
                                                               <thead className="bg-surface-container-low text-on-surface-variant uppercase text-[9px] tracking-wider border-b border-outline-variant">
                                                                 <tr>

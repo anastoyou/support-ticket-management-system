@@ -124,13 +124,20 @@
   --color-info: #3f6377;
 }
 
+html,
+body,
+#root {
+  max-width: 100%;
+}
+
 body {
   font-family: 'Inter', sans-serif;
   background-color: #f8f9fa;
   color: #202124;
   margin: 0;
   padding: 0;
-  min-height: 100vh;
+  min-height: 100dvh;
+  overflow-x: clip;
   transition: background-color 0.2s ease, color 0.2s ease;
 }
 
@@ -144,6 +151,54 @@ body {
   html {
     font-size: 106.25%;
     /* Increases mobile typography scale (~17px base) */
+  }
+}
+
+/* Responsive Root Scaling for Tablets, Laptops & Wide Desktops */
+@media (min-width: 768px) and (max-width: 1199px) {
+  html {
+    font-size: 87.5%;
+    /* 14px base for small laptops & split-screen desktop windows */
+  }
+}
+
+@media (min-width: 1200px) and (max-width: 1399px) {
+  html {
+    font-size: 90.625%;
+    /* 14.5px base for 1280x720 / 1366x768 laptops & 1080p @ 150% DPI */
+  }
+}
+
+@media (min-width: 1400px) and (max-width: 1599px) {
+  html {
+    font-size: 93.75%;
+    /* 15px base for 1440x900 & 1536x864 (1080p @ 125% DPI laptops) */
+  }
+}
+
+@media (min-width: 1600px) and (max-width: 2199px) {
+  html {
+    font-size: 100%;
+    /* 16px base for 1600x900 - 1920x1080 desktops */
+  }
+}
+
+@media (min-width: 2200px) {
+  html {
+    font-size: 106.25%;
+    /* 17px base for 2K / QHD / 4K ultrawide monitors */
+  }
+}
+
+/* Short-height laptop viewport guard (e.g. 1366x768 / 1280x720 inside browser chrome) */
+@media (min-width: 1024px) and (max-height: 700px) {
+  html {
+    font-size: 87.5%;
+  }
+
+  .ag-theme-app {
+    --ag-font-size: 12px;
+    --ag-spacing: 5px;
   }
 }
 

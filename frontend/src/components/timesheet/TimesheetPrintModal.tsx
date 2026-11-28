@@ -358,7 +358,7 @@ export const TimesheetPrintModal: React.FC<TimesheetPrintModalProps> = ({
                             <p className="text-xs">There are no work logs recorded for this worker between {fromDate} and {toDate}.</p>
                         </div>
                     ) : (
-                        <div className="border border-outline-variant rounded overflow-hidden shadow-2xs">
+                        <div className="border border-outline-variant rounded overflow-x-auto shadow-2xs">
                             <table className="w-full text-left text-xs border-collapse">
                                 <thead>
                                     <tr className="bg-surface-container border-b border-outline-variant text-[11px] font-bold text-on-surface-variant uppercase tracking-wider">

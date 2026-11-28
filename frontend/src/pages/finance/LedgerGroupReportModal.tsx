@@ -3779,7 +3779,7 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
 
   return (
     <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-xs flex items-center justify-center p-2 sm:p-4 overflow-y-auto">
-      <div className="bg-surface-container border border-outline-variant rounded  w-full shadow-2xl overflow-hidden flex flex-col h-full .max-h-[94vh] print:max-h-none print:shadow-none print:border-0 print:p-0">
+      <div className="bg-surface-container border border-outline-variant rounded max-w-7xl w-full shadow-2xl overflow-hidden flex flex-col h-full max-h-[94dvh] print:max-h-none print:shadow-none print:border-0 print:p-0">
 
         {/* MODAL HEADER */}
         <div className="px-5 py-3.5 border-b border-outline-variant bg-surface-container-low flex items-center justify-between flex-wrap gap-3 shrink-0">
@@ -4190,7 +4190,7 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
                       </div>
                     </div>
 
-                    <div className="border border-outline-variant rounded overflow-hidden bg-surface-container shadow-2xs">
+                    <div className="border border-outline-variant rounded overflow-x-auto bg-surface-container shadow-2xs">
                       <table className="w-full text-xs text-left text-on-surface">
                         <thead className="bg-surface-container-high text-on-surface-variant uppercase text-[11px] font-bold tracking-wider border-b border-outline-variant">
                           <tr>
@@ -4672,7 +4672,7 @@ export const LedgerGroupReportModal: React.FC<LedgerGroupReportModalProps> = ({
                         </span>
                       </div>
                     </div>
-                    <div className="border border-outline-variant rounded overflow-hidden bg-surface-container shadow-2xs">
+                    <div className="border border-outline-variant rounded overflow-x-auto bg-surface-container shadow-2xs">
                       <table className="w-full text-xs text-left text-on-surface">
                         <thead className="bg-surface-container-high text-on-surface-variant uppercase text-[11px] font-bold tracking-wider border-b border-outline-variant">
                           <tr>

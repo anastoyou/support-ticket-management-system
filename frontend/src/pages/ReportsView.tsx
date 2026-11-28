@@ -605,7 +605,7 @@ export const ReportsView: React.FC = () => {
   };
 
   return (
-    <div className="flex flex-col h-full bg-surface text-on-surface select-none">
+    <div className="flex flex-col flex-1 min-h-0 h-full bg-surface text-on-surface select-none">
       {/* Header Bar */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between px-4 sm:px-6 py-3 border-b border-outline-variant bg-surface-container-low shrink-0 gap-3">
         <div className="flex items-center gap-3">
@@ -837,7 +837,7 @@ export const ReportsView: React.FC = () => {
               <p className="text-xs font-medium text-on-surface">No generation audit logs recorded yet</p>
             </div>
           ) : (
-            <div className="bg-surface rounded-xl border border-outline-variant shadow-sm overflow-hidden text-xs">
+            <div className="bg-surface rounded-xl border border-outline-variant shadow-sm overflow-x-auto text-xs">
               <table className="w-full text-left border-collapse">
                 <thead>
                   <tr className="bg-surface-container-high border-b border-outline-variant font-semibold text-on-surface text-[11px]">
@@ -907,7 +907,7 @@ export const ReportsView: React.FC = () => {
           </div>
 
           {/* Left Panel: Field Browser */}
-          <div className={`w-full lg:w-72 border-b lg:border-b-0 lg:border-r border-outline-variant bg-surface-container-low ${mobileTab === 'fields' ? 'flex' : 'hidden lg:flex'} flex-col shrink-0 overflow-y-auto lg:overflow-hidden`}>
+          <div className={`w-full lg:w-56 xl:w-64 2xl:w-72 border-b lg:border-b-0 lg:border-r border-outline-variant bg-surface-container-low ${mobileTab === 'fields' ? 'flex' : 'hidden lg:flex'} flex-col shrink-0 overflow-y-auto lg:overflow-hidden`}>
             <div className="p-3 border-b border-outline-variant space-y-2">
               <label className="text-[10px] font-semibold uppercase tracking-wider text-on-surface-variant block">
                 1. Select Data Source
@@ -955,7 +955,7 @@ export const ReportsView: React.FC = () => {
           </div>
 
           {/* Middle Panel: Config Tabs & Controls */}
-          <div className={`w-full lg:w-96 border-b lg:border-b-0 lg:border-r border-outline-variant bg-surface-container-low ${mobileTab === 'config' ? 'flex' : 'hidden lg:flex'} flex-col shrink-0 overflow-y-auto lg:overflow-hidden`}>
+          <div className={`w-full lg:w-72 xl:w-80 2xl:w-96 border-b lg:border-b-0 lg:border-r border-outline-variant bg-surface-container-low ${mobileTab === 'config' ? 'flex' : 'hidden lg:flex'} flex-col shrink-0 overflow-y-auto lg:overflow-hidden`}>
             {/* Report Metadata inputs */}
             <div className="p-3 border-b border-outline-variant space-y-2">
               <input

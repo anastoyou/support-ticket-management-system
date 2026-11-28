@@ -1240,9 +1240,9 @@ export const BundleReportModal: React.FC<BundleReportModalProps> = ({
 
   return (
     <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-xs flex items-center justify-center p-2 sm:p-4 overflow-y-auto animate-in fade-in duration-200">
-      <div className="bg-surface-container dark:bg-dark-surface-container border border-outline-variant dark:border-dark-outline-variant rounded .max-w-6xl w-full h-[92vh] max-h-[920px] flex flex-col shadow-2xl overflow-hidden transition-all text-on-surface dark:text-dark-on-surface">
+      <div className="bg-surface-container dark:bg-dark-surface-container border border-outline-variant dark:border-dark-outline-variant rounded max-w-6xl w-full h-[92dvh] max-h-[920px] flex flex-col shadow-2xl overflow-hidden transition-all text-on-surface dark:text-dark-on-surface">
         {/* Header Bar */}
-        <div className="px-5 py-4 border-b border-outline-variant dark:border-dark-outline-variant flex items-center justify-between bg-surface-container-low dark:bg-dark-surface-container-low shrink-0">
+        <div className="px-3 sm:px-5 py-3 border-b border-outline-variant dark:border-dark-outline-variant flex flex-wrap items-center justify-between gap-2 bg-surface-container-low dark:bg-dark-surface-container-low shrink-0">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded bg-primary/10 border border-primary/20 text-primary flex items-center justify-center shrink-0">
               <Printer className="w-5 h-5" />

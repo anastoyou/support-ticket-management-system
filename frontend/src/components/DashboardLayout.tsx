@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useLocation, Navigate } from 'react-router-dom';
 import { Sidebar, getNextPermittedPath } from './Sidebar';
 import { Header } from './Header';
@@ -10,8 +10,22 @@ interface DashboardLayoutProps {
 
 export const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) => {
   const [sidebarOpen, setSidebarOpen] = useState(() => {
-    return typeof window !== 'undefined' && window.innerWidth >= 768;
+    return typeof window !== 'undefined' && window.innerWidth >= 1024;
   });
+  const wasDesktopRef = useRef(typeof window !== 'undefined' && window.innerWidth >= 1024);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const handleResize = () => {
+      const isDesktop = window.innerWidth >= 1024;
+      if (isDesktop !== wasDesktopRef.current) {
+        wasDesktopRef.current = isDesktop;
+        setSidebarOpen(isDesktop);
+      }
+    };
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
   const location = useLocation();
   const { hasPermission } = usePermission();
 
@@ -95,7 +109,7 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) =>
   };
 
   return (
-    <div className="flex min-h-screen bg-surface dark:bg-dark-surface transition-colors duration-200">
+    <div className="flex h-dvh w-full overflow-hidden bg-surface dark:bg-dark-surface transition-colors duration-200">
       {/* Navigation Sidebar Drawer */}
       <Sidebar
         isOpen={sidebarOpen}
@@ -103,7 +117,7 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) =>
       />
 
       {/* Main Container */}
-      <div className="flex flex-col flex-1 min-w-0">
+      <div className="flex flex-col flex-1 min-w-0 min-h-0 h-full overflow-hidden">
         {/* Top Header */}
         <Header
           onToggleSidebar={() => setSidebarOpen(prev => !prev)}
@@ -112,7 +126,7 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) =>
         />
 
         {/* Scrollable Work Area */}
-        <main className="flex-1 overflow-y-auto overflow-x-hidden p-3 .max-w-7xl w-full mx-auto">
+        <main className="flex-1 min-w-0 min-h-0 overflow-y-auto overflow-x-auto p-2.5 sm:p-3 lg:p-4 w-full">
           {children}
         </main>
       </div>

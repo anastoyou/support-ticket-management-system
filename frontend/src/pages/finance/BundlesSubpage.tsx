@@ -667,7 +667,7 @@ export const BundlesSubpage: React.FC<BundlesSubpageProps> = ({
 
     return (
       <div className={compact ? "p-1.5 bg-transparent overflow-x-auto" : "p-4 bg-surface-container-low border border-outline-variant/60 rounded overflow-x-auto shadow-2xs"}>
-        <div className={`flex items-start justify-between px-1 py-1 ${compact ? 'min-w-[660px]' : 'min-w-[850px]'}`}>
+        <div className={`flex items-start justify-between px-1 py-1 w-full ${compact ? 'min-w-[460px] lg:min-w-0' : 'min-w-[560px] lg:min-w-0'}`}>
           {/* START NODE */}
           <div className={`flex flex-col items-center shrink-0 ${compact ? 'w-12' : 'w-16'}`}>
             <div className={`${compact ? 'w-6 h-6 text-[9px]' : 'w-7 h-7 text-[10px]'} rounded-full bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 flex items-center justify-center font-bold border border-emerald-500/40 shrink-0`}>
@@ -1522,7 +1522,7 @@ export const BundlesSubpage: React.FC<BundlesSubpageProps> = ({
   return (
     <div className="space-y-4">
       {/* Summary Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
         <div className="p-4 rounded border border-outline-variant bg-surface-container">
           <span className="text-xs font-medium text-on-surface-variant block">Total Bundles</span>
           <span className="text-2xl font-semibold text-on-surface mt-1 block">
@@ -2583,7 +2583,7 @@ export const BundlesSubpage: React.FC<BundlesSubpageProps> = ({
                                 {bundleExpenses.length === 0 ? (
                                   <p className="text-xs text-on-surface-variant italic">No expenses recorded in this bundle.</p>
                                 ) : (
-                                  <div className="border border-outline-variant rounded overflow-hidden bg-surface-container shadow-sm">
+                                  <div className="border border-outline-variant rounded overflow-x-auto bg-surface-container shadow-sm">
                                     <table className="w-full text-xs text-left text-on-surface">
                                       <thead className="bg-surface-container-low text-on-surface-variant text-[9px] tracking-wider border-b border-outline-variant select-none">
                                         <tr>
@@ -2824,7 +2824,7 @@ export const BundlesSubpage: React.FC<BundlesSubpageProps> = ({
       {/* MODAL: CREATE BUNDLE DIRECT MODAL */}
       {showCreateBundleModal && (
         <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 sm:p-6 animate-in fade-in duration-150">
-          <div className="bg-surface-container rounded border border-outline-variant/80 max-w-5xl w-full h-[88vh] max-h-[860px] min-h-[640px] flex flex-col p-4 sm:p-4 shadow-2xl overflow-hidden transition-all">
+          <div className="bg-surface-container rounded border border-outline-variant/80 max-w-5xl w-full h-[90dvh] max-h-[860px] min-h-[min(420px,85dvh)] flex flex-col p-4 sm:p-4 shadow-2xl overflow-hidden transition-all">
             {/* Header */}
             <div className="flex items-center justify-between border-b border-outline-variant/80 pb-3.5 shrink-0">
               <div className="flex items-center gap-3">

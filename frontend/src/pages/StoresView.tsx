@@ -278,10 +278,10 @@ export const StoresView: React.FC = () => {
 
     if (subpage === 'all' || !subpage) {
       const cols: ColDef[] = [
-        { headerName: 'Store Code/ID', field: 'store_id', width: 130, cellClass: ' text-xs font-semibold' },
-        { headerName: 'Short Code', field: 'short_code', width: 110, cellClass: ' text-xs font-bold text-primary', valueGetter: (p: any) => p.data?.short_code || '—' },
+        { headerName: 'Store Code/ID', field: 'store_id', width: 130, minWidth: 105, cellClass: ' text-xs font-semibold' },
+        { headerName: 'Short Code', field: 'short_code', width: 110, minWidth: 95, cellClass: ' text-xs font-bold text-primary', valueGetter: (p: any) => p.data?.short_code || '—' },
         { headerName: 'Name', field: 'store_name', flex: 2, minWidth: 180, cellClass: 'font-medium text-on-surface' },
-        { headerName: 'Type', field: 'type', width: 140, valueGetter: (p: any) => { const map: Record<string, string> = { SUPER_MARKET: 'Super Market', HYPER_MARKET: 'Hyper Market', WAREHOUSE: 'Warehouse', FRESH: 'Fresh', COSTO: 'Costo', CAMP: 'Camp' }; return map[p.data?.type] || p.data?.type || 'N/A'; } },
+        { headerName: 'Type', field: 'type', width: 140, minWidth: 115, valueGetter: (p: any) => { const map: Record<string, string> = { SUPER_MARKET: 'Super Market', HYPER_MARKET: 'Hyper Market', WAREHOUSE: 'Warehouse', FRESH: 'Fresh', COSTO: 'Costo', CAMP: 'Camp' }; return map[p.data?.type] || p.data?.type || 'N/A'; } },
         { headerName: 'Area', field: 'area.area_name', flex: 1, minWidth: 130, valueGetter: (p: any) => p.data?.area?.area_name || 'N/A' },
         { headerName: 'Manager', field: 'manager.full_name', flex: 1.2, minWidth: 150, valueGetter: (p: any) => p.data?.manager?.full_name || 'N/A' },
         { headerName: 'GPS Coord', field: 'latitude', flex: 1.2, minWidth: 160, cellClass: ' text-xs text-outline', valueGetter: (p: any) => p.data?.latitude && p.data?.longitude ? `${p.data.latitude}, ${p.data.longitude}` : 'No Coordinates' },
@@ -289,6 +289,7 @@ export const StoresView: React.FC = () => {
           headerName: 'Status',
           field: 'active',
           width: 110,
+          minWidth: 95,
           cellRenderer: (params: any) => (
             <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium tracking-wide h-4 ${params.value ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400' : 'bg-red-500/10 text-red-600'
               }`}>
@@ -351,10 +352,10 @@ export const StoresView: React.FC = () => {
             );
           }
         },
-        { headerName: 'Username', field: 'username', width: 120 },
+        { headerName: 'Username', field: 'username', width: 120, minWidth: 105 },
         { headerName: 'Email', field: 'email', flex: 1.2, minWidth: 150 },
-        { headerName: 'Phone', field: 'phone', width: 110 },
-        { headerName: 'WhatsApp', field: 'whatsapp_number', width: 110 },
+        { headerName: 'Phone', field: 'phone', width: 110, minWidth: 105 },
+        { headerName: 'WhatsApp', field: 'whatsapp_number', width: 110, minWidth: 105 },
         { headerName: 'Assigned Store', field: 'store.store_name', flex: 1.4, minWidth: 150, valueGetter: (p: any) => p.data?.store?.store_name || 'No Store Assigned' },
         {
           headerName: 'Accessible Stores',
@@ -377,6 +378,7 @@ export const StoresView: React.FC = () => {
           headerName: 'Status',
           field: 'active',
           width: 110,
+          minWidth: 100,
           cellRenderer: (params: any) => (
             <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium tracking-wide h-4 ${params.value ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 font-semibold' : 'bg-amber-500/10 text-amber-600 dark:text-amber-400 font-semibold'
               }`}>
@@ -386,7 +388,7 @@ export const StoresView: React.FC = () => {
         }
       ];
       if (canDeleteSubpage && !isMobile) {
-        cols.push({ headerName: 'Actions', width: 160, cellRenderer: editActionCellRenderer as any, sortable: false, filter: false });
+        cols.push({ headerName: 'Actions', width: 160, minWidth: 135, cellRenderer: editActionCellRenderer as any, sortable: false, filter: false });
       }
       return cols;
     } else {
@@ -945,7 +947,7 @@ export const StoresView: React.FC = () => {
       )}
 
       {/* Top Bar */}
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+      <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
         <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 max-w-lg w-full">
           <div className="relative max-w-sm w-full">
             <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-outline" />
@@ -997,7 +999,7 @@ export const StoresView: React.FC = () => {
           )}
         </div>
 
-        <div className="hidden sm:flex items-center gap-2">
+        <div className="hidden sm:flex flex-wrap items-center gap-2">
           {/* Quick Create/Manage Areas Button */}
           {(subpage === 'all' || !subpage) && <>
             <Can permission='stores.add_area'>
@@ -1137,7 +1139,7 @@ export const StoresView: React.FC = () => {
 
           {/* Desktop View: Table */}
           <div className="hidden sm:block">
-            <div className="ag-theme-app w-full h-[calc(100vh-220px)] min-h-[500px]">
+            <div className="ag-theme-app w-full h-[clamp(340px,calc(100dvh-235px),780px)]">
               <AgGridReact
                 theme={appTheme}
                 rowData={filteredData}
