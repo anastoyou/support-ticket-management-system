@@ -3769,6 +3769,51 @@ class PaymentViewSet(viewsets.ModelViewSet):
             status=status.HTTP_200_OK,
         )
 
+    @action(detail=False, methods=['post'], url_path='revert-payment')
+    def revert_payment(self, request):
+        if not _is_administrator_user(request.user):
+            return Response(
+                {'detail': 'Permission denied. Only Administrator users can revert settled payments.'},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        bundle_id = _parse_optional_pk(request.data.get('bundle_id'), 'bundle_id')
+        if not bundle_id:
+            raise exceptions.ValidationError({'detail': 'bundle_id is required.'})
+
+        reason = (request.data.get('reason') or request.data.get('remarks') or '').strip() or None
+
+        from django.core.exceptions import ValidationError as DjangoValidationError
+
+        try:
+            bundle = PaymentService.revert_bundle_payment(
+                bundle_id=bundle_id,
+                actor=request.user,
+                reason=reason,
+                ip_address=request.META.get('REMOTE_ADDR'),
+            )
+            fresh_bundle = (
+                WorkerClaim.objects.select_related(
+                    'worker', 'worker__role', 'submitted_by', 'approved_by', 'ticket', 'ticket__store'
+                )
+                .prefetch_related('expenses__receipts', 'ledgers__ledger_group', 'payments', 'approval_instances')
+                .filter(pk=bundle.pk)
+                .first()
+                or bundle
+            )
+            bundle_data = WorkerClaimSerializer(fresh_bundle, context={'request': request}).data
+            return Response(
+                {
+                    'status': 'success',
+                    'message': f"Bundle #{bundle.claim_id} payment reverted back to Approved (Waiting in CO).",
+                    'bundle': bundle_data,
+                },
+                status=status.HTTP_200_OK,
+            )
+        except DjangoValidationError as e:
+            msg = e.messages[0] if hasattr(e, 'messages') and e.messages else str(e)
+            raise exceptions.ValidationError({'detail': msg})
+
 
 def recalculate_reconciliation(instance):
     ticket = instance.ticket

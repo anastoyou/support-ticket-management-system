@@ -2173,6 +2173,65 @@ export const FinanceView: React.FC = () => {
     }
   };
 
+  const handleRevertSettledPayment = async (reason?: string) => {
+    if (!showPaymentModal || !('claim_id' in showPaymentModal)) return;
+    const claimId = (showPaymentModal as WorkerClaimItem).claim_id;
+    setSubmitting(true);
+    setErrorMessage(null);
+    try {
+      const res = await fetch(`${API_URL}/finance/payments/revert-payment/`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Token ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          bundle_id: claimId,
+          ...(reason && reason.trim() ? { reason: reason.trim() } : {}),
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || JSON.stringify(data));
+
+      setSelectedBundleForView((prev) =>
+        prev && prev.claim_id === claimId
+          ? { ...prev, status: 'Approved', payment_receipt_image: null }
+          : prev
+      );
+      setBundles((prev) =>
+        prev.map((b) =>
+          b.claim_id === claimId
+            ? { ...b, status: 'Approved', payment_receipt_image: null }
+            : b
+        )
+      );
+      setLedgers((prev) =>
+        prev.map((l) => {
+          const hasBundle = (l.bundles || []).some((b) => b.claim_id === claimId);
+          return {
+            ...l,
+            status: hasBundle && l.status === 'Paid' ? 'Approved' : l.status,
+            bundles: (l.bundles || []).map((b) =>
+              b.claim_id === claimId
+                ? { ...b, status: 'Approved', payment_receipt_image: null }
+                : b
+            ),
+          };
+        })
+      );
+      setShowPaymentModal(null);
+      setPaymentRemarks('');
+      setPaymentRecipient('');
+      setSuccessMessage(`Bundle #${claimId} payment reverted back to Waiting in CO.`);
+      await fetchData(true, true);
+    } catch (err: any) {
+      setErrorMessage(err.message || 'Failed to revert settled payment.');
+      throw err;
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
   const handleProcessPayment = async (receiptFile?: File | null) => {
     if (!showPaymentModal) return;
     if (!receiptFile) {
@@ -2953,6 +3012,7 @@ export const FinanceView: React.FC = () => {
         handleProcessPayment={handleProcessPayment}
         handleUploadSettledReceipt={handleUploadSettledReceipt}
         handleDeleteSettledReceipt={handleDeleteSettledReceipt}
+        handleRevertPayment={handleRevertSettledPayment}
         submitting={submitting}
         errorMessage={errorMessage}
       />

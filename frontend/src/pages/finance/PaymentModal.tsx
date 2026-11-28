@@ -20,6 +20,7 @@ import {
   Camera,
   CheckCircle2,
   Trash2,
+  RotateCcw,
 } from 'lucide-react';
 import type { RootState } from '../../store';
 import Can from '../../hooks/Can';
@@ -44,6 +45,7 @@ interface PaymentModalProps {
   handleProcessPayment: (receiptFile?: File | null) => Promise<void>;
   handleUploadSettledReceipt?: (receiptFile: File) => Promise<void>;
   handleDeleteSettledReceipt?: () => Promise<void>;
+  handleRevertPayment?: (reason?: string) => Promise<void>;
   submitting: boolean;
   errorMessage?: string | null;
 }
@@ -60,6 +62,7 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
   handleProcessPayment,
   handleUploadSettledReceipt,
   handleDeleteSettledReceipt,
+  handleRevertPayment,
   submitting,
   errorMessage,
 }) => {
@@ -94,6 +97,9 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
   const [showReceiptZoom, setShowReceiptZoom] = useState(false);
   const [isCameraModalOpen, setIsCameraModalOpen] = useState(false);
   const [confirmDeleteReceipt, setConfirmDeleteReceipt] = useState(false);
+  const [confirmRevertPayment, setConfirmRevertPayment] = useState(false);
+  const [revertReason, setRevertReason] = useState('');
+  const [revertError, setRevertError] = useState<string | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
@@ -121,6 +127,9 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
     setSlipActionError(null);
     setIsCameraModalOpen(false);
     setConfirmDeleteReceipt(false);
+    setConfirmRevertPayment(false);
+    setRevertReason('');
+    setRevertError(null);
     if (fileInputRef.current) fileInputRef.current.value = '';
     if (cameraInputRef.current) cameraInputRef.current.value = '';
   }, [showPaymentModal]);
@@ -270,6 +279,18 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
       setConfirmDeleteReceipt(false);
     } catch (err: any) {
       setReceiptError(err?.message || 'Failed to delete receipt.');
+    }
+  };
+
+  const handleConfirmRevertPayment = async () => {
+    if (!handleRevertPayment || !isAdmin) return;
+    setRevertError(null);
+    try {
+      await handleRevertPayment(revertReason);
+      setConfirmRevertPayment(false);
+      setRevertReason('');
+    } catch (err: any) {
+      setRevertError(err?.message || 'Failed to revert settlement back to Waiting in CO.');
     }
   };
 
@@ -867,6 +888,86 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
                       <span>{receiptError}</span>
                     </div>
                   )}
+                  </div>
+                </Can>
+              )}
+
+              {/* 4. ADMINISTRATOR REVERT PAYMENT (RETURN TO WAITING IN CO) */}
+              {isAlreadySettled && isClaim && handleRevertPayment && (
+                <Can permission="finance.revert_bundle_payment">
+                  <div className="p-3 rounded border border-amber-500/35 bg-amber-500/5 space-y-2">
+                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+                      <div>
+                        <div className="text-xs font-bold text-on-surface flex items-center gap-1.5">
+                          <RotateCcw className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400 shrink-0" />
+                          <span>Revert Settlement Status</span>
+                        </div>
+                        <p className="text-[11px] text-on-surface-variant mt-0.5">
+                          Return Bundle #{claimItem?.claim_id} from Paid back to Approved (Waiting in CO) if settled by mistake.
+                        </p>
+                      </div>
+                      {!confirmRevertPayment && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setConfirmRevertPayment(true);
+                            setRevertError(null);
+                          }}
+                          disabled={submitting}
+                          className="h-9 sm:h-auto px-3 sm:py-1.5 rounded border border-amber-500/45 bg-amber-500/15 hover:bg-amber-500/25 text-amber-800 dark:text-amber-300 text-xs font-semibold inline-flex items-center justify-center gap-1.5 cursor-pointer transition-colors disabled:opacity-50 shrink-0"
+                        >
+                          <RotateCcw className="w-3.5 h-3.5" />
+                          <span>Revert to Waiting in CO</span>
+                        </button>
+                      )}
+                    </div>
+
+                    {confirmRevertPayment && (
+                      <div className="pt-2 border-t border-amber-500/25 space-y-2">
+                        <input
+                          type="text"
+                          value={revertReason}
+                          onChange={(e) => setRevertReason(e.target.value)}
+                          disabled={submitting}
+                          placeholder="Reason for reverting (optional)..."
+                          className="w-full bg-surface-container border border-outline text-on-surface rounded px-2.5 py-1.5 text-xs focus:ring-1 focus:ring-amber-500 focus:border-amber-500 outline-none"
+                        />
+                        <div className="flex items-center justify-end gap-2">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setConfirmRevertPayment(false);
+                              setRevertReason('');
+                              setRevertError(null);
+                            }}
+                            disabled={submitting}
+                            className="h-9 sm:h-auto px-3 sm:py-1 rounded border border-outline bg-surface-container-low hover:bg-surface-container-high text-[11px] font-semibold text-on-surface cursor-pointer transition-colors disabled:opacity-50"
+                          >
+                            Cancel
+                          </button>
+                          <button
+                            type="button"
+                            onClick={handleConfirmRevertPayment}
+                            disabled={submitting}
+                            className="h-9 sm:h-auto px-3 sm:py-1 rounded bg-rose-600 hover:bg-rose-700 text-white text-[11px] font-semibold inline-flex items-center justify-center gap-1.5 cursor-pointer transition-colors disabled:opacity-50"
+                          >
+                            {submitting ? (
+                              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                            ) : (
+                              <RotateCcw className="w-3.5 h-3.5" />
+                            )}
+                            <span>Confirm Revert to Waiting in CO</span>
+                          </button>
+                        </div>
+                      </div>
+                    )}
+
+                    {revertError && (
+                      <div className="p-2 rounded bg-rose-500/10 border border-rose-500/30 text-rose-600 dark:text-rose-400 text-[11px] flex items-center gap-1.5">
+                        <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                        <span>{revertError}</span>
+                      </div>
+                    )}
                   </div>
                 </Can>
               )}

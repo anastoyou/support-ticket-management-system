@@ -1834,3 +1834,142 @@ class PaymentService:
             )
 
             return group
+
+    @classmethod
+    def revert_bundle_payment(cls, bundle_id, actor=None, reason=None, ip_address=None):
+        """
+        Reverts a settled ('Paid') WorkerClaim (Bundle) back to 'Approved' (Waiting in CO).
+        Deletes direct bundle Payment record(s), clears expense paid flags, and reverts
+        parent Ledger / LedgerGroup paid state if they were marked Paid by bundle settlement.
+        Refuses single-bundle revert if the bundle was settled via a bulk Ledger/Group payment.
+        """
+        with transaction.atomic():
+            try:
+                bundle = WorkerClaim.objects.select_for_update().get(pk=bundle_id)
+            except WorkerClaim.DoesNotExist:
+                raise ValidationError(f"Bundle #{bundle_id} does not exist.")
+
+            if bundle.status != 'Paid':
+                raise ValidationError(
+                    f"Bundle #{bundle_id} is in status '{bundle.status}' and is not Paid."
+                )
+
+            parent_ledgers = list(
+                bundle.ledgers.select_for_update().select_related('ledger_group').all()
+            )
+            direct_payments = list(
+                Payment.objects.select_for_update().filter(claim=bundle)
+            )
+
+            # Check if settled via a bulk Ledger or LedgerGroup payment
+            bulk_ledger_ids = {l.ledger_id for l in parent_ledgers}
+            for l in parent_ledgers:
+                if l.ledger_group_id:
+                    bulk_ledger_ids.update(
+                        l.ledger_group.ledgers.values_list('ledger_id', flat=True)
+                    )
+
+            has_bulk_ledger_payment = bool(
+                bulk_ledger_ids
+                and Payment.objects.select_for_update()
+                .filter(ledger_id__in=bulk_ledger_ids, claim__isnull=True)
+                .exists()
+            )
+            if has_bulk_ledger_payment and not direct_payments:
+                raise ValidationError(
+                    f"Bundle #{bundle_id} was settled via a bulk Ledger/Group payment and cannot be reverted individually."
+                )
+
+            # Delete direct Payment rows and any uploaded receipt files
+            reverted_payment_ids = []
+            for payment in direct_payments:
+                reverted_payment_ids.append(payment.payment_id)
+                if getattr(payment, 'receipt_image', None):
+                    payment.receipt_image.delete(save=False)
+                payment.delete()
+
+            # Reset bundle back to Approved (Waiting in CO)
+            bundle.status = 'Approved'
+            bundle.save(update_fields=['status'])
+
+            # Reset tied expenses back to unpaid
+            tied_expenses = Expense.objects.select_for_update().filter(claim=bundle)
+            reverted_expenses_count = tied_expenses.update(
+                is_paid=False,
+                paid_at=None,
+                paid_by=None,
+            )
+
+            # Revert any parent Ledgers / LedgerGroups that became Paid via ALL_BUNDLES_PAID
+            reverted_ledger_ids = []
+            reverted_group_ids = []
+            seen_groups = {}
+            for parent_ledger in parent_ledgers:
+                if parent_ledger.status == 'Paid':
+                    parent_ledger.status = 'Approved'
+                    parent_ledger.save(update_fields=['status'])
+                    reverted_ledger_ids.append(parent_ledger.ledger_id)
+                    create_audit_event(
+                        'Ledger',
+                        parent_ledger.ledger_id,
+                        'PAYMENT_REVERTED',
+                        actor=actor,
+                        payload={
+                            'trigger': 'BUNDLE_PAYMENT_REVERTED',
+                            'bundle_id': bundle.claim_id,
+                            'reason': reason or 'Reverted bundle payment back to Waiting in CO',
+                        },
+                        ip_address=ip_address,
+                    )
+
+                grp = parent_ledger.ledger_group
+                if grp and grp.ledger_group_id not in seen_groups:
+                    seen_groups[grp.ledger_group_id] = grp
+
+            for grp_id, grp in seen_groups.items():
+                locked_grp = LedgerGroup.objects.select_for_update().get(pk=grp_id)
+                if locked_grp.is_paid:
+                    locked_grp.is_paid = False
+                    locked_grp.paid_at = None
+                    locked_grp.paid_by = None
+                    locked_grp.payment_method = 'Cash'
+                    locked_grp.payment_reference = None
+                    locked_grp.payment_remarks = None
+                    locked_grp.recipient_name = None
+                    locked_grp.save(update_fields=[
+                        'is_paid', 'paid_at', 'paid_by',
+                        'payment_method', 'payment_reference', 'payment_remarks', 'recipient_name'
+                    ])
+                    reverted_group_ids.append(grp_id)
+                    create_audit_event(
+                        'LedgerGroup',
+                        grp_id,
+                        'GROUP_PAYMENT_REVERTED',
+                        actor=actor,
+                        payload={
+                            'trigger': 'BUNDLE_PAYMENT_REVERTED',
+                            'bundle_id': bundle.claim_id,
+                            'reason': reason or 'Reverted bundle payment back to Waiting in CO',
+                        },
+                        ip_address=ip_address,
+                    )
+
+            create_audit_event(
+                'WorkerClaim',
+                bundle.claim_id,
+                'PAYMENT_REVERTED',
+                actor=actor,
+                payload={
+                    'reverted_payment_ids': reverted_payment_ids,
+                    'reverted_amount': str(bundle.total_claimed_amount),
+                    'reverted_expenses_count': reverted_expenses_count,
+                    'reverted_ledger_ids': reverted_ledger_ids,
+                    'reverted_group_ids': reverted_group_ids,
+                    'previous_status': 'Paid',
+                    'new_status': 'Approved',
+                    'reason': reason or 'Reverted back to Waiting in CO',
+                },
+                ip_address=ip_address,
+            )
+
+            return bundle

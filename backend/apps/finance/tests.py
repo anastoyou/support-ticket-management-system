@@ -871,4 +871,127 @@ class LedgerGroupBundleRemovalTestCase(TestCase):
         finally:
             shutil.rmtree(temp_media, ignore_errors=True)
 
+    def test_revert_bundle_payment_returns_to_approved_waiting_in_co(self):
+        from django.contrib.auth.models import Permission
+        from rest_framework.test import APIClient
+
+        b1 = self._make_approved_bundle(self.ticket1, "27.150")
+        b2 = self._make_approved_bundle(self.ticket1, "22.750")
+        group = LedgerGroup.objects.create(
+            group_name="Civil Revert Test Group", created_by=self.admin_user, is_completed=True
+        )
+        ledgers = LedgerService.create_ledger(
+            bundle_ids=[b1.claim_id, b2.claim_id],
+            created_by=self.admin_user,
+            ledger_group_id=group.ledger_group_id,
+        )
+        ledger = ledgers[0]
+        ledger.status = "Approved"
+        ledger.save(update_fields=["status"])
+        group.is_completed = True
+        group.save(update_fields=["is_completed"])
+
+        # Pay b1 individually (matching Bundle 52 in Ledger 8 / Group 11)
+        p1 = PaymentService.process_payment(
+            actor=self.admin_user,
+            amount_paid=Decimal("27.150"),
+            bundle_id=b1.claim_id,
+            recipient_name="Sudheesh",
+        )
+        b1.refresh_from_db()
+        ledger.refresh_from_db()
+        group.refresh_from_db()
+        self.assertEqual(b1.status, "Paid")
+        self.assertEqual(ledger.status, "Approved")
+        self.assertFalse(group.is_paid)
+        self.assertTrue(b1.expenses.filter(is_paid=True).exists())
+
+        # Non-admin users (including Cash Office / users with payment perms) receive 403 Forbidden
+        role_cash_office, _ = Role.objects.get_or_create(role_name="Cash Office")
+        cash_office_user = User.objects.create_user(
+            username="cash_office_test", password="password123", role=role_cash_office
+        )
+        single_pay_perm = Permission.objects.filter(codename="single_payment_process").first()
+        if single_pay_perm:
+            cash_office_user.user_permissions.add(single_pay_perm)
+
+        for non_admin in (self.worker, self.office_user, cash_office_user):
+            non_admin_client = APIClient()
+            non_admin_client.force_authenticate(user=non_admin)
+            forbid_resp = non_admin_client.post(
+                "/api/finance/payments/revert-payment/",
+                data={"bundle_id": b1.claim_id, "reason": "Unauthorized"},
+                format="json",
+            )
+            self.assertEqual(forbid_resp.status_code, 403)
+
+        # Administrator reverts b1 via API -> b1 returns to Approved, Payment deleted, expenses unpaid
+        admin_client = APIClient()
+        admin_client.force_authenticate(user=self.admin_user)
+        rev_resp = admin_client.post(
+            "/api/finance/payments/revert-payment/",
+            data={"bundle_id": b1.claim_id, "reason": "Accidental click"},
+            format="json",
+        )
+        self.assertEqual(rev_resp.status_code, 200, rev_resp.data)
+        self.assertEqual(rev_resp.data["bundle"]["status"], "Approved")
+        b1.refresh_from_db()
+        ledger.refresh_from_db()
+        group.refresh_from_db()
+        self.assertEqual(b1.status, "Approved")
+        self.assertEqual(ledger.status, "Approved")
+        self.assertTrue(group.is_completed)
+        self.assertFalse(group.is_paid)
+        self.assertFalse(Payment.objects.filter(pk=p1.payment_id).exists())
+        self.assertEqual(b1.expenses.filter(is_paid=True).count(), 0)
+        self.assertTrue(
+            AuditEvent.objects.filter(
+                entity_name="WorkerClaim",
+                entity_id=str(b1.claim_id),
+                action="PAYMENT_REVERTED",
+            ).exists()
+        )
+
+        # If both b1 and b2 are paid individually (triggering ALL_BUNDLES_PAID on ledger & group),
+        # reverting b1 via service also reverts ledger & group back to Approved / unpaid
+        PaymentService.process_payment(actor=self.admin_user, bundle_id=b1.claim_id)
+        PaymentService.process_payment(actor=self.admin_user, bundle_id=b2.claim_id)
+        ledger.refresh_from_db()
+        group.refresh_from_db()
+        self.assertEqual(ledger.status, "Paid")
+        self.assertTrue(group.is_paid)
+
+        PaymentService.revert_bundle_payment(b1.claim_id, actor=self.admin_user, reason="Revert to Waiting in CO")
+        b1.refresh_from_db()
+        b2.refresh_from_db()
+        ledger.refresh_from_db()
+        group.refresh_from_db()
+        self.assertEqual(b1.status, "Approved")
+        self.assertEqual(b2.status, "Paid")
+        self.assertEqual(ledger.status, "Approved")
+        self.assertTrue(group.is_completed)
+        self.assertFalse(group.is_paid)
+
+        # Reverting a non-paid bundle raises ValidationError
+        with self.assertRaises(ValidationError):
+            PaymentService.revert_bundle_payment(b1.claim_id, actor=self.admin_user)
+
+    def test_revert_bundle_payment_blocks_bulk_ledger_settlement(self):
+        b1 = self._make_approved_bundle(self.ticket1, "15.000")
+        b2 = self._make_approved_bundle(self.ticket1, "20.000")
+        group = LedgerGroup.objects.create(
+            group_name="Bulk Pay Group", created_by=self.admin_user, is_completed=True
+        )
+        ledger = LedgerService.create_ledger(
+            bundle_ids=[b1.claim_id, b2.claim_id],
+            created_by=self.admin_user,
+            ledger_group_id=group.ledger_group_id,
+        )[0]
+        ledger.status = "Approved"
+        ledger.save(update_fields=["status"])
+        PaymentService.pay_ledger_group(group.ledger_group_id, actor=self.admin_user)
+
+        with self.assertRaises(ValidationError):
+            PaymentService.revert_bundle_payment(b1.claim_id, actor=self.admin_user)
+
 

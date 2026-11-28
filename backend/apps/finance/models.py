@@ -521,6 +521,7 @@ class Payment(models.Model):
             ('single_payment_process', 'Can process single bundle payment'),
             ('bulk_payment_process', 'Can process bulk ledger group payment'),
             ('bulk_payment_processs', 'Can process bulk ledger group payment (alias)'),
+            ('revert_bundle_payment', 'Can revert settled bundle payment back to Waiting in CO'),
         ]
 
     def __str__(self):
